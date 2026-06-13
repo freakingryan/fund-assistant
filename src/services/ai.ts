@@ -177,4 +177,48 @@ export async function fetchFundInfoByCode(code: string): Promise<{
   return { name: code, type: 'stock', sector: 'other', description: '' }
 }
 
+/**
+ * 批量查询多个基金代码
+ */
+export async function fetchFundInfoByCodes(codes: string[]): Promise<
+  Array<{
+    code: string
+    name: string
+    type: string
+    sector: string
+    description: string
+  }>
+> {
+  const ai = getDefaultAI()
+  if (!ai) throw new Error('请先在设置页配置 AI API Key')
+
+  const prompt = `请查询以下基金代码的详细信息：${codes.join(', ')}
+返回严格 JSON 数组格式，每个元素为：
+{
+  "code": "基金代码",
+  "name": "基金全称",
+  "type": "股票型/混合型/债券型/指数型/QDII/货币型/ETF",
+  "sector": "科技/消费/医药/新能源/金融/制造/宽基/全球/债市/大宗商品/其他",
+  "description": "一句话简述"
+}
+只返回 JSON 数组，不要其他内容。`
+
+  const response = await callAI(ai, [{ role: 'user', content: prompt }])
+
+  try {
+    const jsonMatch = response.match(/\[[\s\S]*\]/)
+    if (jsonMatch) {
+      const arr = JSON.parse(jsonMatch[0])
+      if (Array.isArray(arr)) return arr
+    }
+  } catch { /* fallback */ }
+
+  // Fallback: single query
+  const results = []
+  for (const code of codes) {
+    results.push(await fetchFundInfoByCode(code))
+  }
+  return results.map((r, i) => ({ code: codes[i], ...r }))
+}
+
 export { getDefaultAI }
