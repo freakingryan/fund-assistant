@@ -53,6 +53,8 @@ interface FundRow {
   description: string
   costNAV: string
   shares: string
+  holdingAmount: string
+  holdingProfit: string
   purchaseDate: string
   tags: string
   notes: string
@@ -63,7 +65,7 @@ function makeRow(code = ''): FundRow {
   return {
     key: crypto.randomUUID(),
     code, name: '', market: 'A', type: 'stock', sector: 'other',
-    description: '', costNAV: '', shares: '',
+    description: '', costNAV: '', shares: '', holdingAmount: '', holdingProfit: '',
     purchaseDate: new Date().toISOString().slice(0, 10),
     tags: '', notes: '', expanded: false,
   }
@@ -181,6 +183,8 @@ export default function AddFundDialog() {
         sector: row.sector,
         costNAV: Number(row.costNAV) || 0,
         shares: Number(row.shares) || 0,
+        holdingAmount: Number(row.holdingAmount) || 0,
+        holdingProfit: Number(row.holdingProfit) || 0,
         purchaseDate: row.purchaseDate,
         tags: row.tags ? row.tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
         notes: row.notes || row.description,
@@ -246,26 +250,44 @@ export default function AddFundDialog() {
                   )}
                 </div>
 
-                {/* Default fields: cost + shares on one line */}
-                <div className="flex gap-2">
-                  <div className="flex-1">
-                    <Input
-                      type="number" step="0.0001"
-                      value={row.costNAV}
-                      onChange={(e) => updateRow(row.key, 'costNAV', e.target.value)}
-                      placeholder="持仓成本（选填）"
-                      className="h-7 text-xs"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <Input
-                      type="number" step="0.01"
-                      value={row.shares}
-                      onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
-                      placeholder="持有份额（选填）"
-                      className="h-7 text-xs"
-                    />
-                  </div>
+                {/* 方式一：成本 + 份额 */}
+                <div className="flex gap-2 items-center">
+                  <span className="text-[10px] text-muted-foreground shrink-0 w-12">方式一</span>
+                  <Input
+                    type="number" step="0.0001"
+                    value={row.costNAV}
+                    onChange={(e) => updateRow(row.key, 'costNAV', e.target.value)}
+                    placeholder="持仓成本"
+                    className="flex-1 h-7 text-xs"
+                  />
+                  <span className="text-[10px] text-muted-foreground shrink-0">×</span>
+                  <Input
+                    type="number" step="0.01"
+                    value={row.shares}
+                    onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
+                    placeholder="持有份额"
+                    className="flex-1 h-7 text-xs"
+                  />
+                </div>
+
+                {/* 方式二：持有金额 + 持有收益 */}
+                <div className="flex gap-2 items-center">
+                  <span className="text-[10px] text-muted-foreground shrink-0 w-12">方式二</span>
+                  <Input
+                    type="number" step="0.01"
+                    value={row.holdingAmount}
+                    onChange={(e) => updateRow(row.key, 'holdingAmount', e.target.value)}
+                    placeholder="持有金额（投入总额）"
+                    className="flex-1 h-7 text-xs"
+                  />
+                  <span className="text-[10px] text-muted-foreground shrink-0">±</span>
+                  <Input
+                    type="number" step="0.01"
+                    value={row.holdingProfit}
+                    onChange={(e) => updateRow(row.key, 'holdingProfit', e.target.value)}
+                    placeholder="持有收益（盈+亏-）"
+                    className="flex-1 h-7 text-xs"
+                  />
                   <Button
                     variant="ghost"
                     size="sm"

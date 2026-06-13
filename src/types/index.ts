@@ -35,6 +35,8 @@ export interface FundHolding {
   sector: FundSector      // 投资领域
   costNAV: number         // 持仓成本净值
   shares: number          // 持有份额
+  holdingAmount: number   // 持有金额（投入总额，方式二）
+  holdingProfit: number   // 持有收益（方式二，正数盈利负数亏损）
   purchaseDate: string    // 购买日期 (YYYY-MM-DD)
   tags: string[]          // 自定义标签
   notes: string           // 备注

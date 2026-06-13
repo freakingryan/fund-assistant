@@ -244,17 +244,19 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 
 ## 七、实施计划 (分 6 个阶段)
 
-### Phase 1：项目脚手架 + 核心基础设施
+### Phase 1：项目脚手架 + 核心基础设施 ✅
 - Vite + React + TypeScript 初始化
 - Tailwind + shadcn/ui 配置
 - Zustand Store 骨架 + Dexie.js 数据库 Schema
 - 路由结构 + 基础布局（侧边栏导航）
 - PWA 基础配置
+- 统一 AI API 调用层（DeepSeek/OpenAI/Gemini/自定义）
 
-### Phase 2：持仓管理模块
+### Phase 2：持仓管理模块 ✅
 - 持仓数据模型 + IndexedDB CRUD
-- CSV/Excel 导入解析
-- 手动录入表单
+- CSV/Excel 导入解析 + AI 截图识别
+- 手动批量录入表单（多代码 + 展开式字段）
+- 两种持仓输入方式：成本×份额 / 金额+收益
 - 持仓列表展示（TanStack Table）
 - 基金自动归类逻辑
 
@@ -314,14 +316,13 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 | 通知 | 浏览器 Push 首发，飞书预留接口 |
 | 存储 | 本地 IndexedDB 为主，可选 Notion/飞书同步 |
 
-## 十、交付物清单
+## 十、进度追踪
 
-Phase 1 完成后产出：
-- 完整项目脚手架（Vite + React + TS + Tailwind + shadcn/ui）
-- PWA 基础配置（manifest + Service Worker）
-- Zustand Store 骨架 + Dexie.js Schema
-- 路由导航 + 布局框架
-
----
-
-**确认以上方案后，我将立即开始 Phase 1 实施。**
+| Phase | 状态 | 内容 |
+|-------|------|------|
+| Phase 1 | ✅ 完成 | 脚手架 + AI 服务层 + PWA |
+| Phase 2 | ✅ 完成 | 持仓管理（CSV/截图/AI 批量录入） |
+| Phase 3 | 🔜 下一步 | 数据看板 + 数据源接入 |
+| Phase 4 | ⏳ 待开始 | 投资计划引擎 |
+| Phase 5 | ⏳ 待开始 | Prompt 生成器 + AI 集成 |
+| Phase 6 | ⏳ 待开始 | 通知 + 存储扩展 + 设置页 |

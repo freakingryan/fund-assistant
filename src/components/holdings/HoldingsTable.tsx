@@ -42,7 +42,10 @@ export default function HoldingsTable() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    holdingAmount: false,
+    holdingProfit: false,
+  })
 
   const filteredHoldings = useMemo(() => {
     return typeFilter === 'all'
@@ -101,20 +104,49 @@ export default function HoldingsTable() {
     }),
     columnHelper.accessor('costNAV', {
       header: '成本净值',
-      cell: ({ getValue }) => <span className="font-mono text-sm">¥{getValue().toFixed(4)}</span>,
+      cell: ({ getValue }) => {
+        const v = getValue()
+        return v ? <span className="font-mono text-sm">¥{v.toFixed(4)}</span> : <span className="text-xs text-muted-foreground">-</span>
+      },
       size: 100,
     }),
     columnHelper.accessor('shares', {
       header: '份额',
-      cell: ({ getValue }) => <span className="font-mono text-sm">{getValue().toFixed(2)}</span>,
+      cell: ({ getValue }) => {
+        const v = getValue()
+        return v ? <span className="font-mono text-sm">{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
+      },
       size: 90,
+    }),
+    columnHelper.accessor('holdingAmount', {
+      header: '投入金额',
+      cell: ({ getValue }) => {
+        const v = getValue()
+        return v ? <span className="font-mono text-sm">¥{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
+      },
+      size: 100,
+    }),
+    columnHelper.accessor('holdingProfit', {
+      header: '持有收益',
+      cell: ({ getValue }) => {
+        const v = getValue()
+        if (!v) return <span className="text-xs text-muted-foreground">-</span>
+        const color = v >= 0 ? 'text-red-500' : 'text-green-500'
+        const prefix = v >= 0 ? '+' : ''
+        return <span className={`font-mono text-sm ${color}`}>{prefix}¥{v.toFixed(2)}</span>
+      },
+      size: 100,
     }),
     columnHelper.display({
       id: 'marketValue',
-      header: '市值',
+      header: '参考市值',
       cell: ({ row }) => {
-        const mv = row.original.costNAV * row.original.shares
-        return <span className="font-mono text-sm font-medium">¥{mv.toFixed(2)}</span>
+        const { costNAV, shares, holdingAmount, holdingProfit } = row.original
+        // 优先用方式一：成本×份额；否则用方式二：投入+收益
+        const mv = (costNAV && shares) ? costNAV * shares
+          : (holdingAmount) ? holdingAmount + (holdingProfit || 0)
+          : 0
+        return mv ? <span className="font-mono text-sm font-medium">¥{mv.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 100,
     }),
@@ -230,7 +262,9 @@ export default function HoldingsTable() {
                   onCheckedChange={(v) => col.toggleVisibility(!!v)}
                 >
                   {col.id === 'select' ? '选择' :
-                   col.id === 'marketValue' ? '市值' :
+                   col.id === 'marketValue' ? '参考市值' :
+                   col.id === 'holdingAmount' ? '投入金额' :
+                   col.id === 'holdingProfit' ? '持有收益' :
                    col.id === 'purchaseDate' ? '日期' :
                    col.id === 'tags' ? '标签' :
                    col.id === 'actions' ? '操作' :
@@ -298,7 +332,11 @@ export default function HoldingsTable() {
         共 {holdings.length} 只基金
         {typeFilter !== 'all' && `（已筛选: ${TYPE_LABELS[typeFilter]}）`}
         {selectedIds.length > 0 && `，已选 ${selectedIds.length} 只`}
-        {holdings.length > 0 && ` | 总市值: ¥${holdings.reduce((sum, h) => sum + h.costNAV * h.shares, 0).toFixed(2)}`}
+        {holdings.length > 0 && ` | 参考市值: ¥${holdings.reduce((sum, h) => sum + (
+          (h.costNAV && h.shares) ? h.costNAV * h.shares
+          : h.holdingAmount ? h.holdingAmount + (h.holdingProfit || 0)
+          : 0
+        ), 0).toFixed(2)}`}
       </div>
     </div>
   )
