@@ -277,7 +277,7 @@ export default function AddFundDialog() {
                     type="number" step="0.01"
                     value={row.holdingAmount}
                     onChange={(e) => updateRow(row.key, 'holdingAmount', e.target.value)}
-                    placeholder="持有金额（投入总额）"
+                    placeholder="持有金额（总市值）"
                     className="flex-1 h-7 text-xs"
                   />
                   <span className="text-[10px] text-muted-foreground shrink-0">±</span>

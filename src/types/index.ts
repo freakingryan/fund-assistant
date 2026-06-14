@@ -35,8 +35,8 @@ export interface FundHolding {
   sector: FundSector      // 投资领域
   costNAV: number         // 持仓成本净值
   shares: number          // 持有份额
-  holdingAmount: number   // 持有金额（投入总额，方式二）
-  holdingProfit: number   // 持有收益（方式二，正数盈利负数亏损）
+  holdingAmount: number   // 持有金额（当前总市值，已含收益，方式二）
+  holdingProfit: number   // 持有收益（方式二，正数盈利负数亏损，本金 = 持有金额 - 持有收益）
   purchaseDate: string    // 购买日期 (YYYY-MM-DD)
   tags: string[]          // 自定义标签
   notes: string           // 备注
@@ -71,42 +71,58 @@ export interface EtfMapping {
 
 // ============= 投资计划 =============
 
-export type PlanRuleType = 'profit' | 'loss' | 'daily_drop' | 'daily_rise' | 'dca'
+export type PlanRuleType =
+  | 'return'          // 收益率触发
+  | 'price_diff'      // 价差绝对值触发（净值 vs 成本）
+  | 'daily_change'    // 单日涨跌幅触发
+  | 'dca'             // 定期定投触发
+  | 'kline_pattern'   // K 线形态 AI 诊断（手动）
+
+export type Comparator = 'lt' | 'gt' | 'lte' | 'gte'
 
 export interface PlanRule {
   id: string
   type: PlanRuleType
-  threshold: number       // 触发阈值 (%)
+  threshold: number       // 阈值（收益率% / 价差绝对值 / 涨跌幅% / 定投间隔天数）
+  comparator: Comparator   // 比较方向
   action: 'buy' | 'sell'
-  shares: number          // 操作份数
+  shares: number          // 操作份数（0 表示仅提醒不操作）
   enabled: boolean
 }
 
+/**
+ * 全局投资计划（所有基金共用一套规则）
+ */
 export interface InvestmentPlan {
-  id: string
-  fundCode: string
-  fundName: string
-  totalPool: number       // 总资金池
-  shareAmount: number     // 单份金额
+  id: string              // 固定为 'global-plan'
+  name: string
+  description: string
   rules: PlanRule[]
   enabled: boolean
   createdAt: string
   updatedAt: string
 }
 
-export interface PlanLog {
+/**
+ * 规则扫描结果（单条提醒/建议）
+ */
+export interface PlanAlert {
   id: string
-  planId: string
   fundCode: string
   fundName: string
   ruleId: string
+  ruleType: PlanRuleType
   action: 'buy' | 'sell'
   shares: number
-  nav: number
-  reason: string
+  currentNAV: number
+  costNAV: number
+  returnRate: number      // 当前收益率 (%)
+  dailyChange: number     // 今日涨跌幅 (%)
+  reason: string          // 触发说明
   triggeredAt: string
   executed: boolean
   executedAt?: string
+  dismissed: boolean      // 是否已忽略
 }
 
 // ============= AI / 存储 / 数据源 适配器接口 =============

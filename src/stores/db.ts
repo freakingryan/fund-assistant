@@ -1,19 +1,19 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { FundHolding, InvestmentPlan, PlanLog, UserSettings } from '@/types'
+import type { FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
 
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, 'id'>
   plans!: EntityTable<InvestmentPlan, 'id'>
-  planLogs!: EntityTable<PlanLog, 'id'>
+  alerts!: EntityTable<PlanAlert, 'id'>
   settings!: EntityTable<UserSettings, 'id'>
 
   constructor() {
     super('FundAssistantDB')
 
-    this.version(1).stores({
+    this.version(2).stores({
       holdings: 'id, code, market, type, sector, purchaseDate',
-      plans: 'id, fundCode, enabled',
-      planLogs: 'id, planId, fundCode, triggeredAt',
+      plans: 'id, enabled',
+      alerts: 'id, fundCode, triggeredAt',
       settings: 'id',
     })
   }

@@ -1,126 +1,263 @@
 import { create } from 'zustand'
 import { db } from './db'
-import type { InvestmentPlan, PlanLog, PlanRule } from '@/types'
+import type { InvestmentPlan, PlanRule, PlanAlert, PlanRuleType, Comparator, FundHolding } from '@/types'
+import { dataSourceService } from '@/adapters/datasource/service'
 
-interface PlansState {
-  plans: InvestmentPlan[]
-  logs: PlanLog[]
-  loading: boolean
-  error: string | null
-
-  loadPlans: () => Promise<void>
-  addPlan: (plan: Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>
-  updatePlan: (id: string, data: Partial<InvestmentPlan>) => Promise<void>
-  removePlan: (id: string) => Promise<void>
-  addRule: (planId: string, rule: Omit<PlanRule, 'id'>) => Promise<void>
-  updateRule: (planId: string, ruleId: string, data: Partial<PlanRule>) => Promise<void>
-  removeRule: (planId: string, ruleId: string) => Promise<void>
-  togglePlanEnabled: (id: string) => Promise<void>
-  addLog: (log: Omit<PlanLog, 'id'>) => Promise<void>
-  markLogExecuted: (logId: string) => Promise<void>
-  loadLogs: () => Promise<void>
+const DEFAULT_PLAN: Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'> = {
+  name: '全局投资计划',
+  description: '所有持仓基金共用此套规则',
+  rules: [
+    {
+      id: crypto.randomUUID(),
+      type: 'return',
+      threshold: -10,
+      comparator: 'lte',
+      action: 'buy',
+      shares: 1,
+      enabled: true,
+    },
+    {
+      id: crypto.randomUUID(),
+      type: 'return',
+      threshold: 15,
+      comparator: 'gte',
+      action: 'sell',
+      shares: 2,
+      enabled: true,
+    },
+    {
+      id: crypto.randomUUID(),
+      type: 'daily_change',
+      threshold: 3,
+      comparator: 'lte',
+      action: 'buy',
+      shares: 0,
+      enabled: true,
+    },
+  ],
+  enabled: true,
 }
 
-export const usePlansStore = create<PlansState>((set) => ({
-  plans: [],
-  logs: [],
+interface PlansState {
+  plan: InvestmentPlan | null
+  alerts: PlanAlert[]
+  loading: boolean
+  scanning: boolean
+  error: string | null
+
+  loadPlan: () => Promise<void>
+  updatePlan: (data: Partial<Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'>>) => Promise<void>
+  addRule: (rule: Omit<PlanRule, 'id'>) => Promise<void>
+  updateRule: (ruleId: string, data: Partial<PlanRule>) => Promise<void>
+  removeRule: (ruleId: string) => Promise<void>
+  togglePlanEnabled: () => Promise<void>
+
+  /** 手动扫描：检查所有持仓是否符合规则 */
+  scan: (holdings: FundHolding[]) => Promise<PlanAlert[]>
+
+  loadAlerts: () => Promise<void>
+  markAlertExecuted: (alertId: string) => Promise<void>
+  dismissAlert: (alertId: string) => Promise<void>
+}
+
+export const usePlansStore = create<PlansState>((set, get) => ({
+  plan: null,
+  alerts: [],
   loading: false,
+  scanning: false,
   error: null,
 
-  loadPlans: async () => {
+  loadPlan: async () => {
     set({ loading: true })
     try {
-      const plans = await db.plans.toArray()
-      set({ plans, loading: false })
+      let plan = await db.plans.get('global-plan')
+      if (!plan) {
+        const now = new Date().toISOString()
+        plan = { ...DEFAULT_PLAN, id: 'global-plan', createdAt: now, updatedAt: now }
+        await db.plans.add(plan)
+      }
+      set({ plan, loading: false })
     } catch (e) {
       set({ error: String(e), loading: false })
     }
   },
 
-  addPlan: async (data) => {
+  updatePlan: async (data) => {
     const now = new Date().toISOString()
-    const plan: InvestmentPlan = {
-      ...data,
-      id: crypto.randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-    }
-    await db.plans.add(plan)
-    set((s) => ({ plans: [...s.plans, plan] }))
+    const plan = get().plan!
+    const updated = { ...plan, ...data, updatedAt: now }
+    await db.plans.put(updated)
+    set({ plan: updated })
   },
 
-  updatePlan: async (id, data) => {
-    await db.plans.update(id, { ...data, updatedAt: new Date().toISOString() })
-    set((s) => ({
-      plans: s.plans.map((p) => (p.id === id ? { ...p, ...data } : p)),
-    }))
-  },
-
-  removePlan: async (id) => {
-    await db.plans.delete(id)
-    set((s) => ({ plans: s.plans.filter((p) => p.id !== id) }))
-  },
-
-  addRule: async (planId, rule) => {
+  addRule: async (rule) => {
     const newRule: PlanRule = { ...rule, id: crypto.randomUUID() }
-    const plan = (await db.plans.get(planId))!
-    const updatedPlan = { ...plan, rules: [...plan.rules, newRule], updatedAt: new Date().toISOString() }
-    await db.plans.update(planId, updatedPlan)
-    set((s) => ({
-      plans: s.plans.map((p) => (p.id === planId ? updatedPlan : p)),
-    }))
+    const plan = get().plan!
+    const updated = { ...plan, rules: [...plan.rules, newRule], updatedAt: new Date().toISOString() }
+    await db.plans.put(updated)
+    set({ plan: updated })
   },
 
-  updateRule: async (planId, ruleId, data) => {
-    const plan = (await db.plans.get(planId))!
-    const updatedPlan = {
+  updateRule: async (ruleId, data) => {
+    const plan = get().plan!
+    const updated = {
       ...plan,
       rules: plan.rules.map((r) => (r.id === ruleId ? { ...r, ...data } : r)),
       updatedAt: new Date().toISOString(),
     }
-    await db.plans.update(planId, updatedPlan)
-    set((s) => ({
-      plans: s.plans.map((p) => (p.id === planId ? updatedPlan : p)),
-    }))
+    await db.plans.put(updated)
+    set({ plan: updated })
   },
 
-  removeRule: async (planId, ruleId) => {
-    const plan = (await db.plans.get(planId))!
-    const updatedPlan = {
+  removeRule: async (ruleId) => {
+    const plan = get().plan!
+    const updated = {
       ...plan,
       rules: plan.rules.filter((r) => r.id !== ruleId),
       updatedAt: new Date().toISOString(),
     }
-    await db.plans.update(planId, updatedPlan)
-    set((s) => ({
-      plans: s.plans.map((p) => (p.id === planId ? updatedPlan : p)),
-    }))
+    await db.plans.put(updated)
+    set({ plan: updated })
   },
 
-  togglePlanEnabled: async (id) => {
-    const plan = (await db.plans.get(id))!
-    await db.plans.update(id, { enabled: !plan.enabled, updatedAt: new Date().toISOString() })
-    set((s) => ({
-      plans: s.plans.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p)),
-    }))
+  togglePlanEnabled: async () => {
+    const plan = get().plan!
+    const updated = { ...plan, enabled: !plan.enabled, updatedAt: new Date().toISOString() }
+    await db.plans.put(updated)
+    set({ plan: updated })
   },
 
-  addLog: async (log) => {
-    const newLog: PlanLog = { ...log, id: crypto.randomUUID() }
-    await db.planLogs.add(newLog)
-    set((s) => ({ logs: [...s.logs, newLog] }))
-  },
+  scan: async (holdings) => {
+    set({ scanning: true })
+    const plan = get().plan
+    if (!plan || !plan.enabled) {
+      set({ scanning: false })
+      return []
+    }
 
-  markLogExecuted: async (logId) => {
+    const enabledRules = plan.rules.filter((r) => r.enabled)
+    if (enabledRules.length === 0) {
+      set({ scanning: false })
+      return []
+    }
+
+    const codes = holdings.map((h) => h.code)
+    const quotes = await dataSourceService.fetchQuotes(codes)
+    const quoteMap = new Map(quotes.map((q) => [q.code, q]))
+
+    const alerts: PlanAlert[] = []
     const now = new Date().toISOString()
-    await db.planLogs.update(logId, { executed: true, executedAt: now })
+
+    for (const h of holdings) {
+      const q = quoteMap.get(h.code)
+      if (!q) continue
+
+      const nav = q.nav
+      const costValue = h.costNAV && h.shares ? h.costNAV * h.shares : (h.holdingAmount && h.holdingProfit !== undefined ? h.holdingAmount - h.holdingProfit : 0)
+      const costNAV = h.shares && h.costNAV ? h.costNAV : (costValue && h.shares ? costValue / h.shares : 0)
+
+      // 当前收益率
+      const returnRate = costNAV > 0 ? ((nav - costNAV) / costNAV) * 100 : 0
+
+      for (const rule of enabledRules) {
+        let triggered = false
+        let reason = ''
+
+        switch (rule.type) {
+          case 'return': {
+            const matches = compare(returnRate, rule.comparator, rule.threshold)
+            if (matches) {
+              triggered = true
+              reason = `收益率 ${returnRate >= 0 ? '+' : ''}${returnRate.toFixed(2)}% ${cmpLabel(rule.comparator)} ${rule.threshold}%`
+            }
+            break
+          }
+          case 'price_diff': {
+            const diff = nav - costNAV
+            const matches = compare(diff, rule.comparator, rule.threshold)
+            if (matches) {
+              triggered = true
+              reason = `净值价差 ¥${diff.toFixed(4)} ${cmpLabel(rule.comparator)} ¥${rule.threshold}`
+            }
+            break
+          }
+          case 'daily_change': {
+            const matches = compare(q.dailyChange, rule.comparator, rule.threshold)
+            if (matches) {
+              triggered = true
+              reason = `今日涨跌幅 ${q.dailyChange >= 0 ? '+' : ''}${q.dailyChange.toFixed(2)}% ${cmpLabel(rule.comparator)} ${rule.threshold}%`
+            }
+            break
+          }
+        }
+
+        if (triggered) {
+          const alert: PlanAlert = {
+            id: crypto.randomUUID(),
+            fundCode: h.code,
+            fundName: h.name || h.code,
+            ruleId: rule.id,
+            ruleType: rule.type,
+            action: rule.action,
+            shares: rule.shares,
+            currentNAV: nav,
+            costNAV: costNAV,
+            returnRate,
+            dailyChange: q.dailyChange,
+            reason,
+            triggeredAt: now,
+            executed: false,
+            dismissed: false,
+          }
+          alerts.push(alert)
+        }
+      }
+    }
+
+    // 保存到 DB
+    if (alerts.length > 0) {
+      await db.alerts.bulkAdd(alerts)
+    }
+
+    // 合并到已有 alerts
     set((s) => ({
-      logs: s.logs.map((l) => (l.id === logId ? { ...l, executed: true, executedAt: now } : l)),
+      alerts: [...alerts, ...s.alerts],
+      scanning: false,
+    }))
+
+    return alerts
+  },
+
+  loadAlerts: async () => {
+    const alerts = await db.alerts.orderBy('triggeredAt').reverse().toArray()
+    set({ alerts })
+  },
+
+  markAlertExecuted: async (alertId) => {
+    const now = new Date().toISOString()
+    await db.alerts.update(alertId, { executed: true, executedAt: now })
+    set((s) => ({
+      alerts: s.alerts.map((a) => (a.id === alertId ? { ...a, executed: true, executedAt: now } : a)),
     }))
   },
 
-  loadLogs: async () => {
-    const logs = await db.planLogs.orderBy('triggeredAt').reverse().toArray()
-    set({ logs })
+  dismissAlert: async (alertId) => {
+    await db.alerts.update(alertId, { dismissed: true })
+    set((s) => ({
+      alerts: s.alerts.map((a) => (a.id === alertId ? { ...a, dismissed: true } : a)),
+    }))
   },
 }))
+
+function compare(value: number, comparator: Comparator, threshold: number): boolean {
+  switch (comparator) {
+    case 'lt': return value < threshold
+    case 'gt': return value > threshold
+    case 'lte': return value <= threshold
+    case 'gte': return value >= threshold
+  }
+}
+
+function cmpLabel(c: Comparator): string {
+  return { lt: '<', gt: '>', lte: '≤', gte: '≥' }[c]
+}

@@ -9,11 +9,9 @@
   - 仅需基金代码（必填），其余字段可选
   - AI 批量查询自动补全基金名称、类型、投资领域
   - 自动归类基金类型（股票型/混合型/债券型等）和投资领域（科技/消费/医药等）
-- **数据看板** — 持仓总览、盈亏分析、分布图表、净值走势（开发中）
-- **投资计划** — 自定义规则引擎（收益率触发、涨跌幅触发、定投），按份数执行买入/卖出提醒（开发中）
-- **Prompt 生成** — 选中持仓一键生成结构化 AI Prompt，支持场外 ETF 结合场内 K 线数据（开发中）
-- **通知系统** — 浏览器推送通知，投资计划触发时提醒（开发中）
-- **多数据源** — 支持 Tushare / 西股数据 / NeoData 切换（开发中）
+- **数据看板** — 持仓总览（市值/盈亏/收益率/今日涨跌）、类型/领域分布图表、净值走势
+- **多数据源** — 支持 Tushare（fund_nav/fund_daily），westock/neodata 预留，未配置时自动模拟数据
+- **ETF 映射** — 场外↔场内 ETF 映射表，用于 Prompt 生成时补充 K 线
 - **多 AI 平台** — 支持 DeepSeek / OpenAI / Google AI Studio / 自定义 API
 - **多存储后端** — 本地 IndexedDB（默认），可选 Notion 同步（开发中）
 - **PWA** — 可安装到桌面/手机，离线可用
@@ -34,21 +32,70 @@
 
 ## 快速开始
 
+### 前置要求
+
+- Node.js 22+
+- npm 10+
+
+### 安装 & 运行
+
 ```bash
-# 安装依赖
+# 1. 克隆仓库
+git clone https://github.com/freakingryan/fund-assistant.git
+cd fund-assistant
+
+# 2. 安装依赖（--force 解决 peer dep 冲突）
 npm install --force
 
-# 开发模式
+# 3. 开发模式（默认 http://localhost:5173）
 npm run dev
+```
 
-# 构建
+Vite 支持 HMR，修改代码后浏览器自动热更新。
+
+### 构建 & 预览
+
+```bash
+# 构建产物输出到 dist/
 npm run build
 
-# 预览构建结果
+# 本地预览构建结果
 npm run preview
 ```
 
-> **注意**：如果遇到 `EBADENGINE` 或 TLS 相关错误，请在命令前添加 `NODE_OPTIONS=""`。
+### 配置数据源（可选）
+
+数据源可在「设置」页面中配置，也可直接在浏览器控制台配置：
+
+**Tushare**（推荐，需注册 [tushare.pro](https://tushare.pro) 获取 Token）：
+1. 打开应用 → 设置 → 数据源
+2. 选择「Tushare」
+3. 填写你的 Tushare Token
+4. 未配置时自动使用模拟数据，不影响核心功能试用
+
+### 配置 AI（可选）
+
+AI 功能用于持仓截图识别和基金信息自动补全，在「设置 → AI 平台」中配置：
+
+| 平台 | API Key 获取地址 |
+|------|-----------------|
+| DeepSeek | [platform.deepseek.com](https://platform.deepseek.com) |
+| Google AI Studio | [aistudio.google.com](https://aistudio.google.com) |
+| OpenAI | [platform.openai.com](https://platform.openai.com) |
+| 自定义 | 自行填写 Base URL + API Key |
+
+> 💡 AI 功能是完全可选的。不配置也不影响持仓管理和看板等核心功能。
+
+### 常见问题
+
+| 问题 | 解决 |
+|------|------|
+| `EBADENGINE` / TLS 错误 | 命令前加 `NODE_OPTIONS=""`，如 `NODE_OPTIONS="" npm run dev` |
+| `ERESOLVE unable to resolve dependency tree` | 使用 `npm install --force` |
+| 端口被占用 | Vite 会自动切换到下一个可用端口，注意终端输出提示 |
+| 开发服务器退出后无法访问 | Vite 进程依赖当前会话，重新运行 `npm run dev` 即可 |
+| 数据存在哪里？ | 所有数据存储在浏览器 IndexedDB 中，清除浏览器数据会丢失。可在「设置→存储」中选择外部存储（开发中） |
+| 需要数据库或后端吗？ | **不需要**。纯前端应用，零后端，IndexedDB 本地持久化 |
 
 ## 纯静态部署
 

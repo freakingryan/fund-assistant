@@ -8,13 +8,13 @@ import { usePlansStore } from './stores/plans'
 export default function App() {
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const loadSettings = useSettingsStore((s) => s.loadSettings)
-  const loadPlans = usePlansStore((s) => s.loadPlans)
+  const loadPlan = usePlansStore((s) => s.loadPlan)
 
   useEffect(() => {
     loadSettings()
     loadHoldings()
-    loadPlans()
-  }, [loadSettings, loadHoldings, loadPlans])
+    loadPlan()
+  }, [loadSettings, loadHoldings, loadPlan])
 
   return <RouterProvider router={router} />
 }

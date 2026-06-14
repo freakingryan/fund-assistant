@@ -142,9 +142,9 @@ export default function HoldingsTable() {
       header: '参考市值',
       cell: ({ row }) => {
         const { costNAV, shares, holdingAmount, holdingProfit } = row.original
-        // 优先用方式一：成本×份额；否则用方式二：投入+收益
+        // 优先用方式一：成本×份额；否则用方式二：持有金额（已含收益）
         const mv = (costNAV && shares) ? costNAV * shares
-          : (holdingAmount) ? holdingAmount + (holdingProfit || 0)
+          : (holdingAmount) ? holdingAmount
           : 0
         return mv ? <span className="font-mono text-sm font-medium">¥{mv.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
@@ -263,7 +263,7 @@ export default function HoldingsTable() {
                 >
                   {col.id === 'select' ? '选择' :
                    col.id === 'marketValue' ? '参考市值' :
-                   col.id === 'holdingAmount' ? '投入金额' :
+                   col.id === 'holdingAmount' ? '持有金额' :
                    col.id === 'holdingProfit' ? '持有收益' :
                    col.id === 'purchaseDate' ? '日期' :
                    col.id === 'tags' ? '标签' :
@@ -334,7 +334,7 @@ export default function HoldingsTable() {
         {selectedIds.length > 0 && `，已选 ${selectedIds.length} 只`}
         {holdings.length > 0 && ` | 参考市值: ¥${holdings.reduce((sum, h) => sum + (
           (h.costNAV && h.shares) ? h.costNAV * h.shares
-          : h.holdingAmount ? h.holdingAmount + (h.holdingProfit || 0)
+          : h.holdingAmount ? h.holdingAmount
           : 0
         ), 0).toFixed(2)}`}
       </div>

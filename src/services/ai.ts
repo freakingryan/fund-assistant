@@ -221,4 +221,36 @@ export async function fetchFundInfoByCodes(codes: string[]): Promise<
   return results.map((r, i) => ({ code: codes[i], ...r }))
 }
 
+/**
+ * 查询场外基金对应的场内 ETF 代码
+ */
+export async function fetchEtfMapping(otcCode: string): Promise<{
+  otcCode: string
+  otcName: string
+  exchangeCode: string
+  exchangeName: string
+} | null> {
+  const ai = getDefaultAI()
+  if (!ai) return null
+
+  const prompt = `请查询场外基金 "${otcCode}" 对应的场内 ETF 信息。如果该基金有对应的场内 ETF 可交易品种，返回严格 JSON：
+{
+  "otcCode": "${otcCode}",
+  "otcName": "场外基金全称",
+  "exchangeCode": "对应场内 ETF 代码，如 512880",
+  "exchangeName": "对应场内 ETF 名称"
+}
+如果找不到对应场内 ETF，返回 null。只返回 JSON，不要其他内容。`
+
+  try {
+    const response = await callAI(ai, [{ role: 'user', content: prompt }])
+    const jsonMatch = response.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0])
+      if (result && result.exchangeCode) return result
+    }
+  } catch { /* fallback */ }
+  return null
+}
+
 export { getDefaultAI }
