@@ -47,25 +47,31 @@ export default function HoldingsTable() {
     holdingProfit: false,
   })
 
+  // 根据类型筛选持仓
   const filteredHoldings = useMemo(() => {
     return typeFilter === 'all'
       ? holdings
       : holdings.filter((h) => h.type === typeFilter)
   }, [holdings, typeFilter])
 
+  // 稳定的引用，避免因 selectedIds 频繁变化导致 useMemo 重算
   const allSelected = holdings.length > 0 && selectedIds.length === holdings.length
   const someSelected = selectedIds.length > 0 && !allSelected
 
   const columns = useMemo(() => [
     columnHelper.display({
       id: 'select',
-      header: () => (
-        <Checkbox
-          checked={allSelected}
-          data-state={someSelected ? 'indeterminate' : undefined}
-          onCheckedChange={() => allSelected ? clearSelection() : selectAll()}
-        />
-      ),
+      header: ({ table }) => {
+        const checked = holdings.length > 0 && selectedIds.length === holdings.length
+        const indeterminate = selectedIds.length > 0 && !checked
+        return (
+          <Checkbox
+            checked={checked}
+            data-state={indeterminate ? 'indeterminate' : undefined}
+            onCheckedChange={() => checked ? clearSelection() : selectAll()}
+          />
+        )
+      },
       cell: ({ row }) => (
         <Checkbox
           checked={selectedIds.includes(row.original.id)}
@@ -181,7 +187,7 @@ export default function HoldingsTable() {
       ),
       size: 50,
     }),
-  ], [allSelected, someSelected, selectedIds, toggleSelected, selectAll, clearSelection, removeHolding])
+  ], [selectedIds, toggleSelected, selectAll, clearSelection, removeHolding])
 
   const table = useReactTable({
     data: filteredHoldings,
