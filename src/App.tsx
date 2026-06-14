@@ -10,6 +10,7 @@ export default function App() {
   const loadSettings = useSettingsStore((s) => s.loadSettings)
   const loadPlan = usePlansStore((s) => s.loadPlan)
 
+  // 初始化数据
   useEffect(() => {
     loadSettings()
     loadHoldings()

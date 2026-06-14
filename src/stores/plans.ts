@@ -159,7 +159,10 @@ export const usePlansStore = create<PlansState>((set, get) => ({
       if (!q) continue
 
       const nav = q.nav
-      const costValue = h.costNAV && h.shares ? h.costNAV * h.shares : (h.holdingAmount && h.holdingProfit !== undefined ? h.holdingAmount - h.holdingProfit : 0)
+      // C5 fix: 确保 holdingProfit 不会产生 NaN
+      const costValue = h.costNAV && h.shares
+        ? h.costNAV * h.shares
+        : (h.holdingAmount ? h.holdingAmount - (h.holdingProfit ?? 0) : 0)
       const costNAV = h.shares && h.costNAV ? h.costNAV : (costValue && h.shares ? costValue / h.shares : 0)
 
       // 当前收益率

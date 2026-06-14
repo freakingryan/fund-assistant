@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { BarChart3 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import ImportDialog from './ImportDialog'
 import AddFundDialog from './AddFundDialog'
@@ -40,7 +41,7 @@ export default function HoldingsPage() {
             </div>
           ) : holdings.length === 0 ? (
             <div className="text-center py-12 space-y-3">
-              <div className="text-4xl">📊</div>
+              <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground/30" />
               <p className="text-sm text-muted-foreground">
                 暂无持仓数据。点击上方「添加基金」手动录入，或「导入」批量导入。
               </p>

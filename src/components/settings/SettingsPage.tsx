@@ -28,6 +28,8 @@ export default function SettingsPage() {
   const [etfAiLoading, setEtfAiLoading] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
 
+  const etfMappings = settings.etfMappings
+
   const handleSave = async (action: string, fn: () => Promise<void>) => {
     setSaving(action)
     try { await fn() } catch {}
@@ -110,7 +112,7 @@ export default function SettingsPage() {
                       onChange={(e) => {
                         const others = settings.aiConfigs.filter((c) => c.provider !== provider)
                         const newConfigs = e.target.value
-                          ? [...others, { provider, apiKey: e.target.value, model: cfg?.model }]
+                          ? [...others, { ...cfg, provider, apiKey: e.target.value }]
                           : others
                         updateAIConfig(newConfigs)
                       }}

@@ -137,7 +137,7 @@ export default function PlansPage() {
 
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<PlanRule | null>(null)
-  const [activeTab, setActiveTab] = useState<'rules' | 'alerts'>('rules')
+  const [activeTab, setActiveTab] = useState<'rules' | 'alerts' | 'history'>('rules')
 
   useEffect(() => {
     loadPlan()

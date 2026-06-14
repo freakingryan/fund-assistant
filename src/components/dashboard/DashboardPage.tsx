@@ -76,12 +76,17 @@ export default function DashboardPage() {
   }, [holdings])
 
   // Load K-line for selected fund
+  // C3 fix: 用 cancelled 标志防止竞态
   useEffect(() => {
     if (!selectedFund) return
+    let cancelled = false
     setKlineLoading(true)
     dataSourceService.fetchKLine(selectedFund.code, selectedPeriod).then((data) => {
-      setKlineData(data)
-    }).finally(() => setKlineLoading(false))
+      if (!cancelled) setKlineData(data)
+    }).finally(() => {
+      if (!cancelled) setKlineLoading(false)
+    })
+    return () => { cancelled = true }
   }, [selectedFund, selectedPeriod])
 
   // Calc summary
@@ -90,12 +95,12 @@ export default function DashboardPage() {
     const totalCost = holdings.reduce((s, h) => s + calcCost(h), 0)
     const totalProfit = totalValue - totalCost
     const avgReturn = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0
-    const todayChange = quotes.length > 0
+    // C2 fix: 确保 totalValue > 0 才计算，正确换算为百分比
+    const todayChange = totalValue > 0 && quotes.length > 0
       ? holdings.reduce((s, h) => {
           const q = quotes.find((q) => q.code === h.code)
-          if (!q) return s
-          return s + calcValue(h) * q.dailyChange / 100
-        }, 0) / (totalValue || 1)
+          return s + (q ? calcValue(h) * q.dailyChange / 100 : 0)
+        }, 0) / totalValue * 100
       : 0
     return { totalValue, totalCost, totalProfit, avgReturn, todayChange }
   }, [holdings, quotes])
