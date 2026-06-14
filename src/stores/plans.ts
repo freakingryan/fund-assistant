@@ -148,6 +148,12 @@ export const usePlansStore = create<PlansState>((set, get) => ({
     const alerts: PlanAlert[] = []
     const now = new Date().toISOString()
 
+    // C3 fix: 加载已有未处理的提醒用于去重
+    const existingAlerts = await db.alerts
+      .filter((a) => !a.executed && !a.dismissed)
+      .toArray()
+    const existingKeys = new Set(existingAlerts.map((a) => `${a.fundCode}|${a.ruleId}`))
+
     for (const h of holdings) {
       const q = quoteMap.get(h.code)
       if (!q) continue
@@ -160,6 +166,9 @@ export const usePlansStore = create<PlansState>((set, get) => ({
       const returnRate = costNAV > 0 ? ((nav - costNAV) / costNAV) * 100 : 0
 
       for (const rule of enabledRules) {
+        // C3 fix: 跳过已有未处理的相同 fundCode+ruleId
+        if (existingKeys.has(`${h.code}|${rule.id}`)) continue
+
         let triggered = false
         let reason = ''
 
@@ -187,6 +196,30 @@ export const usePlansStore = create<PlansState>((set, get) => ({
               triggered = true
               reason = `今日涨跌幅 ${q.dailyChange >= 0 ? '+' : ''}${q.dailyChange.toFixed(2)}% ${cmpLabel(rule.comparator)} ${rule.threshold}%`
             }
+            break
+          }
+          case 'dca': {
+            // I3 fix: 检查最后提醒日期，超过间隔天数则触发
+            const lastAlert = await db.alerts
+              .filter((a) => a.fundCode === h.code && a.ruleType === 'dca')
+              .reverse()
+              .first()
+            if (!lastAlert) {
+              triggered = true
+              reason = `定期定投提醒：已过 ${rule.threshold} 天未定投`
+            } else {
+              const daysSince = (Date.now() - new Date(lastAlert.triggeredAt).getTime()) / 86400000
+              if (daysSince >= rule.threshold) {
+                triggered = true
+                reason = `定期定投提醒：距上次 ${Math.round(daysSince)} 天`
+              }
+            }
+            break
+          }
+          case 'kline_pattern': {
+            // I3 fix: 标记为手动类型，提示用户
+            reason = `K 线形态诊断（手动触发）`
+            // 不自动触发，需要用户手动点击 AI 诊断
             break
           }
         }

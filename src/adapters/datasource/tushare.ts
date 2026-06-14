@@ -3,13 +3,27 @@ import type { FundDataSource } from './base'
 import { useSettingsStore } from '@/stores/settings'
 
 /**
+ * Tushare 通用响应结构
+ */
+interface TushareResponse<T = any> {
+  code: number
+  msg?: string
+  data?: {
+    fields: string[]
+    items: T[]
+  }
+  items?: T[]
+}
+
+/**
+ * 按 fields 映射后的行对象
+ */
+type RowObject = Record<string, string | number | undefined>
+
+/**
  * Tushare 数据源适配器
- * 
+ *
  * API 文档：https://tushare.pro/document/2
- * 
- * 注意：浏览器直接调用 Tushare API 可能遇到 CORS 限制。
- * 如果跨域，可以通过 CloudStudio Pages Functions 或类似方案做代理。
- * 当前默认走直接调用，配置 CORS 代理 URL 可在设置中切换。
  */
 export class TushareAdapter implements FundDataSource {
   name = 'tushare'
@@ -18,15 +32,15 @@ export class TushareAdapter implements FundDataSource {
     return useSettingsStore.getState().settings.dataSource.tushareToken
   }
 
-  private async call(apiName: string, params: Record<string, unknown> = {}, fields: string[] = []): Promise<any> {
+  private async call<T = RowObject>(
+    apiName: string,
+    params: Record<string, unknown> = {},
+    fields: string[] = [],
+  ): Promise<TushareResponse<T>> {
     const token = this.token
     if (!token) throw new Error('Tushare Token 未配置')
 
-    const body: any = {
-      api_name: apiName,
-      token,
-      params,
-    }
+    const body: Record<string, any> = { api_name: apiName, token, params }
     if (fields.length > 0) body.fields = fields.join(',')
 
     const res = await fetch('https://api.tushare.pro', {
@@ -40,14 +54,14 @@ export class TushareAdapter implements FundDataSource {
     const json = await res.json()
     if (json.code !== 0) throw new Error(`Tushare error: ${json.msg}`)
 
-    // Convert to array of objects using fields as keys
-    if (json.data && fields.length > 0) {
+    // I1 fix: 按 fields 映射为对象数组
+    if (json.data && fields.length > 0 && Array.isArray(json.data.items)) {
       return {
         ...json,
         items: json.data.items.map((item: any[]) => {
-          const obj: Record<string, any> = {}
+          const obj: RowObject = {}
           fields.forEach((f, i) => { obj[f] = item[i] })
-          return obj
+          return obj as T
         }),
       }
     }
@@ -61,34 +75,30 @@ export class TushareAdapter implements FundDataSource {
 
   async fetchFundInfo(code: string): Promise<{ name: string; type: string }> {
     const data = await this.call('fund_basic', { ts_code: code }, [
-      'ts_code', 'name', 'fund_type', 'management',
+      'ts_code', 'name', 'fund_type',
     ])
     const item = data?.items?.[0]
     return {
-      name: item?.name || code,
-      type: item?.fund_type || '股票型',
+      name: (item as any)?.name || code,
+      type: (item as any)?.fund_type || '股票型',
     }
   }
 
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
-    // Tushare fund_nav 获取最新净值
     const data = await this.call('fund_nav', {
       ts_code: codes.join(','),
       end_date: new Date().toISOString().slice(0, 10).replace(/-/g, ''),
-    }, [
-      'ts_code', 'nav_date', 'unit_nav', 'accum_nav', 'adj_nav',
-    ])
+    }, ['ts_code', 'nav_date', 'unit_nav', 'accum_nav', 'adj_nav'])
 
     if (!data?.items) return []
 
     const quoteMap = new Map<string, any>()
-    for (const item of data.items) {
+    for (const item of data.items as any[]) {
       if (!quoteMap.has(item.ts_code)) {
         quoteMap.set(item.ts_code, item)
       }
     }
 
-    // Get daily change from fund_daily
     let changesMap = new Map<string, number>()
     try {
       const dailyData = await this.call('fund_daily', {
@@ -96,7 +106,7 @@ export class TushareAdapter implements FundDataSource {
         trade_date: new Date().toISOString().slice(0, 10).replace(/-/g, ''),
       }, ['ts_code', 'pct_chg'])
       if (dailyData?.items) {
-        for (const item of dailyData.items) {
+        for (const item of dailyData.items as any[]) {
           changesMap.set(item.ts_code, item.pct_chg || 0)
         }
       }
@@ -128,16 +138,16 @@ export class TushareAdapter implements FundDataSource {
 
     if (!data?.items) return []
 
-    return data.items
-      .map((item: any) => ({
-        date: item.nav_date,
-        open: item.unit_nav || 0,
-        close: item.unit_nav || 0,
-        high: item.unit_nav || 0,
-        low: item.unit_nav || 0,
-        volume: 0,
-      }))
-      .reverse()
+    // I2 fix: 基金净值无 OHLC，用前一日净值作为 open
+    const items = (data.items as any[]).reverse()
+    return items.map((item, idx) => ({
+      date: item.nav_date,
+      open: items[idx + 1]?.unit_nav ?? item.unit_nav,  // 前一日净值 ≈ "开盘"
+      close: item.unit_nav,
+      high: item.unit_nav,
+      low: item.unit_nav,
+      volume: 0,
+    }))
   }
 }
 

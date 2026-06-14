@@ -158,6 +158,7 @@ export interface NotionConfig {
 }
 
 export interface UserSettings {
+  id?: string           // Dexie 主键，总是 'user-settings'
   theme: 'light' | 'dark' | 'system'
   aiConfigs: AIConfig[]
   defaultAIProvider: AIProvider

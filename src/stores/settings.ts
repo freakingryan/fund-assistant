@@ -35,7 +35,7 @@ interface SettingsState {
   removeEtfMapping: (index: number) => Promise<void>
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: defaultSettings,
   loading: false,
 
@@ -54,60 +54,57 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
   },
 
+  // C2 fix: use current settings as base, not defaults
   updateSettings: async (data) => {
-    const updated = { ...defaultSettings, ...data }
+    const current = get().settings
+    const updated = { ...current, ...data }
     await db.settings.put({ ...updated, id: 'user-settings' })
     set({ settings: updated })
   },
 
+  // I4 fix: use get/set with proper await
   updateAIConfig: async (aiConfigs) => {
-    set((s) => {
-      const updated = { ...s.settings, aiConfigs }
-      db.settings.put({ ...updated, id: 'user-settings' })
-      return { settings: updated }
-    })
+    const current = get().settings
+    const updated = { ...current, aiConfigs }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
   },
 
   updateDataSource: async (dataSource) => {
-    set((s) => {
-      const updated = { ...s.settings, dataSource: { ...s.settings.dataSource, ...dataSource } }
-      db.settings.put({ ...updated, id: 'user-settings' })
-      return { settings: updated }
-    })
+    const current = get().settings
+    const updated = { ...current, dataSource: { ...current.dataSource, ...dataSource } }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
   },
 
   updateStorage: async (storage) => {
-    set((s) => {
-      const updated = { ...s.settings, storage: { ...s.settings.storage, ...storage } }
-      db.settings.put({ ...updated, id: 'user-settings' })
-      return { settings: updated }
-    })
+    const current = get().settings
+    const updated = { ...current, storage: { ...current.storage, ...storage } }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
   },
 
   updateNotifications: async (notifications) => {
-    set((s) => {
-      const updated = { ...s.settings, notifications: { ...s.settings.notifications, ...notifications } }
-      db.settings.put({ ...updated, id: 'user-settings' })
-      return { settings: updated }
-    })
+    const current = get().settings
+    const updated = { ...current, notifications: { ...current.notifications, ...notifications } }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
   },
 
   addEtfMapping: async (otcCode, otcName, exchangeCode, exchangeName) => {
-    set((s) => {
-      const updated = {
-        ...s.settings,
-        etfMappings: [...s.settings.etfMappings, { otcCode, otcName, exchangeCode, exchangeName }],
-      }
-      db.settings.put({ ...updated, id: 'user-settings' })
-      return { settings: updated }
-    })
+    const current = get().settings
+    const updated = {
+      ...current,
+      etfMappings: [...current.etfMappings, { otcCode, otcName, exchangeCode, exchangeName }],
+    }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
   },
 
   removeEtfMapping: async (index) => {
-    set((s) => {
-      const updated = { ...s.settings, etfMappings: s.settings.etfMappings.filter((_, i) => i !== index) }
-      db.settings.put({ ...updated, id: 'user-settings' })
-      return { settings: updated }
-    })
+    const current = get().settings
+    const updated = { ...current, etfMappings: current.etfMappings.filter((_, i) => i !== index) }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
   },
 }))
