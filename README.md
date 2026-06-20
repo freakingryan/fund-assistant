@@ -12,6 +12,9 @@
 - **数据看板** — 持仓总览（市值/盈亏/收益率/今日涨跌）、类型/领域分布图表、净值走势
 - **多数据源** — 支持 Tushare（MCP/HTTP）、AKShare（本地 AKTools）、东方财富（JSONP 免费接口），westock/neodata 预留，未配置时自动模拟数据
 - **ETF 映射** — 场外↔场内 ETF 映射表，用于 Prompt 生成时补充 K 线
+- **场内 ETF 真实 K 线** 🆕 — 通过 AKShare 获取场内 ETF 日频/分钟级真实 OHLC + 成交量数据，绘制标准蜡烛图（需配置 AKTools）
+- **基金持仓穿透** 🆕 — 查看基金前十大重仓股与行业分布（需配置 AKTools）
+- **基金排行筛选** 🆕 — 按近 1 月/3 月/1 年收益筛选推荐基金（需配置 AKTools）
 - **多 AI 平台** — 支持 DeepSeek / OpenAI / Google AI Studio / 自定义 API
 - **多存储后端** — 本地 IndexedDB（默认），可选 Notion 同步（开发中）
 - **PWA** — 可安装到桌面/手机，离线可用
