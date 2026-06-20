@@ -9,7 +9,8 @@ import { Key, Database, BellRing, Globe, SunMoon, Save, Link, Plus, Trash2, Spar
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
-import { fetchEtfMapping, getDefaultAI } from '@/services/ai'
+import { fetchEtfMapping, testAIConnection } from '@/services/ai'
+import { toast } from '@/components/ui/toast'
 
 export default function SettingsPage() {
   const settings = useSettingsStore((s) => s.settings)
@@ -27,6 +28,7 @@ export default function SettingsPage() {
   const [newExName, setNewExName] = useState('')
   const [etfAiLoading, setEtfAiLoading] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [testingAi, setTestingAi] = useState<string | null>(null)
 
   const etfMappings = settings.etfMappings
 
@@ -70,19 +72,36 @@ export default function SettingsPage() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="tushare">Tushare</SelectItem>
+                    <SelectItem value="akshare">AKShare（本地 AKTools）</SelectItem>
                     <SelectItem value="westock">西股数据</SelectItem>
                     <SelectItem value="neodata">NeoData</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Tushare Token</Label>
+                <div className="flex items-center justify-between">
+                  <Label>Tushare Token</Label>
+                  <span className="text-[10px] text-muted-foreground">已在 MCP 配置中管理</span>
+                </div>
                 <Input
                   type="password"
                   value={settings.dataSource.tushareToken}
                   onChange={(e) => updateDataSource({ tushareToken: e.target.value })}
-                  placeholder="输入 Tushare API Token"
+                  placeholder="可选 — 供浏览器端直接调用 Tushare HTTP API"
+                  className="flex-1"
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>AKTools 地址</Label>
+                <Input
+                  value={settings.dataSource.akshareURL || ''}
+                  onChange={(e) => updateDataSource({ akshareURL: e.target.value })}
+                  placeholder="http://127.0.0.1:8080（默认）"
+                  className="flex-1"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  需要本地运行 <code className="bg-muted px-1 rounded">python -m aktools</code>，或自行部署 AKShare HTTP API
+                </p>
               </div>
               <Button size="sm" disabled={saving === 'ds'} onClick={() => handleSave('ds', async () => {})}>
                 {saving === 'ds' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
@@ -100,30 +119,91 @@ export default function SettingsPage() {
               <CardDescription>添加 AI 平台 API Key，用于持仓截图识别和基金自动补全</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {(['deepseek', 'google', 'openai'] as const).map((provider) => {
+              {/* 默认 AI 平台选择 */}
+              <div className="space-y-2">
+                <Label>默认 AI 平台</Label>
+                <Select
+                  value={settings.defaultAIProvider}
+                  onValueChange={(v) => updateSettings({ defaultAIProvider: v as any })}
+                >
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择默认使用的平台" /></SelectTrigger>
+                  <SelectContent>
+                    {settings.aiConfigs.filter((c) => c.apiKey).map((c) => (
+                      <SelectItem key={c.provider} value={c.provider}>
+                        {c.provider === 'google' ? 'Google AI Studio' :
+                         c.provider === 'groq' ? 'Groq' :
+                         c.provider === 'openrouter' ? 'OpenRouter' :
+                         c.provider.charAt(0).toUpperCase() + c.provider.slice(1)}
+                      </SelectItem>
+                    ))}
+                    {settings.aiConfigs.filter((c) => c.apiKey).length === 0 && (
+                      <SelectItem value="" disabled>请先配置并测试通过 API Key</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  已配置且测试通过的平台才会出现在下拉列表中
+                </p>
+              </div>
+
+              <Separator />
+
+              {(['deepseek', 'google', 'openai', 'groq', 'openrouter'] as const).map((provider) => {
                 const cfg = settings.aiConfigs.find((c) => c.provider === provider)
                 const key = cfg?.apiKey || ''
+                const testing = testingAi === provider
+                const providerLabel = provider === 'google' ? 'Google AI Studio' :
+                  provider === 'groq' ? 'Groq' :
+                  provider === 'openrouter' ? 'OpenRouter' :
+                  provider.charAt(0).toUpperCase() + provider.slice(1)
                 return (
                   <div key={provider} className="space-y-2">
-                    <Label className="capitalize">{provider === 'google' ? 'Google AI Studio' : provider} API Key</Label>
-                    <Input
-                      type="password"
-                      value={key}
-                      onChange={(e) => {
-                        const others = settings.aiConfigs.filter((c) => c.provider !== provider)
-                        const newConfigs = e.target.value
-                          ? [...others, { ...cfg, provider, apiKey: e.target.value }]
-                          : others
-                        updateAIConfig(newConfigs)
-                      }}
-                      placeholder={provider === 'google' ? 'AIza...' : 'sk-...'}
-                    />
+                    <Label className="text-xs flex items-center gap-1">
+                      {providerLabel} API Key
+                      {key && <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />}
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="password"
+                        value={key}
+                        onChange={(e) => {
+                          const others = settings.aiConfigs.filter((c) => c.provider !== provider)
+                          const newConfigs = e.target.value
+                            ? [...others, { ...cfg, provider, apiKey: e.target.value }]
+                            : others
+                          updateAIConfig(newConfigs)
+                        }}
+                        placeholder={provider === 'google' ? 'AIza...' :
+                          provider === 'groq' ? 'gsk_...' :
+                          provider === 'openrouter' ? 'sk-or-v1-...' :
+                          'sk-...'}
+                        className="flex-1"
+                      />
+                      <Button
+                        variant={key ? 'outline' : 'secondary'} size="sm" className="h-9 shrink-0 text-xs"
+                        disabled={!key || testing}
+                        onClick={async () => {
+                          setTestingAi(provider)
+                          const result = await testAIConnection({ ...cfg, provider, apiKey: key })
+                          // 测试失败 → 清除 Key
+                          if (!result.ok) {
+                            const others = settings.aiConfigs.filter((c) => c.provider !== provider)
+                            updateAIConfig(others)
+                          }
+                          toast({ type: result.ok ? 'success' : 'error', message: result.message })
+                          setTestingAi(null)
+                        }}
+                      >
+                        {testing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                        测试
+                      </Button>
+                    </div>
                   </div>
                 )
               })}
               <Separator />
               <div className="space-y-2">
-                <Label>自定义 API</Label>
+                <Label className="text-xs">自定义 API</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     placeholder="Base URL"
@@ -139,27 +219,49 @@ export default function SettingsPage() {
                       }])
                     }}
                   />
-                  <Input
-                    type="password"
-                    placeholder="API Key"
-                    value={settings.aiConfigs.find((c) => c.provider === 'custom')?.apiKey || ''}
-                    onChange={(e) => {
-                      const others = settings.aiConfigs.filter((c) => c.provider !== 'custom')
-                      const existing = settings.aiConfigs.find((c) => c.provider === 'custom')
-                      updateAIConfig([...others, {
-                        provider: 'custom',
-                        apiKey: e.target.value,
-                        baseURL: existing?.baseURL,
-                        model: existing?.model,
-                      }])
-                    }}
-                  />
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      placeholder="API Key"
+                      value={settings.aiConfigs.find((c) => c.provider === 'custom')?.apiKey || ''}
+                      onChange={(e) => {
+                        const others = settings.aiConfigs.filter((c) => c.provider !== 'custom')
+                        const existing = settings.aiConfigs.find((c) => c.provider === 'custom')
+                        updateAIConfig([...others, {
+                          provider: 'custom',
+                          apiKey: e.target.value,
+                          baseURL: existing?.baseURL,
+                          model: existing?.model,
+                        }])
+                      }}
+                      className="flex-1"
+                    />
+                    {(() => {
+                      const custom = settings.aiConfigs.find((c) => c.provider === 'custom')
+                      const testing = testingAi === 'custom'
+                      return custom?.apiKey ? (
+                        <Button
+                          variant="outline" size="sm" className="h-9 shrink-0 text-xs"
+                          disabled={testing}
+                          onClick={async () => {
+                            setTestingAi('custom')
+                            const result = await testAIConnection(custom)
+                            if (!result.ok) {
+                              const others = settings.aiConfigs.filter((c) => c.provider !== 'custom')
+                              updateAIConfig(others)
+                            }
+                            toast({ type: result.ok ? 'success' : 'error', message: result.message })
+                            setTestingAi(null)
+                          }}
+                        >
+                          {testing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                          测试
+                        </Button>
+                      ) : null
+                    })()}
                 </div>
               </div>
-              <Button size="sm" disabled={saving === 'ai'} onClick={() => handleSave('ai', async () => {})}>
-                {saving === 'ai' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
-                保存
-              </Button>
+            </div>
             </CardContent>
           </Card>
         </TabsContent>

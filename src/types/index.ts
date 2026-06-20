@@ -138,7 +138,7 @@ export interface StorageAdapter {
   isConfigured(): boolean
 }
 
-export type AIProvider = 'deepseek' | 'google' | 'openai' | 'custom'
+export type AIProvider = 'deepseek' | 'google' | 'openai' | 'groq' | 'openrouter' | 'custom'
 
 export interface AIConfig {
   provider: AIProvider
@@ -149,7 +149,8 @@ export interface AIConfig {
 
 export interface DataSourceConfig {
   tushareToken: string
-  primarySource: 'tushare' | 'westock' | 'neodata'
+  primarySource: 'tushare' | 'westock' | 'neodata' | 'akshare'
+  akshareURL?: string
 }
 
 export interface NotionConfig {

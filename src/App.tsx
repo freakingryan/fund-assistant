@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useHoldingsStore } from './stores/holdings'
 import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
+import ToastContainer from './components/ui/toast'
 
 export default function App() {
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
@@ -17,5 +18,10 @@ export default function App() {
     loadPlan()
   }, [loadSettings, loadHoldings, loadPlan])
 
-  return <RouterProvider router={router} />
+  return (
+    <>
+      <RouterProvider router={router} />
+      <ToastContainer />
+    </>
+  )
 }

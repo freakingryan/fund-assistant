@@ -346,5 +346,5 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 | Phase 2 | ✅ 完成 | 持仓管理（CSV/截图/AI 批量录入） |
 | Phase 3 | ✅ 完成 | 数据看板 + Tushare 适配器 + ETF 映射 |
 | Phase 4 | ✅ 完成 | 投资计划引擎（全局规则 + 手动扫描 + Dashboard 集成） |
-| Phase 5 | ⏳ 待开始 | Prompt 生成器 + AI 集成 |
+| Phase 5 | ✅ 完成 | Prompt 生成器（诊断/调仓/K线增强） + 东方财富/ACShare 数据源 |
 | Phase 6 | ⏳ 待开始 | 通知 + 存储扩展 + 设置页 |

@@ -1,4 +1,5 @@
 import { useSettingsStore } from '@/stores/settings'
+import { dataSourceService } from '@/adapters/datasource/service'
 import type { AIConfig } from '@/types'
 
 /**
@@ -13,6 +14,8 @@ async function callAI(
   const endpoints: Record<string, string> = {
     deepseek: baseURL || 'https://api.deepseek.com/v1/chat/completions',
     openai: baseURL || 'https://api.openai.com/v1/chat/completions',
+    groq: baseURL || 'https://api.groq.com/openai/v1/chat/completions',
+    openrouter: baseURL || 'https://openrouter.ai/api/v1/chat/completions',
     google: baseURL || `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.0-flash'}:generateContent?key=${apiKey}`,
     custom: baseURL || 'https://api.openai.com/v1/chat/completions',
   }
@@ -20,6 +23,8 @@ async function callAI(
   const defaultModels: Record<string, string> = {
     deepseek: model || 'deepseek-chat',
     openai: model || 'gpt-4o',
+    groq: model || 'llama-3.3-70b-versatile',
+    openrouter: model || 'openai/gpt-4o',
     google: 'gemini-2.0-flash',
     custom: model || 'gpt-4o',
   }
@@ -178,7 +183,59 @@ export async function fetchFundInfoByCode(code: string): Promise<{
 }
 
 /**
+ * 通过数据源查询基金基本信息
+ */
+async function fetchFundInfoByDataSource(code: string): Promise<{
+  name: string
+  type: string
+  sector: string
+  description: string
+} | null> {
+  try {
+    const info = await dataSourceService.fetchFundInfo(code)
+    if (info && info.name !== code) {
+      return {
+        name: info.name,
+        type: classifyType(info.name, info.type),
+        sector: classifySector(info.name, info.type),
+        description: `${info.name}（${info.type}）`,
+      }
+    }
+  } catch { /* fallback to AI */ }
+  return null
+}
+
+/**
+ * 根据基金名称和类型推测投资领域
+ */
+function classifySector(name: string, type: string): string {
+  const n = name.toLowerCase()
+  if (n.includes('科技') || n.includes('信息') || n.includes('互联') || n.includes('半导体') || n.includes('芯片')) return 'tech'
+  if (n.includes('消费') || n.includes('白酒') || n.includes('食品') || n.includes('饮料') || n.includes('家电')) return 'consumer'
+  if (n.includes('医') || n.includes('药') || n.includes('健康') || n.includes('生物')) return 'healthcare'
+  if (n.includes('新能源') || n.includes('光伏') || n.includes('环保') || n.includes('碳中和') || n.includes('电池')) return 'new_energy'
+  if (n.includes('金融') || n.includes('银行') || n.includes('证券') || n.includes('保险') || n.includes('地产')) return 'finance'
+  if (n.includes('制造') || n.includes('工业') || n.includes('军工') || n.includes('机械') || n.includes('汽车')) return 'manufacturing'
+  if (n.includes('债券') || n.includes('债') || n.includes('纯债') || n.includes('中短债')) return 'bond_market'
+  if (n.includes('全球') || n.includes('海外') || n.includes('美国') || n.includes('纳斯达克') || n.includes('标普') || n.includes('恒生') || n.includes('日经') || n.includes('德国')) return 'global'
+  if (type === '指数型' || type === 'index' || n.includes('指数')) return 'broad_market'
+  return 'other'
+}
+
+function classifyType(name: string, type: string): string {
+  if (type && type !== '其他') return type
+  const n = name
+  if (n.includes('货币')) return '货币型'
+  if (n.includes('债券') || n.includes('债')) return '债券型'
+  if (n.includes('指数') || n.includes('ETF') || n.includes('联接')) return '指数型'
+  if (n.includes('QDII')) return 'QDII'
+  if (n.includes('混合') || n.includes('灵活')) return '混合型'
+  return '股票型'
+}
+
+/**
  * 批量查询多个基金代码
+ * 优先用数据源（东方财富 JSONP），查不到不编造数据，直接抛出明确的错误信息
  */
 export async function fetchFundInfoByCodes(codes: string[]): Promise<
   Array<{
@@ -189,36 +246,23 @@ export async function fetchFundInfoByCodes(codes: string[]): Promise<
     description: string
   }>
 > {
-  const ai = getDefaultAI()
-  if (!ai) throw new Error('请先在设置页配置 AI API Key')
+  const results: Array<any> = []
+  const failed: string[] = []
 
-  const prompt = `请查询以下基金代码的详细信息：${codes.join(', ')}
-返回严格 JSON 数组格式，每个元素为：
-{
-  "code": "基金代码",
-  "name": "基金全称",
-  "type": "股票型/混合型/债券型/指数型/QDII/货币型/ETF",
-  "sector": "科技/消费/医药/新能源/金融/制造/宽基/全球/债市/大宗商品/其他",
-  "description": "一句话简述"
-}
-只返回 JSON 数组，不要其他内容。`
-
-  const response = await callAI(ai, [{ role: 'user', content: prompt }])
-
-  try {
-    const jsonMatch = response.match(/\[[\s\S]*\]/)
-    if (jsonMatch) {
-      const arr = JSON.parse(jsonMatch[0])
-      if (Array.isArray(arr)) return arr
-    }
-  } catch { /* fallback */ }
-
-  // Fallback: single query
-  const results = []
   for (const code of codes) {
-    results.push(await fetchFundInfoByCode(code))
+    const info = await fetchFundInfoByDataSource(code)
+    if (info) {
+      results.push({ code, ...info })
+    } else {
+      failed.push(code)
+    }
   }
-  return results.map((r, i) => ({ code: codes[i], ...r }))
+
+  if (failed.length > 0) {
+    throw new Error(`以下基金代码查询失败，请手动填写：${failed.join('、')}`)
+  }
+
+  return results
 }
 
 /**
@@ -251,6 +295,25 @@ export async function fetchEtfMapping(otcCode: string): Promise<{
     }
   } catch { /* fallback */ }
   return null
+}
+
+/**
+ * 测试 AI API 联通性
+ */
+export async function testAIConnection(config: AIConfig): Promise<{ ok: boolean; message: string }> {
+  try {
+    const start = Date.now()
+    const response = await callAI(config, [
+      { role: 'user', content: '回复"ok"表示连接正常，不要其他内容。' },
+    ])
+    const elapsed = Date.now() - start
+    if (response.toLowerCase().includes('ok')) {
+      return { ok: true, message: `连接成功 (${elapsed}ms)` }
+    }
+    return { ok: true, message: `已响应 (${elapsed}ms): ${response.slice(0, 30)}` }
+  } catch (e) {
+    return { ok: false, message: `连接失败: ${e instanceof Error ? e.message : '未知错误'}` }
+  }
 }
 
 export { getDefaultAI }
