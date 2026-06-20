@@ -10,7 +10,7 @@
   - AI 批量查询自动补全基金名称、类型、投资领域
   - 自动归类基金类型（股票型/混合型/债券型等）和投资领域（科技/消费/医药等）
 - **数据看板** — 持仓总览（市值/盈亏/收益率/今日涨跌）、类型/领域分布图表、净值走势
-- **多数据源** — 支持 Tushare（fund_nav/fund_daily），westock/neodata 预留，未配置时自动模拟数据
+- **多数据源** — 支持 Tushare（MCP/HTTP）、AKShare（本地 AKTools）、东方财富（JSONP 免费接口），westock/neodata 预留，未配置时自动模拟数据
 - **ETF 映射** — 场外↔场内 ETF 映射表，用于 Prompt 生成时补充 K 线
 - **多 AI 平台** — 支持 DeepSeek / OpenAI / Google AI Studio / 自定义 API
 - **多存储后端** — 本地 IndexedDB（默认），可选 Notion 同步（开发中）
@@ -73,6 +73,15 @@ npm run preview
 3. 填写你的 Tushare Token
 4. 未配置时自动使用模拟数据，不影响核心功能试用
 
+**AKShare**（通过 [AKTools](https://aktools.akfamily.xyz/) 本地 HTTP API）：
+1. 安装 AKTools：`pip install aktools`
+2. 启动服务：`python -m aktools`（默认监听 `http://127.0.0.1:8080`）
+3. 打开应用 → 设置 → 数据源
+4. 选择「AKShare（本地 AKTools）」
+5. 确认 AKTools 地址（默认 `http://127.0.0.1:8080`）
+
+> AKTools 基于 FastAPI 构建，启动后自动允许跨域访问。数据来源与 AKShare 一致，覆盖公募基金基本信息、实时净值、历史净值等。支持自定义部署到远程服务器作为私有数据源网关。
+
 ### 配置 AI（可选）
 
 AI 功能用于持仓截图识别和基金信息自动补全，在「设置 → AI 平台」中配置：
@@ -96,6 +105,8 @@ AI 功能用于持仓截图识别和基金信息自动补全，在「设置 → 
 | 开发服务器退出后无法访问 | Vite 进程依赖当前会话，重新运行 `npm run dev` 即可 |
 | 数据存在哪里？ | 所有数据存储在浏览器 IndexedDB 中，清除浏览器数据会丢失。可在「设置→存储」中选择外部存储（开发中） |
 | 需要数据库或后端吗？ | **不需要**。纯前端应用，零后端，IndexedDB 本地持久化 |
+| AKShare 查询失败？ | 确认已安装 `pip install aktools` 且 `python -m aktools` 正在运行。默认连接 `http://127.0.0.1:8080`，可在设置页修改 |
+| 东方财富 API 报跨域错误？ | 东财接口不支持 `fetch()` 直接调用（无 CORS 头）。应用会自动使用 JSONP 方式绕过此限制，无需额外配置 |
 
 ## 纯静态部署
 
@@ -121,7 +132,8 @@ src/
 │   ├── prompts/     # Prompt 生成
 │   └── settings/    # 设置页
 ├── stores/          # Zustand 状态管理
-├── adapters/        # 适配器（存储/AI/数据源/通知）
+├── adapters/        # 适配器（数据源、存储、AI、通知）
+│   └── datasource/  # 数据源实现：Tushare、AKShare、东方财富、模拟
 ├── types/           # TypeScript 类型定义
 └── lib/             # 工具函数
 ```
