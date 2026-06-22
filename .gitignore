@@ -33,3 +33,4 @@ npm-debug.log*
 __pycache__/
 *.pyc
 aktools_env/
+*.log

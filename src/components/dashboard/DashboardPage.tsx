@@ -10,9 +10,10 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, LineChart, Line,
+  Tooltip, ResponsiveContainer, LineChart, Line, Legend,
 } from 'recharts'
 import CandlestickChart from './CandlestickChart'
+import { getKlineCache, setKlineCache } from '@/services/klineCache'
 import {
   TrendingUp, TrendingDown, Wallet, BarChart3, PieChartIcon,
   DollarSign, Percent, Loader2, AlertCircle,
@@ -133,23 +134,39 @@ export default function DashboardPage() {
     }).finally(() => setQuotesLoading(false))
   }, [holdings])
 
-  // Load K-line for selected fund — 优先使用场内 ETF 真实 K 线
+  // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线
   useEffect(() => {
     if (!selectedFund) return
     let cancelled = false
     setKlineLoading(true)
 
     const loadKline = async () => {
+      // 1) 尝试缓存
+      const cacheKey = etfCode && useEtfKline ? `etf_${etfCode}` : selectedFund.code
+      const cached = await getKlineCache(cacheKey, selectedPeriod)
+      if (!cancelled && cached && cached.length > 0) {
+        setKlineData(cached)
+        setKlineLoading(false)
+        return
+      }
+
+      // 2) 优先 ETF K 线
       if (etfCode && useEtfKline) {
         const data = await dataSourceService.fetchEtfKLine(etfCode, selectedPeriod)
         if (!cancelled && data.length > 0) {
+          setKlineCache(cacheKey, selectedPeriod, data)
           setKlineData(data)
           setKlineLoading(false)
           return
         }
       }
+
+      // 3) 回退到净值走势
       const data = await dataSourceService.fetchKLine(selectedFund.code, selectedPeriod)
-      if (!cancelled) setKlineData(data)
+      if (!cancelled) {
+        setKlineCache(cacheKey, selectedPeriod, data)
+        setKlineData(data)
+      }
       if (!cancelled) setKlineLoading(false)
     }
     loadKline()

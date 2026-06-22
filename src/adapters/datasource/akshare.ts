@@ -152,6 +152,61 @@ export class AKShareAdapter implements FundDataSource {
     if (n.includes('混合') || n.includes('灵活')) return '混合型'
     return '股票型'
   }
+
+  /**
+   * 查询场外基金对应的场内 ETF 代码
+   * 通过 fund_name_em 获取 OTC 基金名称 → fund_etf_spot_em 匹配 ETF
+   */
+  async queryEtfMapping(otcCode: string): Promise<{
+    otcCode: string
+    otcName: string
+    exchangeCode: string
+    exchangeName: string
+  } | null> {
+    try {
+      // 1) 获取 OTC 基金名称
+      const allFunds = await this.call<Record<string, any>>('fund_name_em')
+      const otcFund = allFunds.find((f: any) => String(f['基金代码'] || '') === otcCode)
+      if (!otcFund) return null
+
+      const otcName: string = otcFund['基金简称'] || otcFund['基金名称'] || ''
+
+      // 2) 从名称中提取主题关键词（去掉 "联接" "ETF" "C" 等后缀）
+      let keyword = otcName
+        .replace(/ETF/i, '')
+        .replace(/联接/i, '')
+        .replace(/C$/, '')
+        .replace(/A$/, '')
+        .replace(/\(QDII\)/i, '')
+        .replace(/指数/i, '')
+        .trim()
+
+      // 3) 获取所有场内 ETF
+      const etfList = await this.call<Record<string, any>>('fund_etf_spot_em')
+      // 先按完整名称匹配
+      let matched = etfList.find((e: any) => {
+        const eName: string = e['基金简称'] || e['name'] || ''
+        return eName.includes(keyword) || otcName.includes(eName)
+      })
+      // 没匹配到则按部分关键词匹配
+      if (!matched) {
+        const tokens = keyword.split(/[^\w\u4e00-\u9fff]/).filter(Boolean)
+        for (const token of tokens) {
+          if (token.length < 2) continue
+          matched = etfList.find((e: any) => {
+            const eName: string = e['基金简称'] || e['name'] || ''
+            return eName.includes(token)
+          })
+          if (matched) break
+        }
+      }
+      if (!matched) return null
+
+      const exCode: string = String(matched['基金代码'] || matched['ts_code'] || matched['code'] || '')
+      const exName: string = matched['基金简称'] || matched['name'] || ''
+      return { otcCode, otcName, exchangeCode: exCode, exchangeName: exName }
+    } catch { return null }
+  }
 }
 
 export const akshareAdapter = new AKShareAdapter()

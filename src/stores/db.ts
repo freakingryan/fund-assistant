@@ -6,6 +6,7 @@ export class FundAssistantDB extends Dexie {
   plans!: EntityTable<InvestmentPlan, 'id'>
   alerts!: EntityTable<PlanAlert, 'id'>
   settings!: EntityTable<UserSettings, 'id'>
+  klineCache!: EntityTable<{ id: string; code: string; period: string; data: any[]; cachedAt: number }, 'id'>
 
   constructor() {
     super('FundAssistantDB')
@@ -18,8 +19,12 @@ export class FundAssistantDB extends Dexie {
       alerts: 'id, fundCode, triggeredAt',
       settings: 'id',
     }).upgrade(async (tx) => {
-      // C4 fix: 记录迁移；v1 到 v2 的 planLogs→alerts 变更在开发阶段，无需迁移旧数据
       console.warn('[DB] Upgrading from v1 to v2')
+    })
+
+    // v3: klineCache — K 线数据本地缓存
+    this.version(3).stores({
+      klineCache: 'id, code, period, cachedAt',
     })
   }
 }

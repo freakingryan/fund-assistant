@@ -9,10 +9,11 @@
   - 仅需基金代码（必填），其余字段可选
   - AI 批量查询自动补全基金名称、类型、投资领域
   - 自动归类基金类型（股票型/混合型/债券型等）和投资领域（科技/消费/医药等）
-- **数据看板** — 持仓总览（市值/盈亏/收益率/今日涨跌）、类型/领域分布图表、净值走势
-- **多数据源** — 支持 Tushare（MCP/HTTP）、AKShare（本地 AKTools）、东方财富（JSONP 免费接口），westock/neodata 预留，未配置时自动模拟数据
-- **ETF 映射** — 场外↔场内 ETF 映射表，用于 Prompt 生成时补充 K 线
-- **场内 ETF 真实 K 线** 🆕 — 通过 AKShare 获取场内 ETF 日频/分钟级真实 OHLC + 成交量数据，绘制标准蜡烛图（需配置 AKTools）
+- **数据看板** — 持仓总览（市值/盈亏/收益率/今日涨跌）、类型/领域分布图表、净值走势、ETF 真实 K 线蜡烛图
+- **多数据源** — 支持 Tushare（MCP/HTTP）、AKShare（本地 AKTools，最推荐）、东方财富（JSONP 免费接口），未配置时自动模拟数据
+- **ETF 映射** — 场外↔场内 ETF 映射表，支持 AI 自动查询和 AKShare 名称匹配，添加基金时自动保存映射
+- **场内 ETF 真实 K 线** — 通过 AKShare 获取场内 ETF 日频真实 OHLC + 成交量数据，绘制标准 SVG 蜡烛图（需配置 AKTools）
+- **K 线数据缓存** — IndexedDB 缓存 K 线数据，按周期 15 分钟～4 小时 TTL，切换基金瞬间展示
 - **基金持仓穿透** 🆕 — 查看基金前十大重仓股与行业分布（需配置 AKTools）
 - **基金排行筛选** 🆕 — 按近 1 月/3 月/1 年收益筛选推荐基金（需配置 AKTools）
 - **多 AI 平台** — 支持 DeepSeek / OpenAI / Google AI Studio / 自定义 API
@@ -83,7 +84,9 @@ npm run preview
 4. 选择「AKShare（本地 AKTools）」
 5. 确认 AKTools 地址（默认 `http://127.0.0.1:8080`）
 
-> AKTools 基于 FastAPI 构建，启动后自动允许跨域访问。数据来源与 AKShare 一致，覆盖公募基金基本信息、实时净值、历史净值等。支持自定义部署到远程服务器作为私有数据源网关。
+> AKTools 基于 FastAPI 构建，启动后自动允许跨域访问。数据来源与 AKShare 一致，覆盖公募基金基本信息、实时净值、历史净值、场内 ETF 日频行情（含 OHLC + 成交量）等。支持自定义部署到远程服务器作为私有数据源网关。
+>
+> 💡 **AKShare 是最推荐的数据源**：无需注册、无需 Token、数据最完整（含 ETF 真实 K 线），只需本地 `pip install aktools && python -m aktools`。
 
 ### 配置 AI（可选）
 

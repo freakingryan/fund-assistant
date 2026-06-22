@@ -15,8 +15,8 @@ export default function CandlestickChart({ data, width = 480, height = 320 }: Pr
   const chartWidth = width - MARGIN.left - MARGIN.right
   const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - 8
 
-  const { xScale, yScale, volScale, candles } = useMemo(() => {
-    if (data.length === 0) return { xScale: 0, yScale: 0, volScale: 0, candles: [] }
+  const { yScale, candles } = useMemo(() => {
+    if (data.length === 0) return { yScale: { min: 0, max: 0 }, candles: [] }
 
     const high = Math.max(...data.map((d) => d.high))
     const low = Math.min(...data.map((d) => d.low))
@@ -24,12 +24,9 @@ export default function CandlestickChart({ data, width = 480, height = 320 }: Pr
     const yMin = low - pad
     const yMax = high + pad
 
-    const maxVol = Math.max(...data.map((d) => d.volume || 0), 1)
     const stepX = chartWidth / Math.max(data.length - 1, 1)
     const candleWidth = Math.max(3, stepX * 0.6)
-
     const scaleY = (v: number) => chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
-    const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT
 
     const candles = data.map((d, i) => {
       const cx = MARGIN.left + i * stepX
@@ -41,13 +38,12 @@ export default function CandlestickChart({ data, width = 480, height = 320 }: Pr
       return { d, cx, o, c, hi, lo, isUp, candleWidth }
     })
 
-    return {
-      xScale: stepX,
-      yScale: { min: yMin, max: yMax },
-      volScale: maxVol,
-      candles,
-    }
+    return { yScale: { min: yMin, max: yMax }, candles }
   }, [data, chartWidth, chartHeight])
+
+  // Volume scale — in component scope so JSX can access it
+  const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data])
+  const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT
 
   if (data.length === 0) return null
 
@@ -94,10 +90,8 @@ export default function CandlestickChart({ data, width = 480, height = 320 }: Pr
         const bodyBottom = Math.max(c.o, c.c)
         return (
           <g key={`c-${i}`}>
-            {/* Wick */}
             <line x1={c.cx} y1={c.hi} x2={c.cx} y2={c.lo}
               className={c.isUp ? 'stroke-red-500' : 'stroke-green-500'} strokeWidth={1} />
-            {/* Body */}
             <rect
               x={c.cx - c.candleWidth / 2}
               y={bodyTop}

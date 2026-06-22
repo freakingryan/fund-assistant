@@ -1,5 +1,6 @@
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
+import { akshareAdapter } from '@/adapters/datasource/akshare'
 import type { AIConfig } from '@/types'
 
 /**
@@ -267,6 +268,7 @@ export async function fetchFundInfoByCodes(codes: string[]): Promise<
 
 /**
  * 查询场外基金对应的场内 ETF 代码
+ * 优先级：AKShare 数据匹配 → AI 查询
  */
 export async function fetchEtfMapping(otcCode: string): Promise<{
   otcCode: string
@@ -274,6 +276,13 @@ export async function fetchEtfMapping(otcCode: string): Promise<{
   exchangeCode: string
   exchangeName: string
 } | null> {
+  // 1) 先尝试 AKShare 数据源（fund_name_em + fund_etf_spot_em 匹配）
+  try {
+    const result = await akshareAdapter.queryEtfMapping(otcCode)
+    if (result) return result
+  } catch { /* fallback to AI */ }
+
+  // 2) AI 查询（可能受 CORS 限制）
   const ai = getDefaultAI()
   if (!ai) return null
 

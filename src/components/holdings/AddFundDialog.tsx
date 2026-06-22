@@ -16,8 +16,9 @@ import {
   AlertCircle, Trash2, X,
 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
+import { useSettingsStore } from '@/stores/settings'
 import { autoClassify } from '@/lib/classification'
-import { fetchFundInfoByCodes, getDefaultAI } from '@/services/ai'
+import { fetchFundInfoByCodes, fetchEtfMapping, getDefaultAI } from '@/services/ai'
 import type { Market, FundType, FundSector } from '@/types'
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
@@ -74,6 +75,8 @@ function makeRow(code = ''): FundRow {
 export default function AddFundDialog() {
   const [open, setOpen] = useState(false)
   const addHolding = useHoldingsStore((s) => s.addHolding)
+  const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
+  const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
 
   const [rows, setRows] = useState<FundRow[]>([makeRow()])
   const [error, setError] = useState('')
@@ -163,6 +166,16 @@ export default function AddFundDialog() {
           description: match.description || '',
         }
       }))
+
+      // 自动保存 ETF 映射
+      for (const r of results) {
+        const alreadyMapped = etfMappings.some((m) => m.otcCode === r.code)
+        if (alreadyMapped) continue
+        const mapping = await fetchEtfMapping(r.code)
+        if (mapping?.exchangeCode) {
+          addEtfMapping(mapping.otcCode, mapping.otcName, mapping.exchangeCode, mapping.exchangeName)
+        }
+      }
     } catch (err) {
       setError(String(err))
     }

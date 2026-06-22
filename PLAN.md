@@ -303,10 +303,11 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 - 一键复制 + 平台适配
 - AI API Key 配置界面
 
-### Phase 6.1：场内 ETF 真实 K 线（P0 🔥）
+### Phase 6.1：场内 ETF 真实 K 线（P0 🔥✅）
 - AKShare `fund_etf_hist_em` → 日频 OHLC + 成交量
-- Dashboard K 线图由折线替换为标准蜡烛图（Recharts CandleStick 或 SVG 自定义）
-- 选择性支持分时图（`fund_etf_hist_min_em`）
+- Dashboard K 线图由折线替换为标准 SVG 蜡烛图
+- 自动回退：无 AKTools 时仍显示净值折线图
+- K 线数据本地 IndexedDB 缓存 + TTL 过期策略
 
 ### Phase 6.2：基金持仓穿透（P1）
 - AKShare `fund_portfolio` → 展示前十大重仓股及行业分布
@@ -360,7 +361,10 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 | Phase 3 | ✅ 完成 | 数据看板 + Tushare 适配器 + ETF 映射 |
 | Phase 4 | ✅ 完成 | 投资计划引擎（全局规则 + 手动扫描 + Dashboard 集成） |
 | Phase 5 | ✅ 完成 | Prompt 生成器（诊断/调仓/K线增强） + 东方财富/ACShare 数据源 |
-| Phase 6.1 | 🔜 已排期 | **场内 ETF 真实 K 线** — AKShare fund_etf_hist_em 替换模拟净值线，绘制标准蜡烛图 |
+| Phase 6.1 | ✅ 完成 | **场内 ETF 真实 K 线** — AKShare fund_etf_hist_em 真实 OHLC + 成交量，标准 SVG 蜡烛图 |
+| Phase 6.2 | 🔜 已排期 | **基金持仓穿透** — AKShare fund_portfolio 查看前十大重仓股与行业分布 |
+| Phase 6.3 | 🔜 已排期 | **基金排行筛选** — AKShare fund_open_fund_rank_em 推荐基金面板 |
+| Phase 6.4 | ⏳ 待开始 | 通知（Web Push）+ 存储扩展（Notion）+ 暗色模式 + 部署配置 |
 | Phase 6.2 | 🔜 已排期 | **基金持仓穿透** — AKShare fund_portfolio 查看前十大重仓股与行业分布 |
 | Phase 6.3 | 🔜 已排期 | **基金排行筛选** — AKShare fund_open_fund_rank_em 推荐基金面板 |
 | Phase 6.4 | ⏳ 待开始 | 通知（Web Push） + 存储扩展（Notion） + 暗色模式 + 部署配置 |
