@@ -129,43 +129,42 @@ export default function DashboardPage() {
     }).finally(() => setQuotesLoading(false))
   }, [holdings])
 
-  // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线
+  // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线（带安全超时）
   useEffect(() => {
     if (!selectedFund) return
     let cancelled = false
     setKlineLoading(true)
 
+    const timer = setTimeout(() => { if (!cancelled) setKlineLoading(false) }, 15000)
+
     const loadKline = async () => {
-      // 1) 尝试缓存
-      const cacheKey = etfCode && useEtfKline ? `etf_${etfCode}` : selectedFund.code
-      const cached = await getKlineCache(cacheKey, selectedPeriod)
-      if (!cancelled && cached && cached.length > 0) {
-        setKlineData(cached)
-        setKlineLoading(false)
-        return
-      }
+      const etfCacheKey = `etf_${etfCode}`
+      const navCacheKey = selectedFund.code
+      const cacheKey = useEtfKline ? etfCacheKey : navCacheKey
 
-      // 2) 优先 ETF K 线
-      if (etfCode && useEtfKline) {
-        const data = await dataSourceService.fetchEtfKLine(etfCode, selectedPeriod)
-        if (!cancelled && data.length > 0) {
-          setKlineCache(cacheKey, selectedPeriod, data)
-          setKlineData(data)
-          setKlineLoading(false)
-          return
-        }
-      }
-
-      // 3) 回退到净值走势
-      const data = await dataSourceService.fetchKLine(selectedFund.code, selectedPeriod)
+      const [cached, navCached] = await Promise.all([
+        getKlineCache(etfCacheKey, selectedPeriod),
+        getKlineCache(navCacheKey, selectedPeriod),
+      ])
       if (!cancelled) {
-        setKlineCache(cacheKey, selectedPeriod, data)
-        setKlineData(data)
+        if (useEtfKline && cached?.length) { clearTimeout(timer); setKlineData(cached); setKlineLoading(false); return }
+        if (!useEtfKline && navCached?.length) { clearTimeout(timer); setKlineData(navCached); setKlineLoading(false); return }
       }
-      if (!cancelled) setKlineLoading(false)
+
+      const [etfData, navData] = await Promise.all([
+        etfCode ? dataSourceService.fetchEtfKLine(etfCode, selectedPeriod) : Promise.resolve([]),
+        dataSourceService.fetchKLine(selectedFund.code, selectedPeriod),
+      ])
+      if (!cancelled) {
+        if (etfData.length > 0) setKlineCache(etfCacheKey, selectedPeriod, etfData)
+        if (navData.length > 0) setKlineCache(navCacheKey, selectedPeriod, navData)
+        clearTimeout(timer)
+        setKlineData(useEtfKline && etfData.length > 0 ? etfData : navData)
+        setKlineLoading(false)
+      }
     }
     loadKline()
-    return () => { cancelled = true }
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [selectedFund, selectedPeriod, etfCode, useEtfKline])
 
   // Calc summary
@@ -269,7 +268,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <TrendingUp className="h-3 w-3" />持仓盈亏
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.totalProfit >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${summary.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {summary.totalProfit >= 0 ? '+' : '-'}{formatCurrency(summary.totalProfit)}
             </p>
           </CardContent>
@@ -280,7 +279,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <Percent className="h-3 w-3" />持仓收益率
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.avgReturn >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${summary.avgReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {formatPercent(summary.avgReturn)}
             </p>
           </CardContent>
@@ -291,7 +290,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <BarChart3 className="h-3 w-3" />今日涨跌
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.todayChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${summary.todayChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {formatPercent(summary.todayChange)}
             </p>
           </CardContent>
@@ -369,7 +368,7 @@ export default function DashboardPage() {
             <div className="space-y-1">
               {holdings.slice(0, 5).map((h) => (
                 <div key={h.id}
-                  onClick={() => window.location.href = `/holdings/${h.id}`}
+                  onClick={() => window.location.href = `/detail/${h.id}`}
                   className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">

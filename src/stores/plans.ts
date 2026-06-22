@@ -154,6 +154,17 @@ export const usePlansStore = create<PlansState>((set, get) => ({
       .toArray()
     const existingKeys = new Set(existingAlerts.map((a) => `${a.fundCode}|${a.ruleId}`))
 
+    // #11: 预加载所有 DCA 提醒，避免循环内重复查询
+    const dcaAlerts = await db.alerts
+      .filter((a) => a.ruleType === 'dca')
+      .toArray()
+    const dcaAlertMap = new Map<string, string>()
+    for (const a of dcaAlerts) {
+      const key = `${a.fundCode}|dca`
+      const prev = dcaAlertMap.get(key)
+      if (!prev || a.triggeredAt > prev) dcaAlertMap.set(key, a.triggeredAt)
+    }
+
     for (const h of holdings) {
       const q = quoteMap.get(h.code)
       if (!q) continue
@@ -202,16 +213,13 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             break
           }
           case 'dca': {
-            // I3 fix: 检查最后提醒日期，超过间隔天数则触发
-            const lastAlert = await db.alerts
-              .filter((a) => a.fundCode === h.code && a.ruleType === 'dca')
-              .reverse()
-              .first()
-            if (!lastAlert) {
+            // #11: 使用预加载的 dcaAlertMap 代替实时 DB 查询
+            const lastDate = dcaAlertMap.get(`${h.code}|dca`)
+            if (!lastDate) {
               triggered = true
               reason = `定期定投提醒：已过 ${rule.threshold} 天未定投`
             } else {
-              const daysSince = (Date.now() - new Date(lastAlert.triggeredAt).getTime()) / 86400000
+              const daysSince = (Date.now() - new Date(lastDate).getTime()) / 86400000
               if (daysSince >= rule.threshold) {
                 triggered = true
                 reason = `定期定投提醒：距上次 ${Math.round(daysSince)} 天`
@@ -220,10 +228,8 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             break
           }
           case 'kline_pattern': {
-            // I3 fix: 标记为手动类型，提示用户
-            reason = `K 线形态诊断（手动触发）`
-            // 不自动触发，需要用户手动点击 AI 诊断
-            break
+            // K 线形态诊断需要手动触发，扫描不自动检测
+            continue  // 跳过该规则，不生成提醒
           }
         }
 

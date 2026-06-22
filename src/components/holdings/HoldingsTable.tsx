@@ -114,7 +114,7 @@ export default function HoldingsTable() {
       header: '成本净值',
       cell: ({ getValue }) => {
         const v = getValue()
-        return v ? <span className="font-mono text-sm">¥{v.toFixed(4)}</span> : <span className="text-xs text-muted-foreground">-</span>
+        return v != null ? <span className="font-mono text-sm">¥{v.toFixed(4)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 100,
     }),
@@ -122,7 +122,7 @@ export default function HoldingsTable() {
       header: '份额',
       cell: ({ getValue }) => {
         const v = getValue()
-        return v ? <span className="font-mono text-sm">{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
+        return v != null ? <span className="font-mono text-sm">{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 90,
     }),
@@ -130,7 +130,7 @@ export default function HoldingsTable() {
       header: '投入金额',
       cell: ({ getValue }) => {
         const v = getValue()
-        return v ? <span className="font-mono text-sm">¥{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
+        return v != null ? <span className="font-mono text-sm">¥{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 100,
     }),
@@ -139,7 +139,7 @@ export default function HoldingsTable() {
       cell: ({ getValue }) => {
         const v = getValue()
         if (!v) return <span className="text-xs text-muted-foreground">-</span>
-        const color = v >= 0 ? 'text-red-500' : 'text-green-500'
+        const color = v >= 0 ? 'text-green-500' : 'text-red-500'
         const prefix = v >= 0 ? '+' : ''
         return <span className={`font-mono text-sm ${color}`}>{prefix}¥{v.toFixed(2)}</span>
       },
@@ -154,7 +154,7 @@ export default function HoldingsTable() {
         const mv = (costNAV && shares) ? costNAV * shares
           : (holdingAmount) ? holdingAmount
           : 0
-        return mv ? <span className="font-mono text-sm font-medium">¥{mv.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
+        return mv != null ? <span className="font-mono text-sm font-medium">¥{mv.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 100,
     }),
@@ -318,7 +318,7 @@ export default function HoldingsTable() {
                   key={row.id}
                   className="cursor-pointer"
                   data-state={selectedIds.includes(row.original.id) ? 'selected' : undefined}
-                  onClick={() => navigate(`/holdings/${row.original.id}`)}
+                  onClick={() => navigate(`/detail/${row.original.id}`)}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>

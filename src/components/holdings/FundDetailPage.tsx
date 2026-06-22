@@ -46,13 +46,13 @@ export default function FundDetailPage() {
   // 同步 URL 到实际选中的基金
   useEffect(() => {
     if (holdings.length > 0 && fund && fund.id !== id) {
-      navigate(`/holdings/${fund.id}`, { replace: true })
+      navigate(`/detail/${fund.id}`, { replace: true })
     }
   }, [holdings, fund, id, navigate])
 
   // 基金切换
   const handleSwitchFund = (newId: string) => {
-    navigate(`/holdings/${newId}`)
+    navigate(`/detail/${newId}`)
   }
 
   // K 线
@@ -85,27 +85,48 @@ export default function FundDetailPage() {
     dataSourceService.fetchQuotes([fund.code]).then(setQuotes).finally(() => setQuotesLoading(false))
   }, [fund])
 
-  // K 线
+  // K 线（带安全超时）
   useEffect(() => {
     if (!fund) return
     let cancelled = false
     setKlineLoading(true)
 
-    const load = async () => {
-      const cacheKey = etfCode && useEtfKline ? `etf_${etfCode}` : fund.code
-      const cached = await getKlineCache(cacheKey, period)
-      if (!cancelled && cached?.length) { setKlineData(cached); setKlineLoading(false); return }
-
-      if (etfCode && useEtfKline) {
-        const data = await dataSourceService.fetchEtfKLine(etfCode, period)
-        if (!cancelled && data.length > 0) { setKlineCache(cacheKey, period, data); setKlineData(data); setKlineLoading(false); return }
-      }
-      const data = await dataSourceService.fetchKLine(fund.code, period)
-      if (!cancelled) { setKlineCache(cacheKey, period, data); setKlineData(data) }
+    // safety timeout: 15s 后强制停止 loading
+    const timer = setTimeout(() => {
       if (!cancelled) setKlineLoading(false)
+    }, 15000)
+
+    const load = async () => {
+      const etfCacheKey = `etf_${etfCode}`
+      const navCacheKey = fund.code
+      const cacheKey = useEtfKline ? etfCacheKey : navCacheKey
+
+      // 先查缓存（ETF 和 NAV 都查）
+      const [cached, navCached] = await Promise.all([
+        getKlineCache(etfCacheKey, period),
+        getKlineCache(navCacheKey, period),
+      ])
+      // 如果当前模式有缓存则直接显示
+      if (!cancelled) {
+        if (useEtfKline && cached?.length) { clearTimeout(timer); setKlineData(cached); setKlineLoading(false); return }
+        if (!useEtfKline && navCached?.length) { clearTimeout(timer); setKlineData(navCached); setKlineLoading(false); return }
+      }
+
+      // 无缓存，并发拉取 ETF + NAV，全部写入缓存
+      const [etfData, navData] = await Promise.all([
+        etfCode ? dataSourceService.fetchEtfKLine(etfCode, period) : Promise.resolve([]),
+        dataSourceService.fetchKLine(fund.code, period),
+      ])
+      if (!cancelled) {
+        if (etfData.length > 0) setKlineCache(etfCacheKey, period, etfData)
+        if (navData.length > 0) setKlineCache(navCacheKey, period, navData)
+        clearTimeout(timer)
+        setKlineData(useEtfKline && etfData.length > 0 ? etfData : navData)
+        setKlineLoading(false)
+      }
     }
     load()
-    return () => { cancelled = true }
+    return () => { cancelled = true; clearTimeout(timer) }
   }, [fund, period, etfCode, useEtfKline])
 
   // 持仓穿透（带缓存）

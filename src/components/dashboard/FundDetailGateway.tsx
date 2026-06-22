@@ -15,7 +15,7 @@ export default function FundDetailGateway() {
 
   useEffect(() => {
     if (!loading && holdings.length > 0) {
-      navigate(`/holdings/${holdings[0].id}`, { replace: true })
+      navigate(`/detail/${holdings[0].id}`, { replace: true })
     }
   }, [loading, holdings, navigate])
 

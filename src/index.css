@@ -105,9 +105,10 @@ body {
   }
 }
 
+/* #24: 移除重复的 border-color 定义，只保留 @layer base 中的一份 */
 @layer base {
   * {
-    border-color: hsl(var(--border));
+    border-color: hsl(var(--border, 214.3 31.8% 91.4%));
   }
   body {
     background-color: hsl(var(--background));

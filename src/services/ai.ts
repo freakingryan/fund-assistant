@@ -17,7 +17,7 @@ async function callAI(
     openai: baseURL || 'https://api.openai.com/v1/chat/completions',
     groq: baseURL || 'https://api.groq.com/openai/v1/chat/completions',
     openrouter: baseURL || 'https://openrouter.ai/api/v1/chat/completions',
-    google: baseURL || `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.0-flash'}:generateContent?key=${apiKey}`,
+    google: baseURL || `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.0-flash'}:generateContent`,
     custom: baseURL || 'https://api.openai.com/v1/chat/completions',
   }
 
@@ -31,7 +31,6 @@ async function callAI(
   }
 
   if (provider === 'google') {
-    // Google AI Studio uses a different API format
     const contents = messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: Array.isArray(m.content)
@@ -45,9 +44,12 @@ async function callAI(
         : [{ text: String(m.content) }],
     }))
 
-    const res = await fetch(endpoints.google, {
+    const res = await fetch(endpoints[provider], {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,  // #1: header not URL param
+      },
       body: JSON.stringify({ contents }),
     })
     const data = await res.json()
@@ -128,7 +130,7 @@ export async function extractFundInfoFromImage(imageDataUrl: string): Promise<{
     },
   ]
 
-  const response = await callAI(ai, messages as any)
+  const response = await callAI(ai, messages)
 
   // Try to parse JSON from response
   try {

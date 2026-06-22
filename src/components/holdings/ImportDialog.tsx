@@ -181,13 +181,17 @@ export default function ImportDialog() {
     setStep('done')
   }, [rows, importHoldings])
 
+  // #9: 弹窗关闭时重置状态，不用 setTimeout
+  useEffect(() => {
+    if (!open) { setRows([]); setErrors([]); setStep('upload') }
+  }, [open])
+
   const reset = () => {
     setOpen(false)
-    setTimeout(() => { setRows([]); setErrors([]); setStep('upload') }, 300)
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset() }}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v) }}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
           <Upload className="h-4 w-4 mr-2" />导入

@@ -4,14 +4,15 @@ import { generateMockKLine, generateMockQuotes } from './base'
 
 // ── 全局 JSONP 回调 ──────────────────────────────────
 type JsonpResolver = (data: any) => void
-
-// fundgz 接口固定回调名 jsonpgz
 let fundgzResolver: JsonpResolver | null = null
 
-// 只注册 jsonpgz，不污染其他全局变量（jQuery 会被脚本内部逻辑依赖）
-;(window as any).jsonpgz = (data: any) => {
-  fundgzResolver?.(data)
-  fundgzResolver = null
+// 延迟注册 jsonpgz（首次调用时），避免模块加载时污染全局
+function ensureJsonpgz() {
+  if ((window as any).jsonpgz) return
+  ;(window as any).jsonpgz = (data: any) => {
+    fundgzResolver?.(data)
+    fundgzResolver = null
+  }
 }
 
 function loadScript(src: string): Promise<void> {
@@ -35,6 +36,7 @@ export class EastMoneyAdapter implements FundDataSource {
   }
 
   async fetchFundInfo(code: string): Promise<{ name: string; type: string }> {
+    ensureJsonpgz()
     try {
       const data = await new Promise<any>((resolve, reject) => {
         fundgzResolver = resolve
@@ -58,6 +60,7 @@ export class EastMoneyAdapter implements FundDataSource {
   }
 
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
+    ensureJsonpgz()
     const results: FundQuote[] = []
     for (const code of codes) {
       try {

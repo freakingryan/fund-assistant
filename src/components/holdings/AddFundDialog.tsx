@@ -75,6 +75,7 @@ function makeRow(code = ''): FundRow {
 export default function AddFundDialog() {
   const [open, setOpen] = useState(false)
   const addHolding = useHoldingsStore((s) => s.addHolding)
+  const importHoldings = useHoldingsStore((s) => s.importHoldings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
 
@@ -187,22 +188,21 @@ export default function AddFundDialog() {
     const valid = rows.filter((r) => r.code.trim())
     if (valid.length === 0) { setError('请至少输入一个基金代码'); return }
 
-    for (const row of valid) {
-      await addHolding({
-        code: row.code.trim(),
-        name: row.name.trim() || row.code.trim(),
-        market: row.market,
-        type: row.type,
-        sector: row.sector,
-        costNAV: Number(row.costNAV) || 0,
-        shares: Number(row.shares) || 0,
-        holdingAmount: Number(row.holdingAmount) || 0,
-        holdingProfit: Number(row.holdingProfit) || 0,
-        purchaseDate: row.purchaseDate,
-        tags: row.tags ? row.tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
-        notes: row.notes || row.description,
-      })
-    }
+    const records = valid.map((row) => ({
+      code: row.code.trim(),
+      name: row.name.trim() || row.code.trim(),
+      market: row.market,
+      type: row.type,
+      sector: row.sector,
+      costNAV: Number(row.costNAV) || 0,
+      shares: Number(row.shares) || 0,
+      holdingAmount: Number(row.holdingAmount) || 0,
+      holdingProfit: Number(row.holdingProfit) || 0,
+      purchaseDate: row.purchaseDate,
+      tags: row.tags ? row.tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
+      notes: row.notes || row.description,
+    }))
+    await importHoldings(records)
     setOpen(false)
   }
 

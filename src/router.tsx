@@ -16,7 +16,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardPage /> },
       { path: 'holdings', element: <HoldingsPage /> },
-      { path: 'holdings/:id', element: <FundDetailPage /> },
+      { path: 'detail/:id', element: <FundDetailPage /> },
       { path: 'detail', element: <FundDetailGateway /> },
       { path: 'plans', element: <PlansPage /> },
       { path: 'prompts', element: <PromptsPage /> },
