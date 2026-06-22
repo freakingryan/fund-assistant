@@ -67,6 +67,22 @@ class DataSourceService implements FundDataSource {
     }
     return generateMockKLine(code, period)
   }
+
+  /**
+   * 获取场内 ETF 真实 K 线（必须由支持此接口的适配器提供）
+   * 从第一个支持 fetchEtfKLine 的适配器获取，若均不支持则返回空数组
+   */
+  async fetchEtfKLine(code: string, period = '3m'): Promise<KLineData[]> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof adapter.fetchEtfKLine === 'function') {
+        try {
+          const data = await adapter.fetchEtfKLine(code, period)
+          if (data.length > 0) return data
+        } catch { /* try next */ }
+      }
+    }
+    return []
+  }
 }
 
 export const dataSourceService = new DataSourceService()

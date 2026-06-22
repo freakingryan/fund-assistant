@@ -104,6 +104,37 @@ export class AKShareAdapter implements FundDataSource {
     return generateMockKLine(code, period)
   }
 
+  /**
+   * fund_etf_hist_em — 场内 ETF 日频真实行情（OHLC + 成交量）
+   * 参数示例：symbol=512880, period=daily, start_date=20250601, end_date=20250620
+   */
+  async fetchEtfKLine(code: string, period = '3m'): Promise<KLineData[]> {
+    const days = period === '1m' ? 30 : period === '6m' ? 130 : period === '1y' ? 250 : 66
+    const end = new Date()
+    const start = new Date(end.getTime() - days * 86400000)
+    const fmt = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+
+    try {
+      const data = await this.call<Record<string, any>>('fund_etf_hist_em', {
+        symbol: code,
+        period: 'daily',
+        start_date: fmt(start),
+        end_date: fmt(end),
+      })
+      if (data.length > 0) {
+        return data.map((item: any) => ({
+          date: item['日期'] || item['date'] || '',
+          open: Number(item['开盘'] || item['open'] || 0),
+          close: Number(item['收盘'] || item['close'] || 0),
+          high: Number(item['最高'] || item['high'] || 0),
+          low: Number(item['最低'] || item['low'] || 0),
+          volume: Number(item['成交量'] || item['volume'] || 0),
+        })).reverse()
+      }
+    } catch { /* fallback */ }
+    return []
+  }
+
   private classifyType(name: string, type: string): string {
     if (type && type !== '其他') {
       if (type.includes('货币')) return '货币型'

@@ -3,16 +3,19 @@ import { useHoldingsStore } from '@/stores/holdings'
 import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, LineChart, Line, Legend,
+  Tooltip, ResponsiveContainer, LineChart, Line,
 } from 'recharts'
+import CandlestickChart from './CandlestickChart'
 import {
   TrendingUp, TrendingDown, Wallet, BarChart3, PieChartIcon,
-  DollarSign, Percent, Loader2, AlertCircle, CheckCircle,
+  DollarSign, Percent, Loader2, AlertCircle,
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
 
@@ -45,11 +48,58 @@ function calcCost(h: FundHolding): number {
   return 0
 }
 
+/** K 线图表区域 — 支持 ETF 蜡烛图/净值折线图切换 */
+function ChartArea({ etfCode, useEtfKline, setUseEtfKline, klineLoading, klineData }: {
+  etfCode: string | null
+  useEtfKline: boolean
+  setUseEtfKline: (v: boolean) => void
+  klineLoading: boolean
+  klineData: any[]
+}) {
+  if (klineLoading) {
+    return (
+      <div className="flex items-center justify-center h-[200px]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  const showCandle = useEtfKline && etfCode && klineData[0]?.volume
+
+  return (
+    <div className="space-y-2">
+      {etfCode && (
+        <div className="flex items-center gap-2">
+          <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
+          <Label htmlFor="etf-kline" className="text-xs cursor-pointer">
+            场内 ETF 真实 K 线
+            <span className="text-[10px] text-muted-foreground ml-1">（{etfCode}）</span>
+          </Label>
+        </div>
+      )}
+      {showCandle ? (
+        <CandlestickChart data={klineData} width={480} height={300} />
+      ) : (
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={klineData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(v) => (v || '').slice(5)} />
+            <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickFormatter={(v) => v.toFixed(2)} />
+            <Tooltip />
+            <Line type="monotone" dataKey="close" stroke="#3b82f6" dot={false} strokeWidth={2} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const loading = useHoldingsStore((s) => s.loading)
   const tushareToken = useSettingsStore((s) => s.settings.dataSource.tushareToken)
+  const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
   const alerts = usePlansStore((s) => s.alerts)
   const loadAlerts = usePlansStore((s) => s.loadAlerts)
   const markAlertExecuted = usePlansStore((s) => s.markAlertExecuted)
@@ -61,6 +111,14 @@ export default function DashboardPage() {
   const [selectedPeriod, setSelectedPeriod] = useState('3m')
   const [klineData, setKlineData] = useState<any[]>([])
   const [klineLoading, setKlineLoading] = useState(false)
+  const [useEtfKline, setUseEtfKline] = useState(true)
+
+  // 当前选中基金的场内 ETF 映射代码
+  const etfCode = useMemo(() => {
+    if (!selectedFund) return null
+    const m = etfMappings.find((m) => m.otcCode === selectedFund.code)
+    return m?.exchangeCode || null
+  }, [selectedFund, etfMappings])
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
@@ -75,19 +133,28 @@ export default function DashboardPage() {
     }).finally(() => setQuotesLoading(false))
   }, [holdings])
 
-  // Load K-line for selected fund
-  // C3 fix: 用 cancelled 标志防止竞态
+  // Load K-line for selected fund — 优先使用场内 ETF 真实 K 线
   useEffect(() => {
     if (!selectedFund) return
     let cancelled = false
     setKlineLoading(true)
-    dataSourceService.fetchKLine(selectedFund.code, selectedPeriod).then((data) => {
+
+    const loadKline = async () => {
+      if (etfCode && useEtfKline) {
+        const data = await dataSourceService.fetchEtfKLine(etfCode, selectedPeriod)
+        if (!cancelled && data.length > 0) {
+          setKlineData(data)
+          setKlineLoading(false)
+          return
+        }
+      }
+      const data = await dataSourceService.fetchKLine(selectedFund.code, selectedPeriod)
       if (!cancelled) setKlineData(data)
-    }).finally(() => {
       if (!cancelled) setKlineLoading(false)
-    })
+    }
+    loadKline()
     return () => { cancelled = true }
-  }, [selectedFund, selectedPeriod])
+  }, [selectedFund, selectedPeriod, etfCode, useEtfKline])
 
   // Calc summary
   const summary = useMemo(() => {
@@ -318,21 +385,13 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {selectedFund ? (
-              klineLoading ? (
-                <div className="flex items-center justify-center h-[200px]">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : (
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={klineData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(v: string) => v.slice(5)} />
-                    <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickFormatter={(v) => v.toFixed(2)} />
-                    <Tooltip labelFormatter={(v) => `日期: ${v}`} formatter={(v: number) => v.toFixed(4)} />
-                    <Line type="monotone" dataKey="close" stroke="#3b82f6" dot={false} strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              )
+              <ChartArea
+                etfCode={etfCode}
+                useEtfKline={useEtfKline}
+                setUseEtfKline={setUseEtfKline}
+                klineLoading={klineLoading}
+                klineData={klineData}
+              />
             ) : (
               <div className="flex items-center justify-center h-[200px] text-xs text-muted-foreground">
                 选择一支基金查看净值走势

@@ -28,3 +28,8 @@ npm-debug.log*
 # Cache
 *.tsbuildinfo
 .eslintcache
+
+# Python / AKTools
+__pycache__/
+*.pyc
+aktools_env/
