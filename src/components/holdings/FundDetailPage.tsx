@@ -5,7 +5,7 @@ import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
-import { getKlineCache, setKlineCache } from '@/services/klineCache'
+import { getKlineCache, setKlineCache, getPortfolioCache, setPortfolioCache } from '@/services/klineCache'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -37,7 +37,23 @@ export default function FundDetailPage() {
   const alerts = usePlansStore ? usePlansStore((s) => s.alerts) : []
   const loadAlerts = usePlansStore ? usePlansStore((s) => s.loadAlerts) : () => {}
 
-  const fund = useMemo(() => holdings.find((h) => h.id === id), [holdings, id])
+  // 自动选中第一个持仓或 URL 指定的基金
+  const fund = useMemo(() => {
+    const fromUrl = holdings.find((h) => h.id === id)
+    return fromUrl || holdings[0] || null
+  }, [holdings, id])
+
+  // 同步 URL 到实际选中的基金
+  useEffect(() => {
+    if (holdings.length > 0 && fund && fund.id !== id) {
+      navigate(`/holdings/${fund.id}`, { replace: true })
+    }
+  }, [holdings, fund, id, navigate])
+
+  // 基金切换
+  const handleSwitchFund = (newId: string) => {
+    navigate(`/holdings/${newId}`)
+  }
 
   // K 线
   const [period, setPeriod] = useState('3m')
@@ -92,6 +108,32 @@ export default function FundDetailPage() {
     return () => { cancelled = true }
   }, [fund, period, etfCode, useEtfKline])
 
+  // 持仓穿透（带缓存）
+  const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
+  const [portfolioLoading, setPortfolioLoading] = useState(false)
+
+  useEffect(() => {
+    if (!fund) return
+    let cancelled = false
+    setPortfolioLoading(true)
+
+    const load = async () => {
+      // 尝试缓存
+      const cached = await getPortfolioCache(fund.code)
+      if (!cancelled && cached) { setPortfolio(cached); setPortfolioLoading(false); return }
+
+      // 调用 API
+      const data = await dataSourceService.fetchFundPortfolio(fund.code)
+      if (!cancelled && data) {
+        setPortfolioCache(fund.code, data)
+        setPortfolio(data)
+      }
+      if (!cancelled) setPortfolioLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [fund])
+
   const handleGenerate = useCallback(() => {
     if (!fund) return
     const result = generatePrompt({
@@ -127,22 +169,31 @@ export default function FundDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* 返回 + 基本信息 */}
+      {/* 返回 + 基金切换 + 基本信息 */}
       <div className="flex items-start justify-between">
         <div>
-          <Button variant="ghost" size="sm" onClick={() => navigate('/holdings')}>
-            <ArrowLeft className="h-3 w-3 mr-1" />返回持仓
-          </Button>
-          <div className="mt-2">
-            <h1 className="text-xl font-bold tracking-tight">{fund.name || fund.code}</h1>
-            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-              <span className="font-mono">{fund.code}</span>
+          <div className="flex items-center gap-3">
+            <Select value={fund.id} onValueChange={handleSwitchFund}>
+              <SelectTrigger className="w-[280px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {holdings.map((h) => (
+                  <SelectItem key={h.id} value={h.id}>
+                    <span className="font-mono text-[10px] mr-2">{h.code}</span>
+                    {h.name || h.code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center gap-1 text-sm text-muted-foreground">
               <Badge variant="secondary" className="text-[10px]">{MARKET_LABELS[fund.market] || fund.market}</Badge>
               <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[fund.type] || fund.type}</Badge>
               <Badge variant="outline" className="text-[10px]">{SECTOR_LABELS[fund.sector] || fund.sector}</Badge>
               {etfCode && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200">ETF {etfCode}</Badge>}
             </div>
           </div>
+          <h1 className="text-xl font-bold tracking-tight mt-1">{fund.name || fund.code}</h1>
         </div>
       </div>
 
@@ -191,6 +242,36 @@ export default function FundDetailPage() {
                     <p className="text-xs text-muted-foreground">暂无数据</p>
                   )}
                 </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 持仓穿透 */}
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">重仓股</CardTitle></CardHeader>
+            <CardContent>
+              {portfolioLoading ? (
+                <div className="flex items-center justify-center h-16"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+              ) : portfolio?.holdings && portfolio.holdings.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-muted-foreground">报告期：{portfolio.date}</p>
+                  <div className="space-y-1">
+                    {portfolio.holdings.map((h, i) => (
+                      <div key={h.code} className="flex items-center justify-between text-xs py-1 px-2 rounded hover:bg-muted/30">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-[10px] text-muted-foreground w-4 text-right">{i + 1}</span>
+                          <span className="font-mono text-[10px] text-muted-foreground">{h.code}</span>
+                          <span className="truncate">{h.name}</span>
+                        </div>
+                        <span className={`font-mono font-medium shrink-0 ${h.ratio >= 5 ? 'text-red-500' : ''}`}>
+                          {h.ratio.toFixed(1)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground text-center py-4">暂无重仓股数据</p>
               )}
             </CardContent>
           </Card>

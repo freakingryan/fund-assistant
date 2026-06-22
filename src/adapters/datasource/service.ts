@@ -83,6 +83,24 @@ class DataSourceService implements FundDataSource {
     }
     return []
   }
+
+  /**
+   * 获取基金持仓明细（前十大重仓股）
+   */
+  async fetchFundPortfolio(fundCode: string): Promise<{
+    date: string
+    holdings: { code: string; name: string; ratio: number; value: number }[]
+  } | null> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof (adapter as any).fetchFundPortfolio === 'function') {
+        try {
+          const result = await (adapter as any).fetchFundPortfolio(fundCode)
+          if (result) return result
+        } catch { /* try next */ }
+      }
+    }
+    return null
+  }
 }
 
 export const dataSourceService = new DataSourceService()

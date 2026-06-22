@@ -25,7 +25,7 @@ export class AKShareAdapter implements FundDataSource {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
 
     const res = await fetch(url.toString(), { mode: 'cors' })
-    if (!res.ok) throw new Error(`AKShare HTTP ${res.status}: ${await res.text().catch(() => '')}`)
+    if (!res.ok) throw new Error(`AKShare HTTP ${res.status}`)
 
     const data = await res.json()
     if (!Array.isArray(data)) throw new Error('AKShare 返回格式异常')
@@ -151,6 +151,35 @@ export class AKShareAdapter implements FundDataSource {
     if (n.includes('QDII')) return 'QDII'
     if (n.includes('混合') || n.includes('灵活')) return '混合型'
     return '股票型'
+  }
+
+  /**
+   * fund_portfolio_hold_em — 基金持仓明细（前十大重仓股）
+   * 参数：symbol=基金代码, date=查询年份（如2024）
+   */
+  async fetchFundPortfolio(fundCode: string): Promise<{
+    date: string
+    holdings: { code: string; name: string; ratio: number; value: number }[]
+  } | null> {
+    try {
+      // 尝试最近两年的数据
+      const year = String(new Date().getFullYear())
+      const data = await this.call<Record<string, any>>('fund_portfolio_hold_em', {
+        symbol: fundCode,
+        date: year,
+      })
+      if (data.length === 0) return null
+
+      return {
+        date: year,
+        holdings: data.map((h: any) => ({
+          code: String(h['股票代码'] || h['stk_code'] || h['symbol'] || ''),
+          name: String(h['股票名称'] || h['stk_name'] || h['name'] || ''),
+          ratio: Number(h['占净值比例'] || h['hold_amount'] || h['ratio'] || 0),
+          value: Number(h['持仓市值'] || h['mkv'] || h['market_value'] || 0),
+        })).filter((h) => h.name || h.code).slice(0, 10),
+      }
+    } catch { return null }
   }
 
   /**

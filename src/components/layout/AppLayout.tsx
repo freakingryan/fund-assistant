@@ -3,11 +3,11 @@ import {
   LayoutDashboard,
   WalletCards,
   TrendingUp,
-  MessageSquareText,
   Bell,
   Settings,
   Menu,
   X,
+  LineChart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -18,8 +18,8 @@ import { cn } from '@/lib/utils'
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '概览', end: true },
   { to: '/holdings', icon: WalletCards, label: '持仓管理' },
+  { to: '/detail', icon: LineChart, label: '基金详情' },
   { to: '/plans', icon: TrendingUp, label: '投资计划' },
-  { to: '/prompts', icon: MessageSquareText, label: 'Prompt' },
   { to: '/notifications', icon: Bell, label: '通知' },
   { to: '/settings', icon: Settings, label: '设置' },
 ]
