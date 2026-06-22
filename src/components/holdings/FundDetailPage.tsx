@@ -1,0 +1,243 @@
+import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useHoldingsStore } from '@/stores/holdings'
+import { usePlansStore } from '@/stores/plans'
+import { useSettingsStore } from '@/stores/settings'
+import { dataSourceService } from '@/adapters/datasource/service'
+import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
+import { getKlineCache, setKlineCache } from '@/services/klineCache'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import CandlestickChart from '@/components/dashboard/CandlestickChart'
+import { Loader2, ArrowLeft, Copy, Sparkles, CheckCircle, FileText } from 'lucide-react'
+
+const TYPE_LABELS: Record<string, string> = {
+  stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
+  qdii: 'QDII', money: '货币型', etf: 'ETF', other: '其他',
+}
+const SECTOR_LABELS: Record<string, string> = {
+  tech: '科技', consumer: '消费', healthcare: '医药', new_energy: '新能源',
+  finance: '金融', manufacturing: '制造', broad_market: '宽基',
+  global: '全球', bond_market: '债市', commodity: '大宗商品',
+  real_estate: '地产', other: '其他',
+}
+const MARKET_LABELS: Record<string, string> = { A: 'A股', HK: '港股', US: '美股' }
+
+export default function FundDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
+  const holdings = useHoldingsStore((s) => s.holdings)
+  const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
+  const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
+  const alerts = usePlansStore ? usePlansStore((s) => s.alerts) : []
+  const loadAlerts = usePlansStore ? usePlansStore((s) => s.loadAlerts) : () => {}
+
+  const fund = useMemo(() => holdings.find((h) => h.id === id), [holdings, id])
+
+  // K 线
+  const [period, setPeriod] = useState('3m')
+  const [klineData, setKlineData] = useState<any[]>([])
+  const [klineLoading, setKlineLoading] = useState(false)
+  const [useEtfKline, setUseEtfKline] = useState(true)
+
+  // ETF 映射
+  const etfCode = useMemo(() => {
+    if (!fund) return null
+    const m = etfMappings.find((m) => m.otcCode === fund.code)
+    return m?.exchangeCode || null
+  }, [fund, etfMappings])
+
+  // Prompt
+  const [prompt, setPrompt] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [templateType, setTemplateType] = useState<PromptTemplateType>('diagnostic')
+  const [quotes, setQuotes] = useState<any[]>([])
+  const [quotesLoading, setQuotesLoading] = useState(false)
+
+  useEffect(() => { loadHoldings() }, [loadHoldings])
+  useEffect(() => { loadAlerts() }, [loadAlerts])
+
+  // 加载行情
+  useEffect(() => {
+    if (!fund) return
+    setQuotesLoading(true)
+    dataSourceService.fetchQuotes([fund.code]).then(setQuotes).finally(() => setQuotesLoading(false))
+  }, [fund])
+
+  // K 线
+  useEffect(() => {
+    if (!fund) return
+    let cancelled = false
+    setKlineLoading(true)
+
+    const load = async () => {
+      const cacheKey = etfCode && useEtfKline ? `etf_${etfCode}` : fund.code
+      const cached = await getKlineCache(cacheKey, period)
+      if (!cancelled && cached?.length) { setKlineData(cached); setKlineLoading(false); return }
+
+      if (etfCode && useEtfKline) {
+        const data = await dataSourceService.fetchEtfKLine(etfCode, period)
+        if (!cancelled && data.length > 0) { setKlineCache(cacheKey, period, data); setKlineData(data); setKlineLoading(false); return }
+      }
+      const data = await dataSourceService.fetchKLine(fund.code, period)
+      if (!cancelled) { setKlineCache(cacheKey, period, data); setKlineData(data) }
+      if (!cancelled) setKlineLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [fund, period, etfCode, useEtfKline])
+
+  const handleGenerate = useCallback(() => {
+    if (!fund) return
+    const result = generatePrompt({
+      templateType,
+      holdings: [fund],
+      quotes,
+      selectedIds: [fund.id],
+      etfMappings,
+      alerts,
+    })
+    setPrompt(result)
+    setCopied(false)
+  }, [fund, templateType, quotes, etfMappings, alerts])
+
+  const handleCopy = useCallback(async () => {
+    if (!prompt) return
+    try { await navigator.clipboard.writeText(prompt); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+    catch {
+      const ta = document.createElement('textarea'); ta.value = prompt
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy')
+      document.body.removeChild(ta); setCopied(true); setTimeout(() => setCopied(false), 2000)
+    }
+  }, [prompt])
+
+  if (!fund) {
+    return (
+      <div className="space-y-6">
+        <Button variant="ghost" size="sm" onClick={() => navigate('/holdings')}><ArrowLeft className="h-3 w-3 mr-1" />返回持仓</Button>
+        <Card><CardContent className="text-center py-16"><p className="text-muted-foreground">基金不存在</p></CardContent></Card>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* 返回 + 基本信息 */}
+      <div className="flex items-start justify-between">
+        <div>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/holdings')}>
+            <ArrowLeft className="h-3 w-3 mr-1" />返回持仓
+          </Button>
+          <div className="mt-2">
+            <h1 className="text-xl font-bold tracking-tight">{fund.name || fund.code}</h1>
+            <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+              <span className="font-mono">{fund.code}</span>
+              <Badge variant="secondary" className="text-[10px]">{MARKET_LABELS[fund.market] || fund.market}</Badge>
+              <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[fund.type] || fund.type}</Badge>
+              <Badge variant="outline" className="text-[10px]">{SECTOR_LABELS[fund.sector] || fund.sector}</Badge>
+              {etfCode && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200">ETF {etfCode}</Badge>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: K 线图 */}
+        <div className="lg:col-span-2 space-y-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">K 线走势</CardTitle>
+                <Select value={period} onValueChange={setPeriod}>
+                  <SelectTrigger className="h-7 text-xs w-[70px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1m">1月</SelectItem>
+                    <SelectItem value="3m">3月</SelectItem>
+                    <SelectItem value="6m">6月</SelectItem>
+                    <SelectItem value="1y">1年</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {etfCode && (
+                <div className="flex items-center gap-2 mb-3">
+                  <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
+                  <Label htmlFor="etf-kline" className="text-xs cursor-pointer">
+                    场内 ETF 真实 K 线 <span className="text-[10px] text-muted-foreground">（{etfCode}）</span>
+                  </Label>
+                </div>
+              )}
+              {klineLoading ? (
+                <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              ) : useEtfKline && etfCode && klineData[0]?.volume ? (
+                <CandlestickChart data={klineData} width={560} height={320} />
+              ) : (
+                <div className="flex items-center justify-center h-[200px]">
+                  {klineData.length > 0 ? (
+                    <svg width={560} height={200} className="overflow-visible">
+                      {/* Simplified mini line chart for NAV */}
+                      <polyline
+                        points={klineData.map((d, i) => `${i * (560 / Math.max(klineData.length - 1, 1))},${180 - ((d.close - Math.min(...klineData.map((x) => x.close))) / (Math.max(...klineData.map((x) => x.close)) - Math.min(...klineData.map((x) => x.close)) || 1)) * 160}`).join(' ')}
+                        fill="none" stroke="#3b82f6" strokeWidth={2}
+                      />
+                    </svg>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">暂无数据</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right: Prompt */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-sm">Prompt 模板</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex gap-1">
+                {(['diagnostic', 'rebalance', 'kline_enhanced'] as const).map((t) => (
+                  <button key={t}
+                    onClick={() => setTemplateType(t)}
+                    className={`text-xs px-2 py-1 rounded transition-colors cursor-pointer ${
+                      templateType === t ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/70'
+                    }`}
+                  >
+                    {t === 'diagnostic' ? '诊断' : t === 'rebalance' ? '调仓' : 'K线'}
+                  </button>
+                ))}
+              </div>
+              <Button size="sm" className="w-full" disabled={quotesLoading} onClick={handleGenerate}>
+                <Sparkles className="h-3 w-3 mr-1" />生成分析 Prompt
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card className="flex-1">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm">Prompt 预览</CardTitle>
+                <Button variant="outline" size="sm" className="h-6 text-xs" disabled={!prompt} onClick={handleCopy}>
+                  {copied ? <><CheckCircle className="h-3 w-3 mr-1 text-green-500" />已复制</> : <><Copy className="h-3 w-3 mr-1" />复制</>}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {prompt ? (
+                <Textarea value={prompt} readOnly className="min-h-[200px] text-xs font-mono leading-relaxed" />
+              ) : (
+                <div className="text-center py-8 text-muted-foreground"><FileText className="h-8 w-8 mx-auto mb-2 opacity-30" /><p className="text-xs">点击「生成」创建分析 Prompt</p></div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -4,16 +4,11 @@ import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, LineChart, Line, Legend,
 } from 'recharts'
-import CandlestickChart from './CandlestickChart'
-import { getKlineCache, setKlineCache } from '@/services/klineCache'
 import {
   TrendingUp, TrendingDown, Wallet, BarChart3, PieChartIcon,
   DollarSign, Percent, Loader2, AlertCircle,
@@ -365,55 +360,29 @@ export default function DashboardPage() {
 
       {/* NAV Trend + Top Holdings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* NAV Trend */}
+        {/* NAV Trend → 快捷跳转到详情页 */}
         <Card>
           <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">净值走势</CardTitle>
-              <div className="flex gap-2">
-                <Select value={selectedFund?.code || ''} onValueChange={(v) => {
-                  const f = holdings.find((h) => h.code === v)
-                  setSelectedFund(f || null)
-                }}>
-                  <SelectTrigger className="h-7 text-xs w-[140px]">
-                    <SelectValue placeholder="选择基金" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {holdings.map((h) => (
-                      <SelectItem key={h.id} value={h.code}>
-                        {h.name || h.code}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                  <SelectTrigger className="h-7 text-xs w-[70px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1m">1月</SelectItem>
-                    <SelectItem value="3m">3月</SelectItem>
-                    <SelectItem value="6m">6月</SelectItem>
-                    <SelectItem value="1y">1年</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <CardTitle className="text-sm">基金详情</CardTitle>
           </CardHeader>
           <CardContent>
-            {selectedFund ? (
-              <ChartArea
-                etfCode={etfCode}
-                useEtfKline={useEtfKline}
-                setUseEtfKline={setUseEtfKline}
-                klineLoading={klineLoading}
-                klineData={klineData}
-              />
-            ) : (
-              <div className="flex items-center justify-center h-[200px] text-xs text-muted-foreground">
-                选择一支基金查看净值走势
-              </div>
-            )}
+            <div className="space-y-1">
+              {holdings.slice(0, 5).map((h) => (
+                <div key={h.id}
+                  onClick={() => window.location.href = `/holdings/${h.id}`}
+                  className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className="font-mono text-[10px] text-muted-foreground shrink-0">{h.code}</span>
+                    <span className="text-xs truncate">{h.name || h.code}</span>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0">查看详情 →</span>
+                </div>
+              ))}
+              {holdings.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-6">暂无持仓</p>
+              )}
+            </div>
           </CardContent>
         </Card>
 

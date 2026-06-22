@@ -317,7 +317,13 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 - AKShare `fund_open_fund_rank_em` → 按近 1 月/3 月/1 年收益排序推荐
 - 添加基金时弹出一个推荐面板
 
-### Phase 6.4：基础设施完善（P1）
+### Phase 6.4：UI 重构—基金详情页（P0 🔥✅）
+- 新增 `FundDetailPage`，聚合 K 线走势、ETF 真实 K 线、Prompt 生成于一个页面
+- Dashboard 精简：移除基金选择器和 K 线图，改为基金快捷入口
+- 持仓表格行可点击 → 跳转到对应基金详情页
+- 路由：`/holdings/:id`
+
+### Phase 6.5：基础设施完善（P1）
 - Web Push 通知
 - 存储适配器抽象 + Notion 适配器
 - 设置页完整 UI
@@ -364,7 +370,8 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 | Phase 6.1 | ✅ 完成 | **场内 ETF 真实 K 线** — AKShare fund_etf_hist_em 真实 OHLC + 成交量，标准 SVG 蜡烛图 |
 | Phase 6.2 | 🔜 已排期 | **基金持仓穿透** — AKShare fund_portfolio 查看前十大重仓股与行业分布 |
 | Phase 6.3 | 🔜 已排期 | **基金排行筛选** — AKShare fund_open_fund_rank_em 推荐基金面板 |
-| Phase 6.4 | ⏳ 待开始 | 通知（Web Push）+ 存储扩展（Notion）+ 暗色模式 + 部署配置 |
+| Phase 6.4 | 🔜 已排期 | **UI 重构** — 基金详情页（K线+Prompt聚合），持仓可点击跳转 |
+| Phase 6.5 | ⏳ 待开始 | 通知（Web Push）+ 存储扩展（Notion）+ 暗色模式 + 部署配置 |
 | Phase 6.2 | 🔜 已排期 | **基金持仓穿透** — AKShare fund_portfolio 查看前十大重仓股与行业分布 |
 | Phase 6.3 | 🔜 已排期 | **基金排行筛选** — AKShare fund_open_fund_rank_em 推荐基金面板 |
 | Phase 6.4 | ⏳ 待开始 | 通知（Web Push） + 存储扩展（Notion） + 暗色模式 + 部署配置 |

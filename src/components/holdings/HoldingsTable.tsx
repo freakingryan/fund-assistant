@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   createColumnHelper, flexRender, type SortingState, type ColumnFiltersState, type VisibilityState,
@@ -36,6 +37,7 @@ export default function HoldingsTable() {
   const toggleSelected = useHoldingsStore((s) => s.toggleSelected)
   const selectAll = useHoldingsStore((s) => s.selectAll)
   const clearSelection = useHoldingsStore((s) => s.clearSelection)
+  const navigate = useNavigate()
   const removeHolding = useHoldingsStore((s) => s.removeHolding)
   const removeHoldings = useHoldingsStore((s) => s.removeHoldings)
 
@@ -312,7 +314,12 @@ export default function HoldingsTable() {
           <TableBody>
             {table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={selectedIds.includes(row.original.id) ? 'selected' : undefined}>
+                <TableRow
+                  key={row.id}
+                  className="cursor-pointer"
+                  data-state={selectedIds.includes(row.original.id) ? 'selected' : undefined}
+                  onClick={() => navigate(`/holdings/${row.original.id}`)}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
