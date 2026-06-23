@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { usePlansStore } from '@/stores/plans'
 import { useHoldingsStore } from '@/stores/holdings'
+import { useSettingsStore } from '@/stores/settings'
+import { sendAlertBatch, requestNotificationPermission } from '@/services/notification'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -133,6 +135,7 @@ export default function PlansPage() {
   const dismissAlert = usePlansStore((s) => s.dismissAlert)
 
   const holdings = useHoldingsStore((s) => s.holdings)
+  const settings = useSettingsStore((s) => s.settings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
 
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -151,8 +154,18 @@ export default function PlansPage() {
   const handleScan = useCallback(async () => {
     if (!plan?.enabled) return
     const result = await scan(holdings)
-    if (result.length > 0) setActiveTab('alerts')
-  }, [plan, holdings, scan])
+    if (result.length > 0) {
+      setActiveTab('alerts')
+      // Web Push: 发送浏览器通知
+      if (settings.notifications.browser) {
+        await requestNotificationPermission()
+        sendAlertBatch(result.map((a) => ({
+          fundName: a.fundCode,
+          reason: a.reason || '投资计划触发',
+        })))
+      }
+    }
+  }, [plan, holdings, scan, settings.notifications.browser])
 
   if (!plan) return null
 

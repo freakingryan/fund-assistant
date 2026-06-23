@@ -48,11 +48,20 @@ export default function App() {
     return () => mq.removeEventListener('change', handler)
   }, [])
 
-  // Phase 6.5: 暗色模式 — 给 <html> 添加/移除 .dark class
+  // Phase 6.5: 暗色模式 + 通知权限
   useEffect(() => {
     const isDark = theme === 'dark' || (theme === 'system' && systemDark)
     document.documentElement.classList.toggle('dark', isDark)
   }, [theme, systemDark])
+
+  // 浏览器通知权限请求
+  useEffect(() => {
+    if (theme !== null && 'Notification' in window && Notification.permission === 'default') {
+      // 只在用户启用浏览器通知时请求
+      const notif = useSettingsStore.getState().settings.notifications.browser
+      if (notif) Notification.requestPermission()
+    }
+  }, [theme])
 
   // 初始化数据
   useEffect(() => {
