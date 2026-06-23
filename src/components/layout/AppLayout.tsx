@@ -8,12 +8,14 @@ import {
   Menu,
   X,
   LineChart,
+  SunMoon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useSettingsStore } from '@/stores/settings'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '概览', end: true },
@@ -26,6 +28,15 @@ const navItems = [
 
 export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const theme = useSettingsStore((s) => s.settings.theme)
+  const updateSettings = useSettingsStore((s) => s.updateSettings)
+
+  const cycleTheme = () => {
+    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'
+    updateSettings({ theme: next })
+  }
+
+  const themeLabel = theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '跟随系统'
 
   return (
     <TooltipProvider>
@@ -99,6 +110,14 @@ export default function AppLayout() {
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
             <div className="flex-1" />
+            <button
+              onClick={cycleTheme}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded cursor-pointer"
+              title={`主题: ${themeLabel}（点击切换）`}
+            >
+              <SunMoon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{themeLabel}</span>
+            </button>
             <span className="text-xs text-muted-foreground">v0.1.0</span>
           </header>
 

@@ -1,6 +1,6 @@
 import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
-import { useEffect, Component } from 'react'
+import { useEffect, useState, Component } from 'react'
 import { useHoldingsStore } from './stores/holdings'
 import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
@@ -35,6 +35,24 @@ export default function App() {
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const loadSettings = useSettingsStore((s) => s.loadSettings)
   const loadPlan = usePlansStore((s) => s.loadPlan)
+  const theme = useSettingsStore((s) => s.settings.theme)
+  const [systemDark, setSystemDark] = useState(
+    window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
+
+  // 监听系统暗色偏好
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  // Phase 6.5: 暗色模式 — 给 <html> 添加/移除 .dark class
+  useEffect(() => {
+    const isDark = theme === 'dark' || (theme === 'system' && systemDark)
+    document.documentElement.classList.toggle('dark', isDark)
+  }, [theme, systemDark])
 
   // 初始化数据
   useEffect(() => {
