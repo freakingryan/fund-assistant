@@ -228,7 +228,7 @@ export default function AddFundDialog() {
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="h-4 w-4 mr-2" />添加基金</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-auto">
+      <DialogContent className="max-w-[95vw] sm:max-w-xl max-h-[90vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>添加基金</DialogTitle>
           <DialogDescription>

@@ -16,6 +16,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
+import InstallPrompt from './InstallPrompt'
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: '概览', end: true },
@@ -122,11 +123,12 @@ export default function AppLayout() {
           </header>
 
           {/* Content */}
-          <main className="flex-1 overflow-auto p-4 lg:p-6">
+          <main className="flex-1 overflow-auto p-2 sm:p-4 lg:p-6">
             <Outlet />
           </main>
         </div>
       </div>
+      <InstallPrompt />
     </TooltipProvider>
   )
 }

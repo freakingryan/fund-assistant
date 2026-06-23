@@ -308,7 +308,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Type Distribution */}
         <Card>
           <CardHeader className="pb-2">
@@ -358,7 +358,7 @@ export default function DashboardPage() {
       </div>
 
       {/* NAV Trend + Top Holdings */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* NAV Trend → 快捷跳转到详情页 */}
         <Card>
           <CardHeader className="pb-2">

@@ -100,14 +100,14 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="datasource" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="datasource" className="flex items-center gap-1"><Database className="h-3 w-3" /> 数据源</TabsTrigger>
-          <TabsTrigger value="ai" className="flex items-center gap-1"><Key className="h-3 w-3" /> AI 平台</TabsTrigger>
-          <TabsTrigger value="storage" className="flex items-center gap-1"><Globe className="h-3 w-3" /> 存储</TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-1"><BellRing className="h-3 w-3" /> 通知</TabsTrigger>
-          <TabsTrigger value="etf" className="flex items-center gap-1"><Link className="h-3 w-3" /> ETF 映射</TabsTrigger>
-          <TabsTrigger value="appearance" className="flex items-center gap-1"><SunMoon className="h-3 w-3" /> 外观</TabsTrigger>
-          <TabsTrigger value="backup" className="flex items-center gap-1"><Cloud className="h-3 w-3" /> 备份</TabsTrigger>
+        <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="datasource" className="flex items-center gap-1 text-[10px] sm:text-xs"><Database className="h-3 w-3" /> 数据源</TabsTrigger>
+          <TabsTrigger value="ai" className="flex items-center gap-1 text-[10px] sm:text-xs"><Key className="h-3 w-3" /> AI 平台</TabsTrigger>
+          <TabsTrigger value="storage" className="flex items-center gap-1 text-[10px] sm:text-xs"><Globe className="h-3 w-3" /> 存储</TabsTrigger>
+          <TabsTrigger value="notifications" className="flex items-center gap-1 text-[10px] sm:text-xs"><BellRing className="h-3 w-3" /> 通知</TabsTrigger>
+          <TabsTrigger value="etf" className="flex items-center gap-1 text-[10px] sm:text-xs"><Link className="h-3 w-3" /> ETF 映射</TabsTrigger>
+          <TabsTrigger value="appearance" className="flex items-center gap-1 text-[10px] sm:text-xs"><SunMoon className="h-3 w-3" /> 外观</TabsTrigger>
+          <TabsTrigger value="backup" className="flex items-center gap-1 text-[10px] sm:text-xs"><Cloud className="h-3 w-3" /> 备份</TabsTrigger>
         </TabsList>
 
         {/* 数据源 */}
