@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Key, Database, BellRing, Globe, SunMoon, Save, Link, Plus, Trash2, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Key, Database, BellRing, Globe, SunMoon, Link, Plus, Trash2, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
@@ -17,7 +18,6 @@ export default function SettingsPage() {
   const settings = useSettingsStore((s) => s.settings)
   const updateDataSource = useSettingsStore((s) => s.updateDataSource)
   const updateAIConfig = useSettingsStore((s) => s.updateAIConfig)
-  const updateStorage = useSettingsStore((s) => s.updateStorage)
   const updateNotifications = useSettingsStore((s) => s.updateNotifications)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
@@ -38,7 +38,7 @@ export default function SettingsPage() {
 
   const handleSave = async (action: string, fn: () => Promise<void>) => {
     setSaving(action)
-    try { await fn(); toast({ title: '保存成功', duration: 2000 }) } catch (e) { toast({ title: '保存失败', description: String(e), variant: 'destructive' }) }
+    try { await fn(); toast({ type: 'success', message: '保存成功' }) } catch (e) { toast({ type: 'error', message: String(e) }) }
     setSaving(null)
   }
 
@@ -158,10 +158,6 @@ export default function SettingsPage() {
                   需要本地运行 <code className="bg-muted px-1 rounded">python -m aktools</code>，或自行部署 AKShare HTTP API
                 </p>
               </div>
-              <Button size="sm" disabled={saving === 'ds'} onClick={() => handleSave('ds', async () => {})}>
-                {saving === 'ds' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
-                保存
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -326,34 +322,26 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">存储配置</CardTitle>
-              <CardDescription>选择数据存储方式，默认使用浏览器本地存储</CardDescription>
+              <CardDescription>选择数据存储方式，默认使用浏览器本地存储（IndexedDB）</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>存储方式</Label>
-                <Select
-                  value={settings.storage.type}
-                  onValueChange={(v) => updateStorage({ type: v as any })}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="local">浏览器本地存储 (IndexedDB)</SelectItem>
-                    <SelectItem value="notion">Notion</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
+                <div>
+                  <Label className="text-sm">浏览器本地存储</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">数据保存在当前设备 IndexedDB，可通过「备份」页面导出/同步</p>
+                </div>
+                <Badge variant="secondary" className="text-[10px] shrink-0">当前</Badge>
               </div>
-              <div className="space-y-2">
-                <Label>Notion Integration Token</Label>
-                <Input type="password" placeholder="secret_..." />
+              <Separator />
+              <div className="space-y-2 opacity-50 pointer-events-none">
+                <div className="flex items-center justify-between">
+                  <Label>Notion 同步</Label>
+                  <Badge variant="outline" className="text-[10px]">即将推出</Badge>
+                </div>
+                <Input disabled placeholder="Notion Integration Token" />
+                <Input disabled placeholder="Notion Database ID" />
+                <p className="text-xs text-muted-foreground">Notion 同步正在开发中，敬请期待。目前可通过 GitHub Gist 实现跨设备同步。</p>
               </div>
-              <div className="space-y-2">
-                <Label>Notion Database ID</Label>
-                <Input placeholder="xxxxxxxx" />
-              </div>
-              <Button size="sm" disabled={saving === 'storage'} onClick={() => handleSave('storage', async () => {})}>
-                {saving === 'storage' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
-                保存
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -387,10 +375,6 @@ export default function SettingsPage() {
                   disabled
                 />
               </div>
-              <Button size="sm" disabled={saving === 'notif'} onClick={() => handleSave('notif', async () => {})}>
-                {saving === 'notif' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
-                保存
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
@@ -486,10 +470,6 @@ export default function SettingsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button size="sm" disabled={saving === 'theme'} onClick={() => handleSave('theme', async () => {})}>
-                {saving === 'theme' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
-                保存
-              </Button>
             </CardContent>
           </Card>
         </TabsContent>
