@@ -257,7 +257,7 @@ export default function AddFundDialog() {
           {/* Fund rows */}
           <div className="space-y-3 max-h-[50vh] overflow-auto">
             {rows.map((row, idx) => (
-              <div key={row.key} className="rounded-md border bg-slate-50/50 p-3 space-y-2">
+              <div key={row.key} className="rounded-md border bg-muted/10 p-3 space-y-2">
                 {/* Row header */}
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground font-mono shrink-0">#{idx + 1}</span>
@@ -338,7 +338,7 @@ export default function AddFundDialog() {
 
                 {/* Expandable detail fields */}
                 {row.expanded && (
-                  <div className="space-y-2 pt-1 border-t border-slate-200">
+                  <div className="space-y-2 pt-1 border-t">
                     <div className="grid grid-cols-3 gap-2">
                       <div className="space-y-1">
                         <Label className="text-[10px]">市场</Label>

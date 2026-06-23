@@ -5,6 +5,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
 export default defineConfig({
+  base: '/fund-assistant/',
   plugins: [
     react(),
     tailwindcss(),
@@ -31,20 +32,20 @@ export default defineConfig({
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait-primary',
-        start_url: '/',
+        start_url: '/fund-assistant/',
         icons: [
           {
-            src: '/icons/icon-192.png',
+            src: '/fund-assistant/icons/icon-192.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/icons/icon-512.png',
+            src: '/fund-assistant/icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
           },
           {
-            src: '/icons/icon-512.png',
+            src: '/fund-assistant/icons/icon-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
