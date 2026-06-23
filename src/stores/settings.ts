@@ -19,6 +19,10 @@ const defaultSettings: UserSettings = {
     schedule: '0 20 * * 1-5',
   },
   etfMappings: [],
+  sync: {
+    gistToken: '',
+    gistId: '',
+  },
 }
 
 interface SettingsState {

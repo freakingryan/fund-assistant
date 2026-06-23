@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { Key, Database, BellRing, Globe, SunMoon, Save, Link, Plus, Trash2, Sparkles, Loader2 } from 'lucide-react'
+import { Key, Database, BellRing, Globe, SunMoon, Save, Link, Plus, Trash2, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
 import { fetchEtfMapping, testAIConnection } from '@/services/ai'
+import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist } from '@/services/backup'
 import { toast } from '@/components/ui/toast'
 
 export default function SettingsPage() {
@@ -28,14 +29,67 @@ export default function SettingsPage() {
   const [newExName, setNewExName] = useState('')
   const [etfAiLoading, setEtfAiLoading] = useState(false)
   const [saving, setSaving] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testingAi, setTestingAi] = useState<string | null>(null)
 
   const etfMappings = settings.etfMappings
 
   const handleSave = async (action: string, fn: () => Promise<void>) => {
     setSaving(action)
-    try { await fn() } catch {}
+    try { await fn(); toast({ title: '保存成功', duration: 2000 }) } catch (e) { toast({ title: '保存失败', description: String(e), variant: 'destructive' }) }
     setSaving(null)
+  }
+
+  // 导出备份
+  const handleExport = async () => {
+    const data = await exportAllData()
+    downloadBackup(data)
+    setImportResult({ ok: true, msg: `已导出 ${data.holdings.length} 只持仓` })
+    setTimeout(() => setImportResult(null), 3000)
+  }
+
+  // 导入备份
+  const handleImport = async () => {
+    try {
+      const data = await readBackupFile()
+      await importAllData(data)
+      setImportResult({ ok: true, msg: `已恢复 ${data.holdings.length} 只持仓、${data.plans.length} 个计划` })
+      setTimeout(() => { setImportResult(null); window.location.reload() }, 1500)
+    } catch (e) {
+      setImportResult({ ok: false, msg: String(e) })
+    }
+  }
+
+  // 推送到 Gist
+  const handleGistPush = async () => {
+    setSyncing(true); setSyncResult(null)
+    try {
+      const data = await exportAllData()
+      const gistId = await syncToGist(settings.sync.gistToken, settings.sync.gistId || null, data)
+      if (!settings.sync.gistId) {
+        updateSettings({ sync: { ...settings.sync, gistId } })
+      }
+      setSyncResult({ ok: true, msg: `已同步到 Gist（${gistId}），共 ${data.holdings.length} 只持仓` })
+    } catch (e) {
+      setSyncResult({ ok: false, msg: String(e) })
+    }
+    setSyncing(false)
+  }
+
+  // 从 Gist 拉取
+  const handleGistPull = async () => {
+    setSyncing(true); setSyncResult(null)
+    try {
+      const data = await loadFromGist(settings.sync.gistToken, settings.sync.gistId)
+      await importAllData(data)
+      setSyncResult({ ok: true, msg: `已从 Gist 恢复 ${data.holdings.length} 只持仓` })
+      setTimeout(() => { setSyncResult(null); window.location.reload() }, 1500)
+    } catch (e) {
+      setSyncResult({ ok: false, msg: String(e) })
+    }
+    setSyncing(false)
   }
 
   return (
@@ -53,6 +107,7 @@ export default function SettingsPage() {
           <TabsTrigger value="notifications" className="flex items-center gap-1"><BellRing className="h-3 w-3" /> 通知</TabsTrigger>
           <TabsTrigger value="etf" className="flex items-center gap-1"><Link className="h-3 w-3" /> ETF 映射</TabsTrigger>
           <TabsTrigger value="appearance" className="flex items-center gap-1"><SunMoon className="h-3 w-3" /> 外观</TabsTrigger>
+          <TabsTrigger value="backup" className="flex items-center gap-1"><Cloud className="h-3 w-3" /> 备份</TabsTrigger>
         </TabsList>
 
         {/* 数据源 */}
@@ -435,6 +490,71 @@ export default function SettingsPage() {
                 {saving === 'theme' ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Save className="h-3 w-3 mr-2" />}
                 保存
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 数据备份 */}
+        <TabsContent value="backup">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">本地备份</CardTitle>
+              <CardDescription>导出/导入 JSON 文件，格式兼容 GitHub Gist 同步</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleExport}>
+                  <Download className="h-3 w-3 mr-2" />导出备份
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleImport}>
+                  <Upload className="h-3 w-3 mr-2" />导入备份
+                </Button>
+              </div>
+              {importResult && (
+                <p className={`text-xs ${importResult.ok ? 'text-green-500' : 'text-red-500'}`}>
+                  {importResult.ok ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                  {importResult.msg}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="text-base">GitHub Gist 云端同步</CardTitle>
+              <CardDescription>同步到私有 GitHub Gist，换设备可恢复</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <Label className="text-xs">GitHub Personal Access Token</Label>
+                <Input type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  value={settings.sync.gistToken}
+                  onChange={(e) => updateSettings({ sync: { ...settings.sync, gistToken: e.target.value } })}
+                  className="text-xs font-mono h-8 mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Gist ID（首次推送后自动生成）</Label>
+                <Input placeholder="自动生成"
+                  value={settings.sync.gistId}
+                  onChange={(e) => updateSettings({ sync: { ...settings.sync, gistId: e.target.value } })}
+                  className="text-xs font-mono h-8 mt-1" />
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" disabled={!settings.sync.gistToken || syncing} onClick={handleGistPush}>
+                  {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Upload className="h-3 w-3 mr-2" />}
+                  推送到 Gist
+                </Button>
+                <Button size="sm" variant="outline" disabled={!settings.sync.gistToken || !settings.sync.gistId || syncing} onClick={handleGistPull}>
+                  {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Download className="h-3 w-3 mr-2" />}
+                  从 Gist 恢复
+                </Button>
+              </div>
+              {syncResult && (
+                <p className={`text-xs ${syncResult.ok ? 'text-green-500' : 'text-red-500'}`}>
+                  {syncResult.ok ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                  {syncResult.msg}
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

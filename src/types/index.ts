@@ -174,6 +174,10 @@ export interface UserSettings {
     schedule: string  // cron expression
   }
   etfMappings: EtfMapping[]
+  sync: {
+    gistToken: string     // GitHub Personal Access Token
+    gistId: string        // 已创建的 Gist ID，首次推送后自动保存
+  }
 }
 
 // ============= Prompt 相关 =============
