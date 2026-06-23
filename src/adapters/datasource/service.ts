@@ -101,6 +101,21 @@ class DataSourceService implements FundDataSource {
     }
     return null
   }
+
+  /**
+   * 获取开放基金排行
+   */
+  async fetchFundRank(symbol = '全部', topN = 50): Promise<any[]> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof (adapter as any).fetchFundRank === 'function') {
+        try {
+          const data = await (adapter as any).fetchFundRank(symbol, topN)
+          if (data.length > 0) return data
+        } catch { /* try next */ }
+      }
+    }
+    return []
+  }
 }
 
 export const dataSourceService = new DataSourceService()

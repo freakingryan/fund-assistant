@@ -3,6 +3,13 @@ import type { FundDataSource } from './base'
 import { useSettingsStore } from '@/stores/settings'
 import { generateMockQuotes, generateMockKLine } from './base'
 
+/** 解析百分比/数值字段，兼容 number 和 "12.34%" 字符串 */
+function parsePct(v: any): number {
+  if (v == null) return 0
+  if (typeof v === 'number') return v
+  return Number(String(v).replace('%', '')) || 0
+}
+
 /**
  * AKShare 数据源适配器（通过 AKTools HTTP API）
  *
@@ -235,6 +242,38 @@ export class AKShareAdapter implements FundDataSource {
       const exName: string = matched['基金简称'] || matched['name'] || ''
       return { otcCode, otcName, exchangeCode: exCode, exchangeName: exName }
     } catch { return null }
+  }
+
+  /**
+   * fund_open_fund_rank_em — 开放基金排行
+   * symbol: 全部 / 股票型 / 混合型 / 债券型 / 指数型 / QDII / FOF
+   */
+  async fetchFundRank(symbol = '全部', topN = 50): Promise<{
+    code: string; name: string; type: string; nav: number; accNav: number;
+    dailyChange: number; week1: number; month1: number; month3: number;
+    month6: number; year1: number; year2: number; year3: number;
+    thisYear: number; sinceInception: number;
+  }[]> {
+    try {
+      const data = await this.call<Record<string, any>>('fund_open_fund_rank_em', { symbol })
+      return data.slice(0, topN).map((item: any) => ({
+        code: String(item['基金代码'] || ''),
+        name: String(item['基金简称'] || ''),
+        type: symbol === '全部' ? String(item['基金类型'] || item['基金简称'] || item['name'] || '') : symbol,
+        nav: Number(item['单位净值'] || 0),
+        accNav: Number(item['累计净值'] || 0),
+        dailyChange: parsePct(item['日增长率']),
+        week1: parsePct(item['近1周']),
+        month1: parsePct(item['近1月']),
+        month3: parsePct(item['近3月']),
+        month6: parsePct(item['近6月']),
+        year1: parsePct(item['近1年']),
+        year2: parsePct(item['近2年']),
+        year3: parsePct(item['近3年']),
+        thisYear: parsePct(item['今年来']),
+        sinceInception: parsePct(item['成立来']),
+      }))
+    } catch { return [] }
   }
 }
 

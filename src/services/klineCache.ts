@@ -69,6 +69,16 @@ export async function setPortfolioCache(fundCode: string, data: PortfolioCache):
   return setCache(`pf_${fundCode}`, data)
 }
 
+// ── 基金排行缓存 ────────────────────────────
+
+export async function getRankCache(symbol: string): Promise<any[] | null> {
+  return getCache<any[]>(`rk_${symbol}`, 24 * 60 * 60 * 1000) // 1 天
+}
+
+export async function setRankCache(symbol: string, data: any[]): Promise<void> {
+  return setCache(`rk_${symbol}`, data)
+}
+
 // ── 通用 ────────────────────────────────────
 
 export async function clearAllCache(): Promise<void> {

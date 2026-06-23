@@ -268,7 +268,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <TrendingUp className="h-3 w-3" />持仓盈亏
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.totalProfit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${summary.totalProfit >= 0 ? 'text-red-500' : 'text-green-500'}`}>
               {summary.totalProfit >= 0 ? '+' : '-'}{formatCurrency(summary.totalProfit)}
             </p>
           </CardContent>
@@ -279,7 +279,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <Percent className="h-3 w-3" />持仓收益率
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.avgReturn >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${summary.avgReturn >= 0 ? 'text-red-500' : 'text-green-500'}`}>
               {formatPercent(summary.avgReturn)}
             </p>
           </CardContent>
@@ -290,7 +290,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <BarChart3 className="h-3 w-3" />今日涨跌
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.todayChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${summary.todayChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
               {formatPercent(summary.todayChange)}
             </p>
           </CardContent>

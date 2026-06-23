@@ -139,7 +139,7 @@ export default function HoldingsTable() {
       cell: ({ getValue }) => {
         const v = getValue()
         if (!v) return <span className="text-xs text-muted-foreground">-</span>
-        const color = v >= 0 ? 'text-green-500' : 'text-red-500'
+        const color = v >= 0 ? 'text-red-500' : 'text-green-500'
         const prefix = v >= 0 ? '+' : ''
         return <span className={`font-mono text-sm ${color}`}>{prefix}¥{v.toFixed(2)}</span>
       },

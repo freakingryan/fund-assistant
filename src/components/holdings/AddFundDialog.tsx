@@ -11,14 +11,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
-import {
-  Plus, Loader2, Sparkles, ChevronDown, ChevronUp,
+import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp, TrendingUp,
   AlertCircle, Trash2, X,
 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { autoClassify } from '@/lib/classification'
 import { fetchFundInfoByCodes, fetchEtfMapping, getDefaultAI } from '@/services/ai'
+import FundRankDialog from './FundRankDialog'
 import type { Market, FundType, FundSector } from '@/types'
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
@@ -82,6 +82,7 @@ export default function AddFundDialog() {
   const [rows, setRows] = useState<FundRow[]>([makeRow()])
   const [error, setError] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
+  const [rankOpen, setRankOpen] = useState(false)
   const [aiConfigured, setAiConfigured] = useState(false)
   const [showAllDetails, setShowAllDetails] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -100,6 +101,21 @@ export default function AddFundDialog() {
 
   // Add empty row
   const addRow = () => setRows((prev) => [...prev, makeRow()])
+
+  // Phase 6.3: 从排行推荐选择基金
+  const handleRankSelect = (funds: { code: string; name: string }[]) => {
+    setRows((prev) => {
+      const newRows = [...prev]
+      const existing = new Set(newRows.map((r) => r.code.trim()))
+      for (const f of funds) {
+        if (!existing.has(f.code)) {
+          newRows.push({ ...makeRow(), code: f.code, name: f.name })
+          existing.add(f.code)
+        }
+      }
+      return newRows
+    })
+  }
 
   // Remove row
   const removeRow = (key: string) => {
@@ -207,7 +223,8 @@ export default function AddFundDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setError('') }}>
+    <>
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setError('') }}>
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="h-4 w-4 mr-2" />添加基金</Button>
       </DialogTrigger>
@@ -382,6 +399,9 @@ export default function AddFundDialog() {
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addRow}>
               <Plus className="h-3 w-3 mr-1" />添加基金代码
             </Button>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setRankOpen(true)}>
+              <TrendingUp className="h-3 w-3 mr-1" />基金排行
+            </Button>
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={toggleShowAll}>
               {showAllDetails ? '收起' : '展开'}全部详情
             </Button>
@@ -399,5 +419,7 @@ export default function AddFundDialog() {
         </div>
       </DialogContent>
     </Dialog>
+      <FundRankDialog open={rankOpen} onOpenChange={setRankOpen} onSelect={handleRankSelect} />
+    </>
   )
 }

@@ -369,7 +369,7 @@ Prompt 模板填充 + 场内 ETF K 线查询 → 复制到剪贴板
 | Phase 5 | ✅ 完成 | Prompt 生成器（诊断/调仓/K线增强） + 东方财富/ACShare 数据源 |
 | Phase 6.1 | ✅ 完成 | **场内 ETF 真实 K 线** — AKShare fund_etf_hist_em 真实 OHLC + 成交量，标准 SVG 蜡烛图 |
 | Phase 6.2 | ✅ 完成 | **基金持仓穿透** — AKShare fund_portfolio 查看前十大重仓股与行业分布 |
-| Phase 6.3 | 🔜 已排期 | **基金排行筛选** — AKShare fund_open_fund_rank_em 推荐基金面板 |
+| Phase 6.3 | ✅ 完成 | **基金排行筛选** — AKShare fund_open_fund_rank_em 推荐基金面板 |
 | Phase 6.4 | ✅ 完成 | **UI 重构** — 基金详情页（K线+Prompt聚合+持仓穿透），侧边栏快捷入口 |
 | Phase 6.5 | ⏳ 待开始 | 通知（Web Push）+ 存储扩展（Notion）+ 暗色模式 + 部署配置 |
 | Phase 6.2 | 🔜 已排期 | **基金持仓穿透** — AKShare fund_portfolio 查看前十大重仓股与行业分布 |
