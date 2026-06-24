@@ -1,12 +1,11 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { dataSourceService } from '@/adapters/datasource/service'
-import { getRankCache, setRankCache } from '@/services/klineCache'
+import { getRankCache, setRankCache, deleteRankCache, getRankCacheTime, formatCacheTime } from '@/services/klineCache'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Loader2, Search, Plus, TrendingUp, TrendingDown, Check } from 'lucide-react'
+import { Loader2, Search, Plus, TrendingUp } from 'lucide-react'
 
 type FundRankItem = {
   code: string
@@ -34,10 +33,12 @@ export default function FundRankDialog({ open, onOpenChange, onSelect }: Props) 
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+  const [rankUpdateTime, setRankUpdateTime] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
-    setLoading(true); setError('')
+    setTimeout(() => { setLoading(true); setError('') }, 0)
 
     const load = async () => {
       // 尝试缓存
@@ -47,7 +48,13 @@ export default function FundRankDialog({ open, onOpenChange, onSelect }: Props) 
           code: r.code, name: r.name, type: r.type || '',
           nav: r.nav, month1: r.month1, month3: r.month3, year1: r.year1,
         })))
-        setLoading(false); return
+        setLoading(false)
+        getRankCacheTime(symbol).then((ts) => {
+          if (ts) {
+            setRankUpdateTime(formatCacheTime(ts))
+          }
+        })
+        return
       }
 
       // 调用 API
@@ -65,6 +72,27 @@ export default function FundRankDialog({ open, onOpenChange, onSelect }: Props) 
     }
     load()
   }, [open, symbol])
+
+  // 手动刷新排行
+  const handleRefresh = async () => {
+    setRefreshing(true); setError('')
+    await deleteRankCache(symbol)
+    try {
+      const raw = await dataSourceService.fetchFundRank(symbol, 100)
+      if (raw.length > 0) {
+        setRankCache(symbol, raw)
+        setData(raw.map((r: any) => ({
+          code: r.code, name: r.name, type: r.type || '',
+          nav: r.nav, month1: r.month1, month3: r.month3, year1: r.year1,
+        })))
+      } else {
+        setError('加载排行失败')
+      }
+    } catch (e) {
+      setError(String(e))
+    }
+    setRefreshing(false)
+  }
 
   const sorted = useMemo(() => {
     const filtered = search
@@ -95,6 +123,14 @@ export default function FundRankDialog({ open, onOpenChange, onSelect }: Props) 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />基金排行推荐
+            {rankUpdateTime && <span className="text-[10px] text-muted-foreground font-normal">更新于 {rankUpdateTime}</span>}
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="ml-auto text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {refreshing ? <Loader2 className="h-3 w-3 animate-spin inline" /> : '⟳ 刷新'}
+            </button>
           </DialogTitle>
         </DialogHeader>
 

@@ -116,6 +116,33 @@ class DataSourceService implements FundDataSource {
     }
     return []
   }
+  /**
+   * 是否配置了 AKShare（AKTools 服务）
+   */
+  isAkshareConfigured(): boolean {
+    const cfg = useSettingsStore.getState().settings.dataSource
+    return cfg.primarySource === 'akshare' || !!cfg.akshareURL
+  }
+
+  /**
+   * 查询场外基金对应的场内 ETF 代码
+   */
+  async queryEtfMapping(otcCode: string): Promise<{
+    otcCode: string
+    otcName: string
+    exchangeCode: string
+    exchangeName: string
+  } | null> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof (adapter as any).queryEtfMapping === 'function') {
+        try {
+          const result = await (adapter as any).queryEtfMapping(otcCode)
+          if (result) return result
+        } catch { /* try next */ }
+      }
+    }
+    return null
+  }
 }
 
 export const dataSourceService = new DataSourceService()

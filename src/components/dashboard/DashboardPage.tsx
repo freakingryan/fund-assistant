@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
@@ -7,13 +7,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, LineChart, Line, Legend,
+  Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import {
-  TrendingUp, TrendingDown, Wallet, BarChart3, PieChartIcon,
+  TrendingUp, Wallet, BarChart3, PieChartIcon,
   DollarSign, Percent, Loader2, AlertCircle,
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
+import { getKlineCache, setKlineCache, deleteKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
 
 const TYPE_COLORS: Record<string, string> = {
   stock: '#ef4444', mixed: '#f97316', bond: '#22c55e', index: '#3b82f6',
@@ -44,52 +45,6 @@ function calcCost(h: FundHolding): number {
   return 0
 }
 
-/** K 线图表区域 — 支持 ETF 蜡烛图/净值折线图切换 */
-function ChartArea({ etfCode, useEtfKline, setUseEtfKline, klineLoading, klineData }: {
-  etfCode: string | null
-  useEtfKline: boolean
-  setUseEtfKline: (v: boolean) => void
-  klineLoading: boolean
-  klineData: any[]
-}) {
-  if (klineLoading) {
-    return (
-      <div className="flex items-center justify-center h-[200px]">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  const showCandle = useEtfKline && etfCode && klineData[0]?.volume
-
-  return (
-    <div className="space-y-2">
-      {etfCode && (
-        <div className="flex items-center gap-2">
-          <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
-          <Label htmlFor="etf-kline" className="text-xs cursor-pointer">
-            场内 ETF 真实 K 线
-            <span className="text-[10px] text-muted-foreground ml-1">（{etfCode}）</span>
-          </Label>
-        </div>
-      )}
-      {showCandle ? (
-        <CandlestickChart data={klineData} width={480} height={300} />
-      ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={klineData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={(v) => (v || '').slice(5)} />
-            <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }} tickFormatter={(v) => v.toFixed(2)} />
-            <Tooltip />
-            <Line type="monotone" dataKey="close" stroke="#3b82f6" dot={false} strokeWidth={2} />
-          </LineChart>
-        </ResponsiveContainer>
-      )}
-    </div>
-  )
-}
-
 export default function DashboardPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
@@ -103,11 +58,16 @@ export default function DashboardPage() {
 
   const [quotes, setQuotes] = useState<FundQuote[]>([])
   const [quotesLoading, setQuotesLoading] = useState(false)
-  const [selectedFund, setSelectedFund] = useState<FundHolding | null>(null)
-  const [selectedPeriod, setSelectedPeriod] = useState('3m')
-  const [klineData, setKlineData] = useState<any[]>([])
-  const [klineLoading, setKlineLoading] = useState(false)
-  const [useEtfKline, setUseEtfKline] = useState(true)
+  const [_quotesError, setQuotesError] = useState('')
+  const [quotesRefreshing, setQuotesRefreshing] = useState(false)
+  const [_klineRefreshing, setKlineRefreshing] = useState(false)
+  const [selectedFund, _setSelectedFund] = useState<FundHolding | null>(null)
+  const [selectedPeriod, _setSelectedPeriod] = useState('3m')
+  const [_klineData, setKlineData] = useState<any[]>([])
+  const [_klineLoading, setKlineLoading] = useState(false)
+  const [useEtfKline, _setUseEtfKline] = useState(true)
+  const [quotesUpdateTime, setQuotesUpdateTime] = useState<string | null>(null)
+  const [klineRefreshKey, setKlineRefreshKey] = useState(0)
 
   // 当前选中基金的场内 ETF 映射代码
   const etfCode = useMemo(() => {
@@ -119,28 +79,56 @@ export default function DashboardPage() {
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
 
-  // Load quotes
-  useEffect(() => {
+  /** 尝试读取行情更新时间 */
+  const updateQuotesTime = useCallback(async () => {
     if (holdings.length === 0) return
     const codes = holdings.map((h) => h.code)
-    setQuotesLoading(true)
-    dataSourceService.fetchQuotes(codes).then((data) => {
-      setQuotes(data)
-    }).finally(() => setQuotesLoading(false))
+    const ts = await getQuotesCacheTime(codes)
+    setQuotesUpdateTime(ts ? formatCacheTime(ts) : null)
   }, [holdings])
+
+  // 初始加载时也获取更新时间
+  useEffect(() => { if (!quotesUpdateTime) { setTimeout(() => { updateQuotesTime().catch(() => {}) }, 0) } }, [updateQuotesTime, quotesUpdateTime])
+
+  // Load quotes（带缓存 + 手动刷新）
+  const loadQuotes = useCallback(async (force = false) => {
+    if (holdings.length === 0) return
+    const codes = holdings.map((h) => h.code)
+    setQuotesLoading(true); setQuotesError('')
+
+    if (!force) {
+      const cached = await getQuotesCache(codes)
+      if (cached?.quotes?.length) {
+        setQuotes(cached.quotes as FundQuote[])
+        setQuotesLoading(false)
+        return
+      }
+    }
+
+    try {
+      const data = await dataSourceService.fetchQuotes(codes)
+      setQuotes(data)
+      if (data.length > 0) setQuotesCache(codes, data)
+    } catch (e) {
+      setQuotesError(String(e))
+    }
+    setQuotesLoading(false)
+  }, [holdings])
+
+  useEffect(() => { setTimeout(() => { loadQuotes().catch(() => {}) }, 0) }, [loadQuotes])
 
   // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线（带安全超时）
   useEffect(() => {
     if (!selectedFund) return
     let cancelled = false
-    setKlineLoading(true)
+    setTimeout(() => setKlineLoading(true), 0)
 
     const timer = setTimeout(() => { if (!cancelled) setKlineLoading(false) }, 15000)
 
     const loadKline = async () => {
       const etfCacheKey = `etf_${etfCode}`
       const navCacheKey = selectedFund.code
-      const cacheKey = useEtfKline ? etfCacheKey : navCacheKey
+      const _cacheKey = useEtfKline ? etfCacheKey : navCacheKey
 
       const [cached, navCached] = await Promise.all([
         getKlineCache(etfCacheKey, selectedPeriod),
@@ -165,7 +153,32 @@ export default function DashboardPage() {
     }
     loadKline()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [selectedFund, selectedPeriod, etfCode, useEtfKline])
+  }, [selectedFund, selectedPeriod, etfCode, useEtfKline, klineRefreshKey])
+
+  // 手动刷新行情
+  const handleRefreshQuotes = async () => {
+    setQuotesRefreshing(true)
+    await deleteQuotesCache()
+    await loadQuotes(true)
+    setQuotesUpdateTime(null)
+    await updateQuotesTime()
+    setQuotesRefreshing(false)
+  }
+
+  // 手动刷新 K 线
+  const _handleRefreshKline = async () => {
+    if (!selectedFund) return
+    setKlineRefreshing(true)
+    const etfCacheKey = `etf_${etfCode}`
+    const navCacheKey = selectedFund.code
+    await Promise.all([
+      deleteKlineCache(etfCacheKey, selectedPeriod),
+      deleteKlineCache(navCacheKey, selectedPeriod),
+    ])
+    setKlineData([])
+    setKlineRefreshKey((k) => k + 1)  // 触发 useEffect 重新运行
+    setKlineRefreshing(false)
+  }
 
   // Calc summary
   const summary = useMemo(() => {
@@ -241,15 +254,27 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">数据看板</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <div className="text-sm text-muted-foreground mt-1">
             持仓总览 · 共 {holdings.length} 只基金
             <Badge variant="outline" className="ml-2 text-[10px]">{dataSourceLabel}</Badge>
             {quotesLoading && <Loader2 className="h-3 w-3 inline ml-1 animate-spin" />}
-          </p>
+            {quotesUpdateTime && <span className="text-[10px] text-muted-foreground ml-2">数据更新于 {quotesUpdateTime}</span>}
+          </div>
         </div>
+        <button
+          onClick={handleRefreshQuotes}
+          disabled={quotesRefreshing}
+          className="text-xs px-2 py-1 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
+        >
+          {quotesRefreshing ? (
+            <><Loader2 className="h-3 w-3 inline mr-1 animate-spin" />刷新中</>
+          ) : (
+            <>⟳ 刷新数据</>
+          )}
+        </button>
       </div>
 
       {/* Summary Cards */}

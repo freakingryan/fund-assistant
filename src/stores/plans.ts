@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { db } from './db'
-import type { InvestmentPlan, PlanRule, PlanAlert, PlanRuleType, Comparator, FundHolding } from '@/types'
+import type { InvestmentPlan, PlanRule, PlanAlert, Comparator, FundHolding } from '@/types'
 import { dataSourceService } from '@/adapters/datasource/service'
 
 const DEFAULT_PLAN: Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'> = {

@@ -9,19 +9,24 @@ import PromptsPage from '@/components/prompts/PromptsPage'
 import NotificationsPage from '@/components/settings/NotificationsPage'
 import SettingsPage from '@/components/settings/SettingsPage'
 
-export const router = createBrowserRouter([
+export const router = createBrowserRouter(
+  [
+    {
+      path: '/',
+      element: <AppLayout />,
+      children: [
+        { index: true, element: <DashboardPage /> },
+        { path: 'holdings', element: <HoldingsPage /> },
+        { path: 'detail/:id', element: <FundDetailPage /> },
+        { path: 'detail', element: <FundDetailGateway /> },
+        { path: 'plans', element: <PlansPage /> },
+        { path: 'prompts', element: <PromptsPage /> },
+        { path: 'notifications', element: <NotificationsPage /> },
+        { path: 'settings', element: <SettingsPage /> },
+      ],
+    },
+  ],
   {
-    path: '/',
-    element: <AppLayout />,
-    children: [
-      { index: true, element: <DashboardPage /> },
-      { path: 'holdings', element: <HoldingsPage /> },
-      { path: 'detail/:id', element: <FundDetailPage /> },
-      { path: 'detail', element: <FundDetailGateway /> },
-      { path: 'plans', element: <PlansPage /> },
-      { path: 'prompts', element: <PromptsPage /> },
-      { path: 'notifications', element: <NotificationsPage /> },
-      { path: 'settings', element: <SettingsPage /> },
-    ],
-  },
-])
+    basename: import.meta.env.BASE_URL,
+  }
+)

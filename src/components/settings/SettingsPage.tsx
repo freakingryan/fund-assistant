@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const [newExCode, setNewExCode] = useState('')
   const [newExName, setNewExName] = useState('')
   const [etfAiLoading, setEtfAiLoading] = useState(false)
-  const [saving, setSaving] = useState<string | null>(null)
+  const [_saving, setSaving] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -36,7 +36,7 @@ export default function SettingsPage() {
 
   const etfMappings = settings.etfMappings
 
-  const handleSave = async (action: string, fn: () => Promise<void>) => {
+  const _handleSave = async (action: string, fn: () => Promise<void>) => {
     setSaving(action)
     try { await fn(); toast({ type: 'success', message: '保存成功' }) } catch (e) { toast({ type: 'error', message: String(e) }) }
     setSaving(null)

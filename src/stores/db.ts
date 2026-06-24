@@ -18,7 +18,7 @@ export class FundAssistantDB extends Dexie {
       plans: 'id, enabled',
       alerts: 'id, fundCode, triggeredAt',
       settings: 'id',
-    }).upgrade(async (tx) => {
+    }).upgrade(async (_tx) => {
       console.warn('[DB] Upgrading from v1 to v2')
     })
 

@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Loader2, LineChart } from 'lucide-react'
 
 /** 基金详情入口 — 自动跳转到第一个持仓的详情页 */

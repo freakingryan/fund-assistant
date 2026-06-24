@@ -5,7 +5,7 @@ import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
-import { getKlineCache, setKlineCache, getPortfolioCache, setPortfolioCache } from '@/services/klineCache'
+import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, getPortfolioCacheTime, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -34,8 +34,8 @@ export default function FundDetailPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
-  const alerts = usePlansStore ? usePlansStore((s) => s.alerts) : []
-  const loadAlerts = usePlansStore ? usePlansStore((s) => s.loadAlerts) : () => {}
+  const alerts = usePlansStore((s) => s.alerts)
+  const loadAlerts = usePlansStore((s) => s.loadAlerts)
 
   // 自动选中第一个持仓或 URL 指定的基金
   const fund = useMemo(() => {
@@ -59,6 +59,8 @@ export default function FundDetailPage() {
   const [period, setPeriod] = useState('3m')
   const [klineData, setKlineData] = useState<any[]>([])
   const [klineLoading, setKlineLoading] = useState(false)
+  const [klineUpdateTime, setKlineUpdateTime] = useState<string | null>(null)
+  const [klineRefreshKey, setKlineRefreshKey] = useState(0)
   const [useEtfKline, setUseEtfKline] = useState(true)
 
   // ETF 映射
@@ -74,22 +76,65 @@ export default function FundDetailPage() {
   const [templateType, setTemplateType] = useState<PromptTemplateType>('diagnostic')
   const [quotes, setQuotes] = useState<any[]>([])
   const [quotesLoading, setQuotesLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState({ kline: false, portfolio: false, quotes: false })
+  // 持仓穿透（带缓存）
+  const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
+  const [portfolioLoading, setPortfolioLoading] = useState(false)
+  const [portfolioUpdateTime, setPortfolioUpdateTime] = useState<string | null>(null)
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
 
-  // 加载行情
-  useEffect(() => {
+  // 加载行情（带缓存）
+  const loadQuotes = useCallback(async (force = false) => {
     if (!fund) return
     setQuotesLoading(true)
-    dataSourceService.fetchQuotes([fund.code]).then(setQuotes).finally(() => setQuotesLoading(false))
+    if (!force) {
+      const cached = await getQuotesCache([fund.code])
+      if (cached?.quotes?.length) {
+        setQuotes(cached.quotes)
+        setQuotesLoading(false)
+        return
+      }
+    }
+    try {
+      const data = await dataSourceService.fetchQuotes([fund.code])
+      setQuotes(data)
+      if (data.length > 0) setQuotesCache([fund.code], data)
+    } catch (e) {
+      console.error('加载行情失败', e)
+    }
+    setQuotesLoading(false)
+  }, [fund])
+
+  useEffect(() => { setTimeout(() => { loadQuotes().catch(() => {}) }, 0) }, [loadQuotes])
+
+  // 手动刷新 K 线
+  const handleRefreshKline = useCallback(async () => {
+    if (!fund) return
+    setRefreshing((s) => ({ ...s, kline: true }))
+    await deleteKlineCache(`etf_${etfCode}`, period)
+    await deleteKlineCache(fund.code, period)
+    setKlineData([])
+    setKlineRefreshKey((k) => k + 1)  // 触发 useEffect 重新加载
+    setRefreshing((s) => ({ ...s, kline: false }))
+  }, [fund, etfCode, period])
+
+  // 手动刷新重仓股
+  const handleRefreshPortfolio = useCallback(async () => {
+    if (!fund) return
+    setRefreshing((s) => ({ ...s, portfolio: true }))
+    await deletePortfolioCache(fund.code)
+    setPortfolioLoading(true)
+    setPortfolio(null)
+    setRefreshing((s) => ({ ...s, portfolio: false }))
   }, [fund])
 
   // K 线（带安全超时）
   useEffect(() => {
     if (!fund) return
     let cancelled = false
-    setKlineLoading(true)
+    setTimeout(() => setKlineLoading(true), 0)
 
     // safety timeout: 15s 后强制停止 loading
     const timer = setTimeout(() => {
@@ -99,7 +144,7 @@ export default function FundDetailPage() {
     const load = async () => {
       const etfCacheKey = `etf_${etfCode}`
       const navCacheKey = fund.code
-      const cacheKey = useEtfKline ? etfCacheKey : navCacheKey
+      const _cacheKey = useEtfKline ? etfCacheKey : navCacheKey
 
       // 先查缓存（ETF 和 NAV 都查）
       const [cached, navCached] = await Promise.all([
@@ -108,8 +153,16 @@ export default function FundDetailPage() {
       ])
       // 如果当前模式有缓存则直接显示
       if (!cancelled) {
-        if (useEtfKline && cached?.length) { clearTimeout(timer); setKlineData(cached); setKlineLoading(false); return }
-        if (!useEtfKline && navCached?.length) { clearTimeout(timer); setKlineData(navCached); setKlineLoading(false); return }
+        if (useEtfKline && cached?.length) {
+          clearTimeout(timer); setKlineData(cached); setKlineLoading(false)
+          getKlineCacheTime(etfCacheKey, period).then((ts) => ts && setKlineUpdateTime(formatCacheTime(ts)))
+          return
+        }
+        if (!useEtfKline && navCached?.length) {
+          clearTimeout(timer); setKlineData(navCached); setKlineLoading(false)
+          getKlineCacheTime(navCacheKey, period).then((ts) => ts && setKlineUpdateTime(formatCacheTime(ts)))
+          return
+        }
       }
 
       // 无缓存，并发拉取 ETF + NAV，全部写入缓存
@@ -127,21 +180,21 @@ export default function FundDetailPage() {
     }
     load()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [fund, period, etfCode, useEtfKline])
-
-  // 持仓穿透（带缓存）
-  const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
-  const [portfolioLoading, setPortfolioLoading] = useState(false)
+  }, [fund, period, etfCode, useEtfKline, klineRefreshKey])
 
   useEffect(() => {
     if (!fund) return
     let cancelled = false
-    setPortfolioLoading(true)
+    setTimeout(() => setPortfolioLoading(true), 0)
 
     const load = async () => {
       // 尝试缓存
       const cached = await getPortfolioCache(fund.code)
-      if (!cancelled && cached) { setPortfolio(cached); setPortfolioLoading(false); return }
+      if (!cancelled && cached) {
+        setPortfolio(cached); setPortfolioLoading(false)
+        getPortfolioCacheTime(fund.code).then((ts) => ts && setPortfolioUpdateTime(formatCacheTime(ts)))
+        return
+      }
 
       // 调用 API
       const data = await dataSourceService.fetchFundPortfolio(fund.code)
@@ -224,8 +277,13 @@ export default function FundDetailPage() {
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm">K 线走势</CardTitle>
-                <Select value={period} onValueChange={setPeriod}>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm">K 线走势</CardTitle>
+                  {klineUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {klineUpdateTime}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={handleRefreshKline} disabled={refreshing.kline} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">{refreshing.kline ? '⟳' : '⟳ 刷新'}</button>
+                  <Select value={period} onValueChange={setPeriod}>
                   <SelectTrigger className="h-7 text-xs w-[70px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="1m">1月</SelectItem>
@@ -235,6 +293,7 @@ export default function FundDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
             </CardHeader>
             <CardContent>
               {etfCode && (
@@ -269,7 +328,15 @@ export default function FundDetailPage() {
 
           {/* 持仓穿透 */}
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm">重仓股</CardTitle></CardHeader>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm">重仓股</CardTitle>
+                  {portfolioUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {portfolioUpdateTime}</span>}
+                </div>
+                <button onClick={handleRefreshPortfolio} disabled={refreshing.portfolio} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">{refreshing.portfolio ? '⟳' : '⟳ 刷新'}</button>
+              </div>
+            </CardHeader>
             <CardContent>
               {portfolioLoading ? (
                 <div className="flex items-center justify-center h-16"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>

@@ -99,7 +99,7 @@ export class TushareAdapter implements FundDataSource {
       }
     }
 
-    let changesMap = new Map<string, number>()
+    const changesMap = new Map<string, number>()
     try {
       const dailyData = await this.call('fund_daily', {
         ts_code: codes.join(','),

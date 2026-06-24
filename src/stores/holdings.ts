@@ -22,7 +22,7 @@ interface HoldingsState {
   importHoldings: (holdings: Omit<FundHolding, 'id' | 'createdAt' | 'updatedAt'>[]) => Promise<void>
 }
 
-export const useHoldingsStore = create<HoldingsState>((set, get) => ({
+export const useHoldingsStore = create<HoldingsState>((set, _get) => ({
   holdings: [],
   quotes: {},
   selectedIds: [],

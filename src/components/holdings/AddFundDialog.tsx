@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -7,17 +8,15 @@ import {
   Dialog, DialogContent, DialogDescription,
   DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Textarea } from '@/components/ui/textarea'
 import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp, TrendingUp,
-  AlertCircle, Trash2, X,
+  AlertCircle, X,
 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { autoClassify } from '@/lib/classification'
-import { fetchFundInfoByCodes, fetchEtfMapping, getDefaultAI } from '@/services/ai'
+import { dataSourceService } from '@/adapters/datasource/service'
+import { getFundInfoCache, setFundInfoCache, getEtfMappingCache, setEtfMappingCache } from '@/services/klineCache'
+import type { FundInfoCache } from '@/services/klineCache'
 import FundRankDialog from './FundRankDialog'
 import type { Market, FundType, FundSector } from '@/types'
 
@@ -38,11 +37,6 @@ const SECTOR_OPTIONS: { value: FundSector; label: string }[] = [
   { value: 'bond_market', label: '债市' }, { value: 'commodity', label: '大宗商品' },
   { value: 'real_estate', label: '地产' }, { value: 'other', label: '其他' },
 ]
-const MARKET_LABELS: Record<Market, string> = { A: 'A股', HK: '港股', US: '美股' }
-const TYPE_LABELS: Record<string, string> = {
-  stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
-  qdii: 'QDII', money: '货币型', etf: 'ETF', other: '其他',
-}
 
 interface FundRow {
   key: string
@@ -73,27 +67,30 @@ function makeRow(code = ''): FundRow {
 }
 
 export default function AddFundDialog() {
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const addHolding = useHoldingsStore((s) => s.addHolding)
+  const _addHolding = useHoldingsStore((s) => s.addHolding)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
 
   const [rows, setRows] = useState<FundRow[]>([makeRow()])
   const [error, setError] = useState('')
-  const [aiLoading, setAiLoading] = useState(false)
+  const [queryLoading, setQueryLoading] = useState(false)
   const [rankOpen, setRankOpen] = useState(false)
-  const [aiConfigured, setAiConfigured] = useState(false)
+  const [akshareReady, setAkshareReady] = useState(false)
   const [showAllDetails, setShowAllDetails] = useState(false)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [_selected, setSelected] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (open) {
-      setAiConfigured(!!getDefaultAI())
-      setRows([makeRow()])
-      setError('')
-      setSelected(new Set())
-      setShowAllDetails(false)
+      setTimeout(() => {
+        setAkshareReady(dataSourceService.isAkshareConfigured())
+        setRows([makeRow()])
+        setError('')
+        setSelected(new Set())
+        setShowAllDetails(false)
+      }, 0)
     }
   }, [open])
 
@@ -143,60 +140,105 @@ export default function AddFundDialog() {
   }
 
   // Toggle selection
-  const toggleSelect = (key: string) => {
-    setSelected((prev) => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s })
+  const _toggleSelect = (key: string) => {
+    setSelected((prev) => { const s = new Set(prev); if (s.has(key)) { s.delete(key) } else { s.add(key) }; return s })
   }
 
   // Select all
-  const selectAll = () => {
+  const _selectAll = () => {
     setSelected(new Set(rows.filter((r) => r.code.trim()).map((r) => r.key)))
   }
 
   // Deselect all
-  const deselectAll = () => setSelected(new Set())
+  const _deselectAll = () => setSelected(new Set())
 
-  // AI batch query
-  const handleAIQuery = async () => {
+  // AKTools 批量查询：获取基金名称 + 类型 + ETF 映射（带缓存）
+  const handleQuickQuery = async () => {
     if (codes.length === 0) { setError('请先输入基金代码'); return }
-    setAiLoading(true); setError('')
+    setQueryLoading(true); setError('')
+
     try {
-      const results = await fetchFundInfoByCodes(codes)
+      // 批量查询（并行）：先查缓存，未缓存的一起并发查询
+      const cachedResults = new Map<string, FundInfoCache>()
+      const uncachedCodes: string[] = []
+      for (const code of codes) {
+        const cached = await getFundInfoCache(code)
+        if (cached) {
+          cachedResults.set(code, cached)
+        } else {
+          uncachedCodes.push(code)
+        }
+      }
+
+      // 未缓存的并发查询
+      if (uncachedCodes.length > 0) {
+        const results = await Promise.allSettled(
+          uncachedCodes.map(async (code) => {
+            const info = await dataSourceService.fetchFundInfo(code)
+            const auto = autoClassify(code, info.name)
+            const fundInfo: FundInfoCache = {
+              code,
+              name: info.name,
+              type: info.type || auto.type,
+              sector: auto.sector,
+              description: '',
+            }
+            await setFundInfoCache(code, fundInfo)
+            return fundInfo
+          })
+        )
+        for (const result of results) {
+          if (result.status === 'fulfilled') {
+            cachedResults.set(result.value.code, result.value)
+          }
+        }
+      }
+
+      // 批量更新表格行
       const typeMap: Record<string, FundType> = {
         '股票型': 'stock', '混合型': 'mixed', '债券型': 'bond',
         '指数型': 'index', 'qdii': 'qdii', '货币型': 'money', 'etf': 'etf',
       }
-      const sectorMap: Record<string, FundSector> = {
-        '科技': 'tech', '消费': 'consumer', '医药': 'healthcare',
-        '新能源': 'new_energy', '金融': 'finance', '制造': 'manufacturing',
-        '宽基': 'broad_market', '全球': 'global', '债市': 'bond_market',
-        '大宗商品': 'commodity', '地产': 'real_estate',
-      }
       setRows((prev) => prev.map((row) => {
-        const match = results.find((r) => r.code === row.code?.trim())
-        if (!match) return row
-        const auto = autoClassify(match.code, match.name)
+        const info = cachedResults.get(row.code?.trim())
+        if (!info) return row
+        const auto = autoClassify(info.code, info.name)
         return {
           ...row,
-          name: match.name || row.name,
-          type: typeMap[match.type] || auto.type,
-          sector: sectorMap[match.sector] || auto.sector,
-          description: match.description || '',
+          name: info.name || row.name,
+          type: typeMap[info.type] || auto.type,
+          sector: auto.sector,
+          description: info.description || '',
         }
       }))
 
-      // 自动保存 ETF 映射
-      for (const r of results) {
-        const alreadyMapped = etfMappings.some((m) => m.otcCode === r.code)
-        if (alreadyMapped) continue
-        const mapping = await fetchEtfMapping(r.code)
-        if (mapping?.exchangeCode) {
-          addEtfMapping(mapping.otcCode, mapping.otcName, mapping.exchangeCode, mapping.exchangeName)
+      // 批量查询 ETF 映射（并行）
+      const etfMappingsToQuery = codes.filter(
+        (code) => !etfMappings.some((m) => m.otcCode === code)
+      )
+      if (etfMappingsToQuery.length > 0) {
+        const etfResults = await Promise.allSettled(
+          etfMappingsToQuery.map(async (code) => {
+            const cached = await getEtfMappingCache(code)
+            if (cached) return cached
+            const mapping = await dataSourceService.queryEtfMapping(code)
+            if (mapping?.exchangeCode) {
+              await setEtfMappingCache(code, mapping)
+              return mapping
+            }
+            return null
+          })
+        )
+        for (const result of etfResults) {
+          if (result.status === 'fulfilled' && result.value) {
+            addEtfMapping(result.value.otcCode, result.value.otcName, result.value.exchangeCode, result.value.exchangeName)
+          }
         }
       }
     } catch (err) {
       setError(String(err))
     }
-    setAiLoading(false)
+    setQueryLoading(false)
   }
 
   const handleSubmit = async () => {
@@ -232,26 +274,34 @@ export default function AddFundDialog() {
         <DialogHeader>
           <DialogTitle>添加基金</DialogTitle>
           <DialogDescription>
-            只需输入基金代码（必填），其余信息可选。{aiConfigured && '点击「AI 查询」自动补全名称和分类。'}
+            只需输入基金代码（必填），其余信息可选。{akshareReady && '点击「快速查询」自动补全名称和 ETF 映射。'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* AI Query bar */}
-          {aiConfigured && (
+          {/* 快速查询（AKTools） */}
+          {akshareReady ? (
             <Button
               variant="secondary"
               size="sm"
-              onClick={handleAIQuery}
-              disabled={codes.length === 0 || aiLoading}
+              onClick={handleQuickQuery}
+              disabled={codes.length === 0 || queryLoading}
               className="w-full"
             >
-              {aiLoading ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" />AI 正在查询 {codes.length} 只基金...</>
+              {queryLoading ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-2" />正在查询 {codes.length} 只基金...</>
               ) : (
-                <><Sparkles className="h-3 w-3 mr-2" />AI 查询全部 ({codes.length} 只)</>
+                <><Sparkles className="h-3 w-3 mr-2" />快速查询 ({codes.length} 只) · 自动补全 + ETF 映射</>
               )}
             </Button>
+          ) : (
+            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-3 space-y-1">
+              <p>💡 配置 AKTools 后可自动查询基金名称、类型及场内 ETF 映射</p>
+              <a href="/settings" className="text-primary hover:underline cursor-pointer" onClick={(e) => { e.preventDefault(); navigate('/settings') }}>
+                前往设置 → 数据源
+              </a>
+              <p className="text-[10px] text-muted-foreground/70">需要本地运行 AKTools：python -m aktools</p>
+            </div>
           )}
 
           {/* Fund rows */}

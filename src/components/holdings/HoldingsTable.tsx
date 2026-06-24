@@ -1,8 +1,8 @@
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
-  createColumnHelper, flexRender, type SortingState, type ColumnFiltersState, type VisibilityState,
+  createColumnHelper, flexRender, type SortingState, type VisibilityState,
 } from '@tanstack/react-table'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -58,12 +58,12 @@ export default function HoldingsTable() {
 
   // 稳定的引用，避免因 selectedIds 频繁变化导致 useMemo 重算
   const allSelected = holdings.length > 0 && selectedIds.length === holdings.length
-  const someSelected = selectedIds.length > 0 && !allSelected
+  const _someSelected = selectedIds.length > 0 && !allSelected
 
   const columns = useMemo(() => [
     columnHelper.display({
       id: 'select',
-      header: ({ table }) => {
+      header: ({ table: _table }) => {
         const checked = holdings.length > 0 && selectedIds.length === holdings.length
         const indeterminate = selectedIds.length > 0 && !checked
         return (
@@ -149,7 +149,7 @@ export default function HoldingsTable() {
       id: 'marketValue',
       header: '参考市值',
       cell: ({ row }) => {
-        const { costNAV, shares, holdingAmount, holdingProfit } = row.original
+        const { costNAV, shares, holdingAmount, holdingProfit: _holdingProfit } = row.original
         // 优先用方式一：成本×份额；否则用方式二：持有金额（已含收益）
         const mv = (costNAV && shares) ? costNAV * shares
           : (holdingAmount) ? holdingAmount

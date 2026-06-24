@@ -208,7 +208,7 @@ export class AKShareAdapter implements FundDataSource {
       const otcName: string = otcFund['基金简称'] || otcFund['基金名称'] || ''
 
       // 2) 从名称中提取主题关键词（去掉 "联接" "ETF" "C" 等后缀）
-      let keyword = otcName
+      const keyword = otcName
         .replace(/ETF/i, '')
         .replace(/联接/i, '')
         .replace(/C$/, '')

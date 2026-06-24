@@ -20,7 +20,7 @@ export default function InstallPrompt() {
 
     // 已安装则不再提示
     if (window.matchMedia('(display-mode: standalone)').matches) {
-      setShow(false)
+      setTimeout(() => setShow(false), 0)
     }
 
     return () => window.removeEventListener('beforeinstallprompt', handler)

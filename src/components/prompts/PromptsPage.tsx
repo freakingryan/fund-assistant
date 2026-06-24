@@ -11,7 +11,6 @@ import {
   Copy, Sparkles, RefreshCw, CheckCircle, AlertCircle, FileText,
 } from 'lucide-react'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
-import type { FundHolding } from '@/types'
 
 const TEMPLATE_OPTIONS: { value: PromptTemplateType; label: string; desc: string }[] = [
   { value: 'diagnostic', label: '持仓诊断', desc: '分析持仓结构、风险收益、给出综合建议' },
@@ -45,7 +44,7 @@ export default function PromptsPage() {
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
       return next
     })
   }, [])

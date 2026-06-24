@@ -1,7 +1,6 @@
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Dialog, DialogContent, DialogDescription,
@@ -10,14 +9,14 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Image, Loader2, Camera } from 'lucide-react'
+import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader2, Camera } from 'lucide-react'
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 import { useHoldingsStore } from '@/stores/holdings'
 import { autoClassify } from '@/lib/classification'
 import { extractFundInfoFromImage } from '@/services/ai'
 import { getDefaultAI } from '@/services/ai'
-import type { FundHolding, Market, FundType, FundSector } from '@/types'
+import type { Market, FundType, FundSector } from '@/types'
 
 const COLUMN_ALIASES: Record<string, string> = {
   '基金代码': 'code', '代码': 'code', 'code': 'code', 'fund_code': 'code',
@@ -113,7 +112,7 @@ export default function ImportDialog() {
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
 
   useEffect(() => {
-    if (open) setAiConfigured(!!getDefaultAI())
+    if (open) setTimeout(() => setAiConfigured(!!getDefaultAI()), 0)
   }, [open])
 
   // ---- CSV/Excel ----
@@ -124,7 +123,7 @@ export default function ImportDialog() {
       const parsed: ParsedRow[] = []; const errs: string[] = []
       for (let i = 0; i < data.length; i++) {
         const n = normalizeRow(data[i])
-        n ? parsed.push(n) : errs.push(`第 ${i + 1} 行缺少基金代码或名称`)
+        if (n) { parsed.push(n) } else { errs.push(`第 ${i + 1} 行缺少基金代码或名称`) }
       }
       if (parsed.length === 0) { setErrors(['没有解析到有效数据']); return }
       setRows(parsed); setErrors(errs); setStep('preview')
@@ -183,7 +182,7 @@ export default function ImportDialog() {
 
   // #9: 弹窗关闭时重置状态，不用 setTimeout
   useEffect(() => {
-    if (!open) { setRows([]); setErrors([]); setStep('upload') }
+    if (!open) { setTimeout(() => { setRows([]); setErrors([]); setStep('upload') }, 0) }
   }, [open])
 
   const reset = () => {

@@ -97,7 +97,7 @@ export function readBackupFile(): Promise<BackupData> {
         try {
           const data = JSON.parse(reader.result as string)
           resolve(data as BackupData)
-        } catch (err) {
+        } catch (_err) {
           reject(new Error('文件格式错误，无法解析'))
         }
       }
