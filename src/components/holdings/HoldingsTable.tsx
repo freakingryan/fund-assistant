@@ -11,7 +11,9 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useHoldingsStore } from '@/stores/holdings'
 import type { FundHolding } from '@/types'
-import { Trash2, Search, ArrowUpDown, ChevronDown } from 'lucide-react'
+import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, TrendingDown } from 'lucide-react'
+import EditFundDialog from './EditFundDialog'
+import QuickAdjustDialog from './QuickAdjustDialog'
 import {
   DropdownMenu, DropdownMenuCheckboxItem,
   DropdownMenuContent, DropdownMenuTrigger,
@@ -48,6 +50,10 @@ export default function HoldingsTable() {
     holdingAmount: false,
     holdingProfit: false,
   })
+  const [editingFund, setEditingFund] = useState<FundHolding | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [adjustFund, setAdjustFund] = useState<FundHolding | null>(null)
+  const [adjustOpen, setAdjustOpen] = useState(false)
 
   // 根据类型筛选持仓
   const filteredHoldings = useMemo(() => {
@@ -183,11 +189,19 @@ export default function HoldingsTable() {
       id: 'actions',
       header: '操作',
       cell: ({ row }) => (
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeHolding(row.original.id)}>
-          <Trash2 className="h-3 w-3 text-muted-foreground" />
-        </Button>
+        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setAdjustFund(row.original); setAdjustOpen(true) }}>
+            <TrendingUp className="h-3 w-3 text-green-500" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingFund(row.original); setEditOpen(true) }}>
+            <Pencil className="h-3 w-3 text-muted-foreground" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeHolding(row.original.id)}>
+            <Trash2 className="h-3 w-3 text-muted-foreground" />
+          </Button>
+        </div>
       ),
-      size: 50,
+      size: 100,
     }),
   ], [selectedIds, toggleSelected, selectAll, clearSelection, removeHolding])
 
@@ -351,6 +365,8 @@ export default function HoldingsTable() {
           : 0
         ), 0).toFixed(2)}`}
       </div>
+      <EditFundDialog fund={editingFund} open={editOpen} onOpenChange={setEditOpen} />
+      <QuickAdjustDialog fund={adjustFund} open={adjustOpen} onOpenChange={setAdjustOpen} />
     </div>
   )
 }

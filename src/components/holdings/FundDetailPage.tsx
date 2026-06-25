@@ -14,7 +14,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
-import { Loader2, ArrowLeft, Copy, Sparkles, CheckCircle, FileText } from 'lucide-react'
+import { Loader2, ArrowLeft, Copy, Sparkles, CheckCircle, FileText, Pencil, TrendingUp } from 'lucide-react'
+import EditFundDialog from '@/components/holdings/EditFundDialog'
+import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 
 const TYPE_LABELS: Record<string, string> = {
   stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
@@ -77,6 +79,8 @@ export default function FundDetailPage() {
   const [quotes, setQuotes] = useState<any[]>([])
   const [quotesLoading, setQuotesLoading] = useState(false)
   const [refreshing, setRefreshing] = useState({ kline: false, portfolio: false, quotes: false })
+  const [editOpen, setEditOpen] = useState(false)
+  const [adjustOpen, setAdjustOpen] = useState(false)
   // 持仓穿透（带缓存）
   const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
   const [portfolioLoading, setPortfolioLoading] = useState(false)
@@ -269,7 +273,17 @@ export default function FundDetailPage() {
           </div>
           <h1 className="text-xl font-bold tracking-tight mt-1">{fund.name || fund.code}</h1>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
+            <TrendingUp className="h-3 w-3 mr-1 text-green-500" />调仓
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>
+            <Pencil className="h-3 w-3 mr-1" />编辑
+          </Button>
+        </div>
       </div>
+      <EditFundDialog fund={fund} open={editOpen} onOpenChange={setEditOpen} />
+      <QuickAdjustDialog fund={fund} open={adjustOpen} onOpenChange={setAdjustOpen} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: K 线图 */}
