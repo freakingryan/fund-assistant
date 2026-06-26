@@ -15,9 +15,11 @@ import {
   DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { CheckCircle, Eye, Trash2, Plus, Play, Loader2,
-  Settings2, History, Activity,
+  Settings2, History, Activity, TrendingUp,
 } from 'lucide-react'
 import type { PlanRule, PlanRuleType, Comparator, PlanAlert } from '@/types'
+import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
+import type { FundHolding } from '@/types'
 
 const RULE_TYPE_LABELS: Record<PlanRuleType, string> = {
   return: '收益率',
@@ -139,6 +141,8 @@ export default function PlansPage() {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<PlanRule | null>(null)
   const [activeTab, setActiveTab] = useState<'rules' | 'alerts' | 'history'>('rules')
+  const [adjustFund, setAdjustFund] = useState<FundHolding | null>(null)
+  const [adjustOpen, setAdjustOpen] = useState(false)
 
   useEffect(() => {
     loadPlan()
@@ -316,7 +320,9 @@ export default function PlansPage() {
             </Card>
           ) : (
             pendingAlerts.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} onExecuted={markAlertExecuted} onDismiss={dismissAlert} />
+              <AlertCard key={alert.id} alert={alert} onExecuted={markAlertExecuted} onDismiss={dismissAlert}
+                onQuickAdjust={(fund) => { setAdjustFund(fund); setAdjustOpen(true) }}
+                holdings={holdings} />
             ))
           )}
         </div>
@@ -350,16 +356,25 @@ export default function PlansPage() {
           )}
         </div>
       )}
+      <QuickAdjustDialog fund={adjustFund} open={adjustOpen} onOpenChange={setAdjustOpen} />
     </div>
   )
 }
 
-function AlertCard({ alert, onExecuted, onDismiss }: {
+function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings }: {
   alert: PlanAlert
   onExecuted: (id: string) => void
   onDismiss: (id: string) => void
+  onQuickAdjust: (fund: FundHolding) => void
+  holdings: FundHolding[]
 }) {
   const isUp = alert.returnRate >= 0
+  const matchedHolding = holdings.find((h) => h.code === alert.fundCode)
+
+  const handleQuick = () => {
+    if (!matchedHolding) return
+    onQuickAdjust(matchedHolding)
+  }
   return (
     <Card className="border-l-4" style={{ borderLeftColor: isUp ? '#ef4444' : '#22c55e' }}>
       <CardContent className="p-3">
@@ -388,6 +403,12 @@ function AlertCard({ alert, onExecuted, onDismiss }: {
             </div>
           </div>
           <div className="flex gap-1 shrink-0 ml-2">
+            {matchedHolding && (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleQuick}>
+                <TrendingUp className="h-3 w-3 mr-1 text-green-500" />
+                {alert.action === 'buy' ? '快速补仓' : '快速减仓'}
+              </Button>
+            )}
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onExecuted(alert.id)}>
               <CheckCircle className="h-3 w-3 mr-1" />已执行
             </Button>
