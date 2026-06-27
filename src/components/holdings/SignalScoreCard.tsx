@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { SignalResult } from '@/services/signalEngine'
 import { DEFAULT_WEIGHTS } from '@/services/signalEngine'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -74,6 +75,7 @@ function buildAdvice(signalResult: SignalResult): { label: string; color: string
 export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail }: Props) {
   if (!signalResult) return null
   const advice = buildAdvice(signalResult)
+  const [showRef, setShowRef] = useState(false)
 
   return (
     <Card>
@@ -189,20 +191,54 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
           </div>
         )}
 
-        {/* 评分区间说明 */}
+        {/* 评分参考（可折叠） */}
         <div className="mt-2 pt-2 border-t">
-          <p className="text-[9px] text-muted-foreground/50 leading-relaxed">
-            评分参考：
-            <span className="text-red-400/70">+60↑ 持有/止盈</span>
-            <span className="text-muted-foreground/50 mx-0.5">·</span>
-            <span className="text-red-400/70">+20~+60 适合补仓</span>
-            <span className="text-muted-foreground/50 mx-0.5">·</span>
-            <span className="text-muted-foreground/50">±20 观望</span>
-            <span className="text-muted-foreground/50 mx-0.5">·</span>
-            <span className="text-green-400/70">-60~-20 减仓</span>
-            <span className="text-muted-foreground/50 mx-0.5">·</span>
-            <span className="text-green-400/70">-60↓ 避险</span>
-          </p>
+          <button onClick={() => setShowRef(!showRef)}
+            className="flex items-center gap-1 text-[9px] text-muted-foreground/60 hover:text-foreground/80 transition-colors cursor-pointer w-full"
+          >
+            <span className={`inline-block transition-transform ${showRef ? 'rotate-90' : ''}`}>▶</span>
+            调仓建议参考说明
+          </button>
+          {showRef && (
+            <div className="mt-1.5 space-y-1.5 text-[9px] text-muted-foreground/70 leading-relaxed">
+              <div className="p-1.5 rounded bg-muted/15">
+                <p className="font-medium text-foreground/80 mb-0.5">📊 评分 × 指标组合建议</p>
+                <div className="space-y-0.5">
+                  {[
+                    { cond: '高分 (>60) + RSI 超买 + BOLL 上轨', action: '⚠️ 趋势强但过热，观望/分批止盈' },
+                    { cond: '高分 (>60) + RSI 中性', action: '✅ 多头强劲，可持有' },
+                    { cond: '偏多 (20~60) + 超卖信号', action: '✅ 最佳补仓窗口' },
+                    { cond: '偏空 (-60~-20) + 超卖信号', action: '👀 等待企稳' },
+                    { cond: '强烈看空 (<-60)', action: '⛔ 减仓避险' },
+                  ].map((r, i) => (
+                    <div key={i} className="flex gap-1.5">
+                      <span className="text-muted-foreground/40">{r.cond}</span>
+                      <span className="text-muted-foreground/60">→</span>
+                      <span>{r.action}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="p-1.5 rounded bg-muted/15">
+                <p className="font-medium text-foreground/80 mb-0.5">🎯 得分原因对应操作</p>
+                <div className="space-y-0.5">
+                  {[
+                    { reason: 'MA 多头排列 + MACD 金叉（趋势偏多）', action: '✅ 可以分批补仓' },
+                    { reason: 'RSI 超卖 + 锤子线 + 布林带下轨（超跌反弹）', action: '✅ 左侧抄底，设好止损' },
+                    { reason: 'RSI > 80 + 布林带上轨（过热）', action: '⚠️ 不补仓，甚至可减仓' },
+                    { reason: '评分接近 0 + 量能萎缩（方向不明）', action: '❌ 观望等待' },
+                  ].map((r, i) => (
+                    <div key={i} className="flex gap-1.5">
+                      <span className="text-muted-foreground/40">{r.reason}</span>
+                      <span className="text-muted-foreground/60">→</span>
+                      <span>{r.action}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[8px] text-muted-foreground/30 text-right">以上建议仅供参考，不构成投资建议</p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>
