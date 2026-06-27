@@ -460,10 +460,27 @@ export default function FundDetailPage() {
                   <CardTitle className="text-sm">K 线走势</CardTitle>
                   {klineUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {klineUpdateTime}</span>}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={handleRefreshKline} disabled={refreshing.kline} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">{refreshing.kline ? '⟳' : '⟳ 刷新'}</button>
+                <div className="flex items-center gap-1.5">
+                  {/* 技术指标切换 */}
+                  {useEtfKline && etfCode && klineData[0]?.volume && (
+                    <>
+                      <button
+                        onClick={() => setShowMA(!showMA)}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                          showMA ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-400 font-medium' : 'border-muted text-muted-foreground hover:bg-muted/50'
+                        }`}
+                      >MA</button>
+                      <button
+                        onClick={() => setShowBollinger(!showBollinger)}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                          showBollinger ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950 dark:border-blue-700 dark:text-blue-400 font-medium' : 'border-muted text-muted-foreground hover:bg-muted/50'
+                        }`}
+                      >BOLL</button>
+                    </>
+                  )}
+                  <button onClick={handleRefreshKline} disabled={refreshing.kline} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">{refreshing.kline ? '⟳' : '⟳'}</button>
                   <Select value={period} onValueChange={setPeriod}>
-                  <SelectTrigger className="h-7 text-xs w-[70px]"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className="h-7 text-xs w-[62px]"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="1m">1月</SelectItem>
                     <SelectItem value="3m">3月</SelectItem>
@@ -474,70 +491,41 @@ export default function FundDetailPage() {
               </div>
               </div>
             </CardHeader>
-            <CardContent>
-              <div className="flex flex-col sm:flex-row gap-4">
-                {/* 左侧：K 线图 */}
-                <div className="flex-1 min-w-0">
-                  {etfCode && (
-                    <div className="flex items-center gap-2 mb-3">
-                      <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
-                      <Label htmlFor="etf-kline" className="text-xs cursor-pointer">
-                        场内 ETF 真实 K 线 <span className="text-[10px] text-muted-foreground">（{etfCode}）</span>
-                      </Label>
-                    </div>
-                  )}
-                  {klineLoading ? (
-                    <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-                  ) : useEtfKline && etfCode && klineData[0]?.volume ? (
-                    <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} showMA={showMA} showBollinger={showBollinger} />
+            <CardContent className="relative">
+              {etfCode && (
+                <div className="flex items-center gap-2 mb-3">
+                  <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
+                  <Label htmlFor="etf-kline" className="text-xs cursor-pointer">
+                    场内 ETF 真实 K 线 <span className="text-[10px] text-muted-foreground">（{etfCode}）</span>
+                  </Label>
+                </div>
+              )}
+              {klineLoading ? (
+                <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+              ) : useEtfKline && etfCode && klineData[0]?.volume ? (
+                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} showMA={showMA} showBollinger={showBollinger} />
+              ) : (
+                <div className="flex items-center justify-center h-[200px]">
+                  {klineData.length > 0 ? (
+                    <svg width={560} height={200} className="overflow-visible">
+                      {/* Simplified mini line chart for NAV */}
+                      <polyline
+                        points={klineData.map((d, i) => `${i * (560 / Math.max(klineData.length - 1, 1))},${180 - ((d.close - Math.min(...klineData.map((x) => x.close))) / (Math.max(...klineData.map((x) => x.close)) - Math.min(...klineData.map((x) => x.close)) || 1)) * 160}`).join(' ')}
+                        fill="none" stroke="#3b82f6" strokeWidth={2}
+                      />
+                    </svg>
                   ) : (
-                    <div className="flex items-center justify-center h-[200px]">
-                      {klineData.length > 0 ? (
-                        <svg width={560} height={200} className="overflow-visible">
-                          {/* Simplified mini line chart for NAV */}
-                          <polyline
-                            points={klineData.map((d, i) => `${i * (560 / Math.max(klineData.length - 1, 1))},${180 - ((d.close - Math.min(...klineData.map((x) => x.close))) / (Math.max(...klineData.map((x) => x.close)) - Math.min(...klineData.map((x) => x.close)) || 1)) * 160}`).join(' ')}
-                            fill="none" stroke="#3b82f6" strokeWidth={2}
-                          />
-                        </svg>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">暂无数据</p>
-                      )}
-                    </div>
+                    <p className="text-xs text-muted-foreground">暂无数据</p>
                   )}
                 </div>
-                {/* 右侧：技术指标切换 */}
-                {useEtfKline && etfCode && klineData[0]?.volume && (
-                  <div className="shrink-0 space-y-2 pt-1">
-                    <p className="text-[10px] text-muted-foreground font-medium">技术指标</p>
-                    <div className="flex flex-row sm:flex-col gap-1.5">
-                      <button
-                        onClick={() => setShowMA(!showMA)}
-                        className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer text-left ${
-                          showMA ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-400' : 'border-muted text-muted-foreground hover:bg-muted/50'
-                        }`}
-                      >MA {showMA ? '✓ ON' : 'OFF'}</button>
-                      <button
-                        onClick={() => setShowBollinger(!showBollinger)}
-                        className={`text-[10px] px-2 py-1 rounded border transition-colors cursor-pointer text-left ${
-                          showBollinger ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950 dark:border-blue-700 dark:text-blue-400' : 'border-muted text-muted-foreground hover:bg-muted/50'
-                        }`}
-                      >BOLL {showBollinger ? '✓ ON' : 'OFF'}</button>
-                    </div>
-                    {/* 技术指标说明 */}
-                    {(showMA || showBollinger) && (
-                      <div className="text-[10px] text-muted-foreground leading-relaxed space-y-1.5 pt-1 border-t">
-                        {showMA && (
-                          <p><span className="font-medium text-amber-600 dark:text-amber-400">MA</span>（移动平均线）：过去 N 日收盘价的算术平均。MA5（黄）=近 5 日均价，MA10（蓝）=近 10 日均价。价格在均线上方=短期偏强。</p>
-                        )}
-                        {showBollinger && (
-                          <p><span className="font-medium text-blue-600 dark:text-blue-400">BOLL</span>（布林带）：中轨=MA20，上下轨=中轨 ± 2σ。带宽越大=波动越大，触及上轨=超买，触及下轨=超卖。</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+              )}
+              {/* 技术指标说明 - 固定在右下角，不遮挡K线 */}
+              {(showMA || showBollinger) && (
+                <div className="absolute bottom-1 right-2 text-[9px] text-muted-foreground/60 leading-tight text-right pointer-events-none max-w-[240px]">
+                  {showMA && <p className="mb-0.5"><span className="font-medium text-amber-600/70 dark:text-amber-400/70">MA</span> 移动平均线</p>}
+                  {showBollinger && <p><span className="font-medium text-blue-600/70 dark:text-blue-400/70">BOLL</span> 布林带 (20,2)</p>}
+                </div>
+              )}
             </CardContent>
           </Card>
 

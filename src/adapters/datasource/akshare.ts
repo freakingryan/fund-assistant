@@ -105,7 +105,7 @@ export class AKShareAdapter implements FundDataSource {
           high: Number(item['单位净值'] || item['nav'] || 0),
           low: Number(item['单位净值'] || item['nav'] || 0),
           volume: 0,
-        })).reverse()
+        })) // AKShare 返回旧→新，无需反转
       }
     } catch { /* fallback */ }
     return generateMockKLine(code, period)
@@ -136,7 +136,7 @@ export class AKShareAdapter implements FundDataSource {
           high: Number(item['最高'] || item['high'] || 0),
           low: Number(item['最低'] || item['low'] || 0),
           volume: Number(item['成交量'] || item['volume'] || 0),
-        })).reverse()
+        })) // AKShare 返回旧→新，无需反转
       }
     } catch { /* fallback */ }
     return []
