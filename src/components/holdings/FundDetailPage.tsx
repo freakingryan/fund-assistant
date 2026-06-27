@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
-import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, BrainCircuit, MessageSquareText } from 'lucide-react'
+import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, BrainCircuit, MessageSquareText, Wallet } from 'lucide-react'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
@@ -356,15 +356,93 @@ export default function FundDetailPage() {
           </div>
           <h1 className="text-xl font-bold tracking-tight mt-1">{fund.name || fund.code}</h1>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
-            <TrendingUp className="h-3 w-3 mr-1 text-green-500" />调仓
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>
-            <Pencil className="h-3 w-3 mr-1" />编辑
-          </Button>
-        </div>
       </div>
+
+      {/* 持仓信息 + 调仓/编辑 */}
+      {fund && (() => {
+        const q = quotes.find((q) => q.code === fund.code)
+        const currentNAV = q?.nav
+        const costValue1 = fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0
+        const costValue2 = fund.holdingAmount != null && fund.holdingProfit != null
+          ? fund.holdingAmount - fund.holdingProfit
+          : 0
+        const investment = costValue1 || costValue2 || 0
+        const currentValue = fund.holdingAmount || (fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0)
+        const profit = currentValue - investment
+        const returnRate = investment > 0 ? (profit / investment) * 100 : 0
+        const isProfit = profit >= 0
+
+        return (
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <Wallet className="h-3.5 w-3.5" />持仓信息
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
+                    <TrendingUp className="h-3 w-3 mr-1 text-green-500" />调仓
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>
+                    <Pencil className="h-3 w-3 mr-1" />编辑
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">持有份额</p>
+                  <p className="text-sm font-medium">{fund.shares?.toLocaleString() || '-'}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">持仓成本</p>
+                  <p className="text-sm font-medium">¥{fund.costNAV?.toFixed(4) || '-'}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">
+                    最新净值
+                    {q?.navDate && <span className="ml-1">({q.navDate.slice(5)})</span>}
+                  </p>
+                  <p className="text-sm font-medium">
+                    {currentNAV ? `¥${currentNAV.toFixed(4)}` : '-'}
+                    {q?.dailyChange != null && (
+                      <span className={`ml-1 text-[10px] ${q.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                        {q.dailyChange >= 0 ? '+' : ''}{q.dailyChange.toFixed(2)}%
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">投入本金</p>
+                  <p className="text-sm font-medium">{investment ? `¥${investment.toFixed(2)}` : '-'}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">当前市值</p>
+                  <p className="text-sm font-medium">{currentValue ? `¥${currentValue.toFixed(2)}` : '-'}</p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">浮动盈亏</p>
+                  <p className={`text-sm font-medium ${isProfit ? 'text-red-500' : 'text-green-500'}`}>
+                    {profit ? `${isProfit ? '+' : ''}¥${profit.toFixed(2)}` : '-'}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">收益率</p>
+                  <p className={`text-sm font-medium ${isProfit ? 'text-red-500' : 'text-green-500'}`}>
+                    {investment > 0 ? `${isProfit ? '+' : ''}${returnRate.toFixed(2)}%` : '-'}
+                  </p>
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-[10px] text-muted-foreground">购买日期</p>
+                  <p className="text-sm font-medium">{fund.purchaseDate || '-'}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
+
       <EditFundDialog fund={fund} open={editOpen} onOpenChange={setEditOpen} />
       <QuickAdjustDialog fund={fund} open={adjustOpen} onOpenChange={setAdjustOpen} />
 
