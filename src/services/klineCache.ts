@@ -157,20 +157,23 @@ async function deleteCacheByPrefix(prefix: string): Promise<void> {
 
 // ── K 线缓存 ────────────────────────────────
 
+/** 数据版本号，变更时强制刷新缓存（数据源排序改变等场景） */
+const KLINE_CACHE_VERSION = 'v2'
+
 export async function getKlineCache(code: string, period: string): Promise<KLineData[] | null> {
-  return getCache<KLineData[]>(`k_${code}__${period}`, TTL[period] || DEFAULT_TTL)
+  return getCache<KLineData[]>(`k_${KLINE_CACHE_VERSION}_${code}__${period}`, TTL[period] || DEFAULT_TTL)
 }
 
 export async function setKlineCache(code: string, period: string, data: KLineData[]): Promise<void> {
-  return setCache(`k_${code}__${period}`, data)
+  return setCache(`k_${KLINE_CACHE_VERSION}_${code}__${period}`, data)
 }
 
 export async function deleteKlineCache(code: string, period: string): Promise<void> {
-  return deleteCache(`k_${code}__${period}`)
+  return deleteCache(`k_${KLINE_CACHE_VERSION}_${code}__${period}`)
 }
 
 export async function deleteAllKlineCache(): Promise<void> {
-  return deleteCacheByPrefix('k_')
+  return deleteCacheByPrefix('k_v2_')
 }
 
 export async function getKlineCacheTime(code: string, period: string): Promise<number | null> {
