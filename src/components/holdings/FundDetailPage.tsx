@@ -109,6 +109,7 @@ export default function FundDetailPage() {
   // 联动：K 线图悬停索引
   const [hoveredKlineIndex, setHoveredKlineIndex] = useState<number | null>(null)
   const [glossaryOpen, setGlossaryOpen] = useState(false)
+  const [klineIndicatorInfoOpen, setKlineIndicatorInfoOpen] = useState(false)
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
@@ -503,7 +504,61 @@ export default function FundDetailPage() {
               {klineLoading ? (
                 <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : useEtfKline && etfCode && klineData[0]?.volume ? (
-                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} showMA={showMA} showBollinger={showBollinger} />
+                <>
+                  <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} showMA={showMA} showBollinger={showBollinger} />
+                  {/* MA/BOLL 详细说明（可折叠） */}
+                  {(showMA || showBollinger) && klineData.length > 1 && (
+                    <div className="mt-1">
+                      <button
+                        onClick={() => setKlineIndicatorInfoOpen(!klineIndicatorInfoOpen)}
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                      >
+                        <span className={`inline-block transition-transform ${klineIndicatorInfoOpen ? 'rotate-90' : ''}`}>▶</span>
+                        MA / BOLL 技术指标说明
+                      </button>
+                      {klineIndicatorInfoOpen && (
+                        <div className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed space-y-2">
+                          {/* 适用范围说明 */}
+                          <p className="text-[9px] text-muted-foreground/60">
+                            K 线数据范围：{klineData[0]?.date || '?'} ～ {klineData[klineData.length - 1]?.date || '?'}
+                          </p>
+                          {showMA && (() => {
+                            const ma5Start = klineData[Math.min(4, klineData.length - 1)]?.date || '?'
+                            const ma10Start = klineData[Math.min(9, klineData.length - 1)]?.date || '?'
+                            const ma20Start = klineData[Math.min(19, klineData.length - 1)]?.date || '?'
+                            const lastDate = klineData[klineData.length - 1]?.date || '?'
+                            return (
+                              <div className="p-2 rounded bg-muted/20">
+                                <p className="font-medium text-foreground mb-0.5">📈 MA（移动平均线）</p>
+                                <p>过去 N 个交易日收盘价的算术平均值，用于识别趋势方向和支撑/阻力位。</p>
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                                  <span className="text-[9px]"><span className="font-medium" style={{ color: '#f59e0b' }}>MA5</span> {ma5Start}～{lastDate}</span>
+                                  <span className="text-[9px]"><span className="font-medium" style={{ color: '#3b82f6' }}>MA10</span> {ma10Start}～{lastDate}</span>
+                                  <span className="text-[9px]"><span className="font-medium" style={{ color: '#8b5cf6' }}>MA20</span> {ma20Start}～{lastDate}</span>
+                                </div>
+                                <p className="text-[9px] text-muted-foreground/70 mt-0.5">用法：价格在均线上方→短期偏强，下方→短期偏弱。MA5/10 金叉=买入信号，死叉=卖出信号。</p>
+                              </div>
+                            )
+                          })()}
+                          {showBollinger && (() => {
+                            const bbStart = klineData[Math.min(19, klineData.length - 1)]?.date || '?'
+                            const lastDate = klineData[klineData.length - 1]?.date || '?'
+                            return (
+                              <div className="p-2 rounded bg-muted/20">
+                                <p className="font-medium text-foreground mb-0.5">📉 BOLL（布林带 / Bollinger Bands）</p>
+                                <p>中轨=MA20，上/下轨=中轨 ± 2 倍标准差（σ）。反映价格波动区间。</p>
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                                  <span className="text-[9px]"><span className="font-medium text-blue-600 dark:text-blue-400">BOLL(20,2)</span> {bbStart}～{lastDate}</span>
+                                </div>
+                                <p className="text-[9px] text-muted-foreground/70 mt-0.5">用法：带宽变宽=波动加大，变窄（收口）=即将变盘。价格触及上轨=超买，触及下轨=超卖。</p>
+                              </div>
+                            )
+                          })()}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="flex items-center justify-center h-[200px]">
                   {klineData.length > 0 ? (
