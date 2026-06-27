@@ -104,6 +104,7 @@ export default function FundDetailPage() {
   const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)
   const [klineAnalyzing, setKlineAnalyzing] = useState(false)
   const [klineAnalysisError, setKlineAnalysisError] = useState<string | null>(null)
+  const [glossaryOpen, setGlossaryOpen] = useState(false)
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
@@ -502,6 +503,71 @@ export default function FundDetailPage() {
                     )}
                   </div>
                 )}
+
+                {/* 术语说明 */}
+                <div className="border-t pt-2">
+                  <button
+                    onClick={() => setGlossaryOpen(!glossaryOpen)}
+                    className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                  >
+                    <span className={`inline-block transition-transform ${glossaryOpen ? 'rotate-90' : ''}`}>▶</span>
+                    K 线形态术语说明
+                  </button>
+                  {glossaryOpen && (
+                    <div className="mt-2 text-[10px] text-muted-foreground leading-relaxed space-y-2">
+                      <div className="p-2 rounded bg-muted/20">
+                        <p className="font-medium text-foreground mb-0.5">📌 单 K 形态</p>
+                        <p>基于单根 K 线的形状判断价格行为。常见形态包括十字星（多空平衡）、锤子线（下方支撑）、光头光脚（单边行情）等。</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {['十字星','T字线','长十字星','锤子线','射击之星','光头阳/阴线','上/下影线','小阳/阴线'].map((t) => (
+                            <span key={t} className="px-1 py-0.5 rounded bg-muted/40 text-[9px]">{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="p-2 rounded bg-muted/20">
+                        <p className="font-medium text-foreground mb-0.5">📌 2K 组合</p>
+                        <p>两根连续 K 线组成的形态，通过前后对比判断趋势反转：</p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          <span className="px-1 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-medium">看涨吞没</span>
+                          <span className="text-[9px] text-muted-foreground self-center">后阳线实体完全覆盖前阴线，强势反转看涨</span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          <span className="px-1 py-0.5 rounded bg-green-50 text-green-600 text-[9px] font-medium">看跌吞没</span>
+                          <span className="text-[9px] text-muted-foreground self-center">后阴线实体完全覆盖前阳线，强势反转看跌</span>
+                        </div>
+                      </div>
+                      <div className="p-2 rounded bg-muted/20">
+                        <p className="font-medium text-foreground mb-0.5">📌 3K 组合</p>
+                        <p>三根连续 K 线组成的形态，反转信号更强：</p>
+                        <div className="mt-1 flex flex-wrap gap-1 items-start">
+                          <span className="px-1 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-medium shrink-0">晨星</span>
+                          <span className="text-[9px] text-muted-foreground">大阴 → 小实体(星) → 大阳，底部反转</span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap gap-1 items-start">
+                          <span className="px-1 py-0.5 rounded bg-green-50 text-green-600 text-[9px] font-medium shrink-0">暮星</span>
+                          <span className="text-[9px] text-muted-foreground">大阳 → 小实体(星) → 大阴，顶部反转</span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap gap-1 items-start">
+                          <span className="px-1 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-medium shrink-0">三连阳</span>
+                          <span className="text-[9px] text-muted-foreground">连续三根阳线实体递增，多头稳步推进</span>
+                        </div>
+                        <div className="mt-0.5 flex flex-wrap gap-1 items-start">
+                          <span className="px-1 py-0.5 rounded bg-green-50 text-green-600 text-[9px] font-medium shrink-0">三连阴</span>
+                          <span className="text-[9px] text-muted-foreground">连续三根阴线实体递增，空头稳步推进</span>
+                        </div>
+                      </div>
+                      <div className="p-2 rounded bg-muted/20">
+                        <p className="font-medium text-foreground mb-0.5">📌 其他术语</p>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px]">
+                          <span><span className="text-red-500 font-medium">红色</span>=涨 (阳线)</span>
+                          <span><span className="text-green-500 font-medium">绿色</span>=跌 (阴线)</span>
+                          <span>实体 = 开收盘价差</span>
+                          <span>上/下影线 = 最高/低价与实体的差距</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
