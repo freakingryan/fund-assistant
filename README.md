@@ -21,6 +21,9 @@
 
 ### 🔍 基金详情页
 - **K 线走势** — 纯 SVG 蜡烛图，支持场内 ETF 真实 K 线（OHLC + 成交量）与 NAV 折线切换
+- **技术指标叠加** — MA5/MA10/MA20/MA60 均线 + BOLL(20,2) 布林带，可切换显示
+- **K 线形态检测** — 三层算法引擎自动识别 14 种单 K + 6 种多 K 组合形态，AI 深度分析
+- **综合评分** — 多指标融合信号评分（MA/MACD/RSI/Bollinger/形态/量能），权重公开可调
 - **重仓股穿透** — 前十大重仓股及占比（需 AKTools）
 - **Prompt 生成** — 三种模板：持仓诊断 / 调仓建议 / K 线增强，一键复制
 - **缓存智能过期** — K 线/行情/排行/基金信息按 A 股交易时段自动刷新，盘尾段手动刷新
@@ -62,9 +65,10 @@
 - **云端同步** — GitHub Gist（推拉双向同步）
 
 ### 🎨 用户体验
-- **亮/暗/跟随系统** 三种主题模式
+- **亮/暗/跟随系统** 三种主题模式（深色/浅色全适配）
 - **PWA** — 可安装到桌面/手机主屏幕，离线可用
-- **响应式布局** — 桌面侧边栏 + 移动端抽屉导航
+- **响应式布局** — 桌面侧边栏 + 移动端抽屉导航，支持手机/平板/折叠屏
+- **触屏优化** — K 线图完全触屏支持（Tap 选中/高亮/关闭），底部信息栏零遮挡
 - **基金排行推荐** — 排行榜弹窗 + 一键添加
 - **通知** — 浏览器推送通知（Service Worker）
 
@@ -162,7 +166,8 @@ fund-assistant/
 │   │   ├── prompts/       # PromptsPage（三种模板生成器）
 │   │   └── settings/      # SettingsPage（7 个 Tab）+ NotificationsPage
 │   ├── stores/            # Zustand stores: holdings, plans, settings + Dexie db
-│   ├── services/          # ai.ts, backup.ts, klineCache.ts, notification.ts, prompt.ts
+│   ├── services/          # ai.ts, backup.ts, klineCache.ts, klinePatterns.ts, klineAnalysis.ts
+│   │                      # technicalIndicators.ts, signalEngine.ts, notification.ts, prompt.ts
 │   ├── adapters/datasource/ # base.ts + akshare.ts + tushare.ts + eastmoney.ts + service.ts
 │   ├── lib/               # classification.ts, utils.ts
 │   └── types/             # index.ts（全部 TS 类型定义）
