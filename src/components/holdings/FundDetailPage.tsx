@@ -18,7 +18,7 @@ import CandlestickChart from '@/components/dashboard/CandlestickChart'
 import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, BrainCircuit, MessageSquareText, Wallet } from 'lucide-react'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
-import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
+import { detectPatterns, formatPatternsSummary, getPatternLabel } from '@/services/klinePatterns'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
 import type { KlineAnalysisResult } from '@/services/klineAnalysis'
@@ -104,6 +104,8 @@ export default function FundDetailPage() {
   const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)
   const [klineAnalyzing, setKlineAnalyzing] = useState(false)
   const [klineAnalysisError, setKlineAnalysisError] = useState<string | null>(null)
+  // 联动：K 线图悬停索引
+  const [hoveredKlineIndex, setHoveredKlineIndex] = useState<number | null>(null)
   const [glossaryOpen, setGlossaryOpen] = useState(false)
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
@@ -482,7 +484,7 @@ export default function FundDetailPage() {
               {klineLoading ? (
                 <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : useEtfKline && etfCode && klineData[0]?.volume ? (
-                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} />
+                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} />
               ) : (
                 <div className="flex items-center justify-center h-[200px]">
                   {klineData.length > 0 ? (
@@ -539,9 +541,53 @@ export default function FundDetailPage() {
                 {/* 算法检测结果（始终显示） */}
                 <div>
                   <p className="text-[10px] text-muted-foreground mb-1">算法检测</p>
-                  <div className="text-xs leading-relaxed whitespace-pre-line font-mono bg-muted/30 rounded p-2">
-                    {klinePatterns || '计算中...'}
-                  </div>
+                  {klineDetectedPatterns.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {/* 按索引倒序排列，最新的 K 线展示在最上方 */}
+                      {[...klineDetectedPatterns]
+                        .sort((a, b) => b.index - a.index)
+                        .map((p, i) => {
+                          const isHovered = hoveredKlineIndex === p.index
+                          return (
+                            <div
+                              key={`${p.type}-${p.index}-${i}`}
+                              className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors ${
+                                isHovered
+                                  ? 'bg-primary/10 ring-1 ring-primary/30'
+                                  : 'hover:bg-muted/40'
+                              }`}
+                            >
+                              {/* 形态名称标签 */}
+                              <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] font-medium ${
+                                p.direction === 'bullish'
+                                  ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
+                                  : p.direction === 'bearish'
+                                    ? 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+                                    : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                              }`}>
+                                {getPatternLabel([p], p.index) || p.type}
+                              </span>
+                              {/* 日期 */}
+                              <span className="text-muted-foreground text-[10px] shrink-0">
+                                {klineData[p.index]?.date || ''}
+                              </span>
+                              {/* 描述 */}
+                              <span className="text-muted-foreground truncate flex-1 min-w-0">
+                                {p.description}
+                              </span>
+                              {/* 类型 + 置信度 */}
+                              <span className="text-[10px] text-muted-foreground shrink-0">
+                                {p.isMultiCandle ? `${p.candleCount}K` : '单K'} · {(p.confidence * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          )
+                        })}
+                    </div>
+                  ) : (
+                    <div className="text-xs leading-relaxed whitespace-pre-line font-mono bg-muted/30 rounded p-2">
+                      {klinePatterns || '计算中...'}
+                    </div>
+                  )}
                 </div>
 
                 {/* AI 分析结果 */}

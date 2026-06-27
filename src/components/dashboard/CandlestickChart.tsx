@@ -8,6 +8,8 @@ interface Props {
   width?: number
   height?: number
   patterns?: DetectedPattern[]
+  /** 外部联动：鼠标悬停时通知父组件当前 K 线索引 (hoverIndex, 无悬停时为 null) */
+  onHover?: (index: number | null) => void
 }
 
 const MARGIN = { top: 24, right: 16, bottom: 30, left: 56 }
@@ -33,7 +35,7 @@ const PATTERN_STYLES: Partial<Record<KlinePattern, { bg: string; text: string; b
 }
 
 /** 蜡烛图组件 — SVG 内嵌 + 底部信息栏（不遮挡图表 + 深色模式适配 + 触屏支持） */
-export default function CandlestickChart({ data, width = 480, height = 320, patterns = [] }: Props) {
+export default function CandlestickChart({ data, width = 480, height = 320, patterns = [], onHover }: Props) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -158,8 +160,8 @@ export default function CandlestickChart({ data, width = 480, height = 320, patt
                   height={chartHeight + VOL_HEIGHT}
                   fill="transparent"
                   className="cursor-crosshair"
-                  onMouseEnter={() => setSelectedIndex(i)}
-                  onMouseLeave={() => setSelectedIndex(null)}
+                  onMouseEnter={() => { setSelectedIndex(i); onHover?.(i) }}
+                  onMouseLeave={() => { setSelectedIndex(null); onHover?.(null) }}
                   onClick={() => toggleSelect(i)}
                   onTouchEnd={(e) => { e.preventDefault(); toggleSelect(i) }}
                 />
@@ -225,45 +227,50 @@ export default function CandlestickChart({ data, width = 480, height = 320, patt
         </svg>
       </div>
 
-      {/* 底部信息栏 — 完全位于图表下方，零遮挡 */}
-      {selected !== null && selectedCandle !== null && (
-        <div className="flex items-center gap-2 md:gap-4 px-3 py-1.5 bg-card border rounded-md text-xs w-full overflow-x-auto"
-             style={{ marginTop: 4 }}
-        >
-          <span className="shrink-0 font-medium text-foreground">{selected.date}</span>
-          <span className="shrink-0 flex items-center gap-1">
-            <span className="text-muted-foreground">开</span>
-            <span className="font-medium text-foreground">{fmt(selected.open)}</span>
-          </span>
-          <span className="shrink-0 flex items-center gap-1">
-            <span className="text-muted-foreground">收</span>
-            <span className={`font-medium ${selected.close >= selected.open ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
-              {fmt(selected.close)}
+      {/* 底部信息栏 — 固定高度容器，防止显示/隐藏时布局移动 */}
+      <div style={{ marginTop: 4, height: INFO_BAR_H }}>
+        {selected !== null && selectedCandle !== null ? (
+          <div className="flex items-center gap-2 md:gap-4 px-3 py-1.5 bg-card border rounded-md text-xs w-full overflow-x-auto h-full">
+            <span className="shrink-0 font-medium text-foreground">{selected.date}</span>
+            <span className="shrink-0 flex items-center gap-1">
+              <span className="text-muted-foreground">开</span>
+              <span className="font-medium text-foreground">{fmt(selected.open)}</span>
             </span>
-          </span>
-          <span className="shrink-0 flex items-center gap-1">
-            <span className="text-muted-foreground">高</span>
-            <span className="font-medium text-foreground">{fmt(selected.high)}</span>
-          </span>
-          <span className="shrink-0 flex items-center gap-1">
-            <span className="text-muted-foreground">低</span>
-            <span className="font-medium text-foreground">{fmt(selected.low)}</span>
-          </span>
-          <span className="shrink-0 flex items-center gap-1">
-            <span className="text-muted-foreground">量</span>
-            <span className="font-medium text-foreground">{(selected.volume || 0).toLocaleString()}</span>
-          </span>
-          {selectedPattern && (
-            <span className={`shrink-0 font-medium px-1.5 py-0.5 rounded text-[11px] ${
-              selected.close >= selected.open
-                ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
-                : 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
-            }`}>
-              {selectedPattern}
+            <span className="shrink-0 flex items-center gap-1">
+              <span className="text-muted-foreground">收</span>
+              <span className={`font-medium ${selected.close >= selected.open ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
+                {fmt(selected.close)}
+              </span>
             </span>
-          )}
-        </div>
-      )}
+            <span className="shrink-0 flex items-center gap-1">
+              <span className="text-muted-foreground">高</span>
+              <span className="font-medium text-foreground">{fmt(selected.high)}</span>
+            </span>
+            <span className="shrink-0 flex items-center gap-1">
+              <span className="text-muted-foreground">低</span>
+              <span className="font-medium text-foreground">{fmt(selected.low)}</span>
+            </span>
+            <span className="shrink-0 flex items-center gap-1">
+              <span className="text-muted-foreground">量</span>
+              <span className="font-medium text-foreground">{(selected.volume || 0).toLocaleString()}</span>
+            </span>
+            {selectedPattern && (
+              <span className={`shrink-0 font-medium px-1.5 py-0.5 rounded text-[11px] ${
+                selected.close >= selected.open
+                  ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
+                  : 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+              }`}>
+                {selectedPattern}
+              </span>
+            )}
+          </div>
+        ) : (
+          /* 占位符：保持固定高度，防止布局抖动 */
+          <div className="flex items-center px-3 py-1.5 text-xs w-full h-full">
+            <span className="text-muted-foreground/40 text-[10px]">悬停或点击 K 线查看详情</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
