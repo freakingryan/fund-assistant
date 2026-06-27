@@ -7,6 +7,7 @@ import {
   Dialog, DialogContent, DialogDescription,
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import { toast } from '@/components/ui/toast'
 import { AlertCircle, Loader2, Sparkles } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
@@ -125,8 +126,16 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
           const mapping = await dataSourceService.queryEtfMapping(code.trim())
           if (mapping?.exchangeCode) {
             addEtfMapping(mapping.otcCode, mapping.otcName, mapping.exchangeCode, mapping.exchangeName)
+            toast({ type: 'success', message: `ETF 映射已添加：${mapping.exchangeCode} ${mapping.exchangeName}` })
+          } else {
+            toast({ type: 'info', message: `基金 ${code.trim()} 未找到对应场内 ETF 映射` })
           }
-        } catch { /* ok */ }
+        } catch {
+          toast({ type: 'warning', message: `查询 ETF 映射失败：${code.trim()}` })
+        }
+      } else {
+        const m = etfMappings.find((m) => m.otcCode === code.trim())
+        if (m) toast({ type: 'success', message: `ETF 映射已存在：${m.exchangeCode} ${m.exchangeName}` })
       }
     } catch (err) {
       setError(String(err))

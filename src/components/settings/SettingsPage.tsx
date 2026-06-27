@@ -2,15 +2,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Key, Database, BellRing, Globe, SunMoon, Link, Plus, Trash2, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle } from 'lucide-react'
+import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
-import { fetchEtfMapping, testAIConnection } from '@/services/ai'
+import { testAIConnection } from '@/services/ai'
 import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist } from '@/services/backup'
 import { toast } from '@/components/ui/toast'
 
@@ -23,11 +22,6 @@ export default function SettingsPage() {
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
   const removeEtfMapping = useSettingsStore((s) => s.removeEtfMapping)
 
-  const [newOtcCode, setNewOtcCode] = useState('')
-  const [newOtcName, setNewOtcName] = useState('')
-  const [newExCode, setNewExCode] = useState('')
-  const [newExName, setNewExName] = useState('')
-  const [etfAiLoading, setEtfAiLoading] = useState(false)
   const [_saving, setSaving] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -105,7 +99,6 @@ export default function SettingsPage() {
           <TabsTrigger value="ai" className="flex items-center gap-1 text-[10px] sm:text-xs"><Key className="h-3 w-3" /> AI 平台</TabsTrigger>
           <TabsTrigger value="storage" className="flex items-center gap-1 text-[10px] sm:text-xs"><Globe className="h-3 w-3" /> 存储</TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-1 text-[10px] sm:text-xs"><BellRing className="h-3 w-3" /> 通知</TabsTrigger>
-          <TabsTrigger value="etf" className="flex items-center gap-1 text-[10px] sm:text-xs"><Link className="h-3 w-3" /> ETF 映射</TabsTrigger>
           <TabsTrigger value="appearance" className="flex items-center gap-1 text-[10px] sm:text-xs"><SunMoon className="h-3 w-3" /> 外观</TabsTrigger>
           <TabsTrigger value="backup" className="flex items-center gap-1 text-[10px] sm:text-xs"><Cloud className="h-3 w-3" /> 备份</TabsTrigger>
         </TabsList>
@@ -375,75 +368,6 @@ export default function SettingsPage() {
                   disabled
                 />
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* ETF 映射 */}
-        <TabsContent value="etf">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">场外 ↔ 场内 ETF 映射</CardTitle>
-              <CardDescription>配置场外 ETF 联接基金与场内 ETF 的对应关系</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label className="text-xs">场外基金代码</Label>
-                <div className="flex gap-2">
-                  <Input value={newOtcCode} onChange={(e) => setNewOtcCode(e.target.value)} placeholder="如 007531" className="h-8 text-xs flex-1 font-mono" />
-                  <Button
-                    variant="secondary" size="sm" className="h-8 text-xs shrink-0"
-                    disabled={!newOtcCode || etfAiLoading}
-                    onClick={async () => {
-                      setEtfAiLoading(true)
-                      try {
-                        const result = await fetchEtfMapping(newOtcCode)
-                        if (result) {
-                          setNewOtcName(result.otcName)
-                          setNewExCode(result.exchangeCode)
-                          setNewExName(result.exchangeName)
-                        }
-                      } catch { /* I5: AI error caught silently - acceptable for this async UX */}
-                      setEtfAiLoading(false)
-                    }}
-                  >
-                    {etfAiLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
-                    AI 查询
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Input value={newOtcName} onChange={(e) => setNewOtcName(e.target.value)} placeholder="场外名称" className="h-8 text-xs" />
-                  <Input value={newExCode} onChange={(e) => setNewExCode(e.target.value)} placeholder="场内代码" className="h-8 text-xs font-mono" />
-                </div>
-                <Input value={newExName} onChange={(e) => setNewExName(e.target.value)} placeholder="场内名称" className="h-8 text-xs" />
-              </div>
-              <Button size="sm" disabled={!newOtcCode || !newExCode} onClick={() => {
-                addEtfMapping(newOtcCode, newOtcName, newExCode, newExName)
-                setNewOtcCode(''); setNewOtcName(''); setNewExCode(''); setNewExName('')
-              }}>
-                <Plus className="h-3 w-3 mr-1" />添加映射
-              </Button>
-              <Separator />
-              {etfMappings.length > 0 ? (
-                <div className="space-y-1">
-                  {etfMappings.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 text-xs">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className="font-mono shrink-0">{m.otcCode}</span>
-                        <span className="text-muted-foreground truncate">{m.otcName}</span>
-                        <span className="text-muted-foreground shrink-0">→</span>
-                        <span className="font-mono shrink-0">{m.exchangeCode}</span>
-                        <span className="text-muted-foreground truncate">{m.exchangeName}</span>
-                      </div>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeEtfMapping(i)}>
-                        <Trash2 className="h-3 w-3 text-muted-foreground" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-center text-xs text-muted-foreground py-4">暂无映射</p>
-              )}
             </CardContent>
           </Card>
         </TabsContent>

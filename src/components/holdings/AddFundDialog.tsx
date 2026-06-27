@@ -8,6 +8,7 @@ import {
   Dialog, DialogContent, DialogDescription,
   DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
+import { toast } from '@/components/ui/toast'
 import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp, TrendingUp,
   AlertCircle, X,
 } from 'lucide-react'
@@ -233,6 +234,22 @@ export default function AddFundDialog() {
           if (result.status === 'fulfilled' && result.value) {
             addEtfMapping(result.value.otcCode, result.value.otcName, result.value.exchangeCode, result.value.exchangeName)
           }
+        }
+      }
+
+      // ETF 映射结果反馈
+      const totalQueried = etfMappingsToQuery.length
+      const succeeded = etfResults.filter((r) => r.status === 'fulfilled' && r.value).length
+      const failed = totalQueried - succeeded
+      const totalMapped = codes.filter((c) => etfMappings.some((m) => m.otcCode === c) || etfResults.some(
+        (r) => r.status === 'fulfilled' && r.value && r.value.otcCode === c
+      )).length
+      if (totalQueried > 0) {
+        toast({ type: succeeded > 0 ? 'success' : 'info', message: `ETF 映射查询完成：${succeeded} 条成功${failed > 0 ? `，${failed} 条未找到映射` : ''}（共 ${totalMapped}/${codes.length} 只基金已映射）` })
+      } else {
+        const alreadyAll = codes.every((c) => etfMappings.some((m) => m.otcCode === c))
+        if (!alreadyAll) {
+          toast({ type: 'info', message: 'ETF 映射查询完成，所有查询均已缓存或已有映射' })
         }
       }
     } catch (err) {
