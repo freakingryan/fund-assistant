@@ -472,9 +472,10 @@ export default function FundDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
+              </div>
               {/* 技术指标切换 */}
               {useEtfKline && etfCode && klineData[0]?.volume && (
-                <div className="flex items-center gap-1 mt-2">
+                <div className="flex items-center gap-1 mt-1.5">
                   <button
                     onClick={() => setShowMA(!showMA)}
                     className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
@@ -491,7 +492,7 @@ export default function FundDetailPage() {
               )}
               {/* 技术指标说明 */}
               {(showMA || showBollinger) && (
-                <div className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed space-y-0.5">
+                <div className="mt-1 text-[10px] text-muted-foreground leading-relaxed space-y-0.5">
                   {showMA && (
                     <p><span className="font-medium text-amber-600 dark:text-amber-400">MA</span>（移动平均线）：过去 N 日收盘价的算术平均。MA5（黄色）=近 5 日均价，MA10（蓝色）=近 10 日均价，反映短期趋势。价格在均线上方=短期偏强，下方=短期偏弱。</p>
                   )}
@@ -500,7 +501,6 @@ export default function FundDetailPage() {
                   )}
                 </div>
               )}
-            </div>
             </CardHeader>
             <CardContent>
               {etfCode && (
