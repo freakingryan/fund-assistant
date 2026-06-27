@@ -1,4 +1,5 @@
-import type { FundHolding, FundQuote, PlanAlert, EtfMapping } from '@/types'
+import type { FundHolding, FundQuote, PlanAlert, EtfMapping, KLineData } from '@/types'
+import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 
 export type PromptTemplateType = 'diagnostic' | 'rebalance' | 'kline_enhanced'
 
@@ -9,6 +10,8 @@ export interface GeneratePromptOptions {
   selectedIds: string[]
   etfMappings: EtfMapping[]
   alerts: PlanAlert[]
+  /** 可选：场内外 K 线数据，用于 kline_enhanced 模板 */
+  klineDataMap?: Record<string, KLineData[]>  // key = exchangeCode
 }
 
 const SECTOR_LABELS: Record<string, string> = {
@@ -136,14 +139,19 @@ ${alertSection}
 `
 }
 
-function klineEnhancedPrompt(selected: FundHolding[], quotes: FundQuote[], etfMappings: EtfMapping[]): string {
+function klineEnhancedPrompt(
+  selected: FundHolding[],
+  quotes: FundQuote[],
+  etfMappings: EtfMapping[],
+  klineDataMap?: Record<string, KLineData[]>,
+): string {
   const table = holdingTable(selected, quotes)
 
   // Build ETF mapping section
   let etfSection = ''
   const mappedFunds = selected.filter((h) => etfMappings.some((m) => m.otcCode === h.code))
   if (mappedFunds.length > 0) {
-    etfSection = '\n### 场外↔场内 ETF 映射（可用于 K 线分析）\n\n'
+    etfSection = '\n### 场外↔场内 ETF 映射\n\n'
     etfSection += '场外代码 | 场外名称 | 场内代码 | 场内名称\n--- | --- | --- | ---\n'
     for (const h of mappedFunds) {
       const m = etfMappings.find((m) => m.otcCode === h.code)
@@ -151,7 +159,33 @@ function klineEnhancedPrompt(selected: FundHolding[], quotes: FundQuote[], etfMa
         etfSection += `${m.otcCode} | ${m.otcName} | ${m.exchangeCode} | ${m.exchangeName}\n`
       }
     }
-    etfSection += '\n> 上表中的场内 ETF 可在交易软件中查看 K 线图、成交量、技术指标等'
+
+    // Add K-line pattern analysis when data is available
+    let klineSection = ''
+    for (const h of mappedFunds) {
+      const m = etfMappings.find((em) => em.otcCode === h.code)
+      if (!m) continue
+      const kData = klineDataMap?.[m.exchangeCode]
+      if (!kData || kData.length < 5) continue
+
+      const patterns = detectPatterns(kData)
+      const summary = formatPatternsSummary(patterns, kData)
+
+      // Recent price range
+      const latest = kData[kData.length - 1]
+      const high = Math.max(...kData.map((d) => d.high)).toFixed(4)
+      const low = Math.min(...kData.map((d) => d.low)).toFixed(4)
+
+      klineSection += `\n#### ${m.exchangeName}（${m.exchangeCode}）— ${m.otcName}\n`
+      klineSection += `- 最新收盘：¥${latest.close.toFixed(4)}（${latest.date}）\n`
+      klineSection += `- ${kData.length}日范围：¥${low} ~ ¥${high}\n`
+      klineSection += `- 成交量：${latest.volume || 'N/A'}\n`
+      klineSection += `- 检测到的 K 线形态：\n${summary}\n`
+    }
+
+    if (klineSection) {
+      etfSection += `\n### K 线形态分析（算法预检测）\n${klineSection}`
+    }
   }
 
   return `## 基金 K 线增强分析请求
@@ -176,7 +210,7 @@ ${etfSection}
  * 生成 Prompt
  */
 export function generatePrompt(options: GeneratePromptOptions): string {
-  const { templateType, holdings, quotes, selectedIds, etfMappings, alerts } = options
+  const { templateType, holdings, quotes, selectedIds, etfMappings, alerts, klineDataMap } = options
 
   const selected = holdings.filter((h) => selectedIds.includes(h.id))
   if (selected.length === 0) return ''
@@ -190,7 +224,7 @@ export function generatePrompt(options: GeneratePromptOptions): string {
       body = rebalancePrompt(selected, quotes, alerts)
       break
     case 'kline_enhanced':
-      body = klineEnhancedPrompt(selected, quotes, etfMappings)
+      body = klineEnhancedPrompt(selected, quotes, etfMappings, klineDataMap)
       break
   }
 

@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { db } from './db'
 import type { InvestmentPlan, PlanRule, PlanAlert, Comparator, FundHolding } from '@/types'
 import { dataSourceService } from '@/adapters/datasource/service'
+import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
+import { useSettingsStore } from './settings'
 
 const DEFAULT_PLAN: Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'> = {
   name: '全局投资计划',
@@ -228,8 +230,25 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             break
           }
           case 'kline_pattern': {
-            // K 线形态诊断需要手动触发，扫描不自动检测
-            continue  // 跳过该规则，不生成提醒
+            const etfMappings = useSettingsStore.getState().settings.etfMappings
+            const mapping = etfMappings.find((m) => m.otcCode === h.code)
+            if (!mapping) continue // 无 ETF 映射无法获取 K 线
+
+            try {
+              const klineData = await dataSourceService.fetchEtfKLine(mapping.exchangeCode, '3m')
+              if (!klineData || klineData.length < 5) continue
+
+              const patterns = detectPatterns(klineData)
+              const highConfPatterns = patterns.filter((p) => (p.confidence * 100) >= rule.threshold)
+              if (highConfPatterns.length > 0) {
+                triggered = true
+                reason = `检测到 ${highConfPatterns.length} 个 K 线形态：${formatPatternsSummary(highConfPatterns, klineData)}`
+              }
+            } catch {
+              // K 线获取失败，跳过
+              continue
+            }
+            break
           }
         }
 

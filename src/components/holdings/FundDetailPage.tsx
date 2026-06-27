@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
 import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, getPortfolioCacheTime, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
+import type { KLineData } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -14,9 +15,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
-import { Loader2, ArrowLeft, Copy, Sparkles, CheckCircle, FileText, Pencil, TrendingUp } from 'lucide-react'
+import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, BrainCircuit, MessageSquareText } from 'lucide-react'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
+import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
+import type { DetectedPattern } from '@/services/klinePatterns'
+import { analyzeKline } from '@/services/klineAnalysis'
+import type { KlineAnalysisResult } from '@/services/klineAnalysis'
 
 const TYPE_LABELS: Record<string, string> = {
   stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
@@ -29,6 +34,13 @@ const SECTOR_LABELS: Record<string, string> = {
   real_estate: '地产', other: '其他',
 }
 const MARKET_LABELS: Record<string, string> = { A: 'A股', HK: '港股', US: '美股' }
+
+/** Prompt 模板说明 */
+const TEMPLATE_HINTS: Record<string, string> = {
+  diagnostic: '根据持仓明细（成本/市值/收益率/涨跌幅）生成投资诊断，分析集中度、风险收益、调仓建议',
+  rebalance: '结合持仓明细和投资计划提醒（收益率触发/涨跌幅/K线形态等），给出具体的调仓顺序和仓位调整建议',
+  kline_enhanced: '结合持仓明细、ETF 映射和 K 线形态检测结果（算法预检测 + 量价数据），分析技术面趋势与入场时机',
+}
 
 export default function FundDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -85,6 +97,13 @@ export default function FundDetailPage() {
   const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
   const [portfolioLoading, setPortfolioLoading] = useState(false)
   const [portfolioUpdateTime, setPortfolioUpdateTime] = useState<string | null>(null)
+
+  // K 线分析
+  const [klineDetectedPatterns, setKlineDetectedPatterns] = useState<DetectedPattern[]>([])
+  const [klinePatterns, setKlinePatterns] = useState<string>('')
+  const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)
+  const [klineAnalyzing, setKlineAnalyzing] = useState(false)
+  const [klineAnalysisError, setKlineAnalysisError] = useState<string | null>(null)
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
@@ -186,6 +205,39 @@ export default function FundDetailPage() {
     return () => { cancelled = true; clearTimeout(timer) }
   }, [fund, period, etfCode, useEtfKline, klineRefreshKey])
 
+  // K 线加载完成后运行算法检测
+  useEffect(() => {
+    if (klineData.length === 0) return
+    const patterns = detectPatterns(klineData)
+    setKlineDetectedPatterns(patterns)
+    setKlinePatterns(formatPatternsSummary(patterns, klineData))
+    setKlineAnalysis(null)
+    setKlineAnalysisError(null)
+  }, [klineData])
+
+  // AI 分析 K 线
+  const handleAnalyzeKline = useCallback(async () => {
+    if (!fund || klineData.length === 0) return
+    setKlineAnalyzing(true)
+    setKlineAnalysisError(null)
+    try {
+      const { result, usedAI, error } = await analyzeKline({
+        code: fund.code,
+        name: fund.name || fund.code,
+        klineData,
+        period,
+        costNAV: fund.costNAV,
+        currentNAV: quotes.find((q) => q.code === fund.code)?.nav,
+        shares: fund.shares,
+      })
+      setKlineAnalysis(result)
+      if (!usedAI && error) setKlineAnalysisError(error)
+    } catch (e) {
+      setKlineAnalysisError(e instanceof Error ? e.message : '分析失败')
+    }
+    setKlineAnalyzing(false)
+  }, [fund, klineData, period, quotes])
+
   useEffect(() => {
     if (!fund) return
     let cancelled = false
@@ -214,6 +266,11 @@ export default function FundDetailPage() {
 
   const handleGenerate = useCallback(() => {
     if (!fund) return
+    const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund.code)
+    const klineDataMap: Record<string, KLineData[]> = {}
+    for (const m of etfMappingsForFund) {
+      if (klineData.length > 0) klineDataMap[m.exchangeCode] = klineData
+    }
     const result = generatePrompt({
       templateType,
       holdings: [fund],
@@ -221,10 +278,35 @@ export default function FundDetailPage() {
       selectedIds: [fund.id],
       etfMappings,
       alerts,
+      klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
     })
     setPrompt(result)
     setCopied(false)
-  }, [fund, templateType, quotes, etfMappings, alerts])
+  }, [fund, templateType, quotes, etfMappings, alerts, klineData])
+
+  /** 生成 K 线增强 Prompt 并跳转到预览 */
+  const handleGenerateKlinePrompt = useCallback(() => {
+    setTemplateType('kline_enhanced')
+    // 下一轮渲染时 templateType 才生效，微任务触发重生成
+    setTimeout(() => {
+      const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund?.code)
+      const klineDataMap: Record<string, KLineData[]> = {}
+      for (const m of etfMappingsForFund) {
+        if (klineData.length > 0) klineDataMap[m.exchangeCode] = klineData
+      }
+      const result = generatePrompt({
+        templateType: 'kline_enhanced',
+        holdings: fund ? [fund] : [],
+        quotes,
+        selectedIds: fund ? [fund.id] : [],
+        etfMappings,
+        alerts,
+        klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
+      })
+      setPrompt(result)
+      setCopied(false)
+    }, 0)
+  }, [fund, quotes, etfMappings, alerts, klineData])
 
   const handleCopy = useCallback(async () => {
     if (!prompt) return
@@ -321,7 +403,7 @@ export default function FundDetailPage() {
               {klineLoading ? (
                 <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : useEtfKline && etfCode && klineData[0]?.volume ? (
-                <CandlestickChart data={klineData} width={560} height={320} />
+                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} />
               ) : (
                 <div className="flex items-center justify-center h-[200px]">
                   {klineData.length > 0 ? (
@@ -339,6 +421,90 @@ export default function FundDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* K 线形态分析 */}
+          {klineData.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
+                    <BrainCircuit className="h-3.5 w-3.5" />K 线形态分析
+                  </CardTitle>
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={klineData.length === 0}
+                      onClick={handleGenerateKlinePrompt}
+                    >
+                      <MessageSquareText className="h-3 w-3 mr-1" />生成 Prompt
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={klineAnalyzing || klineData.length === 0}
+                      onClick={handleAnalyzeKline}
+                    >
+                      {klineAnalyzing ? (
+                        <><Loader2 className="h-3 w-3 mr-1 animate-spin" />分析中</>
+                      ) : (
+                        <><Sparkles className="h-3 w-3 mr-1" />AI 分析</>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* 算法检测结果（始终显示） */}
+                <div>
+                  <p className="text-[10px] text-muted-foreground mb-1">算法检测</p>
+                  <div className="text-xs leading-relaxed whitespace-pre-line font-mono bg-muted/30 rounded p-2">
+                    {klinePatterns || '计算中...'}
+                  </div>
+                </div>
+
+                {/* AI 分析结果 */}
+                {klineAnalysis && (
+                  <div className="space-y-2 border-t pt-2">
+                    <p className="text-[10px] text-muted-foreground">AI 深度分析</p>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">趋势：</span>
+                      <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                        klineAnalysis.trend === 'bullish'
+                          ? 'bg-red-50 text-red-600'
+                          : klineAnalysis.trend === 'bearish'
+                            ? 'bg-green-50 text-green-600'
+                            : 'bg-gray-50 text-gray-600'
+                      }`}>
+                        {klineAnalysis.trend === 'bullish' ? '多头 ↑' : klineAnalysis.trend === 'bearish' ? '空头 ↓' : '震荡 ↔'}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        置信度: {klineAnalysis.confidence === 'high' ? '高' : klineAnalysis.confidence === 'medium' ? '中' : '低'}
+                      </span>
+                    </div>
+
+                    {klineAnalysis.support !== undefined && klineAnalysis.resistance !== undefined && (
+                      <div className="flex gap-3 text-xs">
+                        <span className="text-red-500">支撑: ¥{klineAnalysis.support.toFixed(4)}</span>
+                        <span className="text-green-500">阻力: ¥{klineAnalysis.resistance.toFixed(4)}</span>
+                      </div>
+                    )}
+
+                    <div className="text-xs p-2 rounded bg-muted/30 leading-relaxed">
+                      {klineAnalysis.advice}
+                    </div>
+
+                    {klineAnalysisError && (
+                      <p className="text-[10px] text-orange-500">注: {klineAnalysisError}，仅显示算法检测结果</p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* 持仓穿透 */}
           <Card>
@@ -388,6 +554,7 @@ export default function FundDetailPage() {
                 {(['diagnostic', 'rebalance', 'kline_enhanced'] as const).map((t) => (
                   <button key={t}
                     onClick={() => setTemplateType(t)}
+                    title={TEMPLATE_HINTS[t]}
                     className={`text-xs px-2 py-1 rounded transition-colors cursor-pointer ${
                       templateType === t ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/70'
                     }`}
@@ -396,6 +563,9 @@ export default function FundDetailPage() {
                   </button>
                 ))}
               </div>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                {TEMPLATE_HINTS[templateType]}
+              </p>
               <Button size="sm" className="w-full" disabled={quotesLoading} onClick={handleGenerate}>
                 <Sparkles className="h-3 w-3 mr-1" />生成分析 Prompt
               </Button>
