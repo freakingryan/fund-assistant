@@ -649,8 +649,12 @@ export default function FundDetailPage() {
               </CardContent>
             </Card>
           )}
+        </div>
 
+        {/* Right: Prompt */}
+        <div className="space-y-4">
           {/* 持仓穿透 */}
+          {portfolio?.holdings && portfolio.holdings.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
@@ -664,7 +668,7 @@ export default function FundDetailPage() {
             <CardContent>
               {portfolioLoading ? (
                 <div className="flex items-center justify-center h-16"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-              ) : portfolio?.holdings && portfolio.holdings.length > 0 ? (
+              ) : (
                 <div className="space-y-2">
                   <p className="text-[10px] text-muted-foreground">报告期：{portfolio.date}</p>
                   <div className="space-y-1">
@@ -682,15 +686,11 @@ export default function FundDetailPage() {
                     ))}
                   </div>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground text-center py-4">暂无重仓股数据</p>
               )}
             </CardContent>
           </Card>
-        </div>
+          )}
 
-        {/* Right: Prompt */}
-        <div className="space-y-4">
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">Prompt 模板</CardTitle></CardHeader>
             <CardContent className="space-y-2">
