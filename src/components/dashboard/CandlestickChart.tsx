@@ -82,7 +82,7 @@ export default function CandlestickChart({
 
     const stepX = chartWidth / Math.max(data.length - 1, 1)
     const candleWidth = Math.max(3, stepX * 0.6)
-    const scaleY = (v: number) => chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
+    const scaleY = (v: number) => MARGIN.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
 
     const candles = data.map((d, i) => {
       const cx = MARGIN.left + i * stepX
@@ -173,118 +173,72 @@ export default function CandlestickChart({
             </g>
           ))}
 
-          {/* 技术指标图例 */}
-          {(showMA || showBollinger) && (
-            <g>
-              {/* 图例背景 */}
-              <rect x={MARGIN.left + 4} y={MARGIN.top + 2} width={108} height={showMA && showBollinger ? 42 : showMA ? 44 : 18}
-                rx={3} fill="rgba(255,255,255,0.85)" stroke="rgba(0,0,0,0.08)" strokeWidth={0.5} />
+          {/* Bollinger Bands 填充 */}
+          {showBollinger && technicals && (() => {
+            const stepX = chartWidth / Math.max(data.length - 1, 1)
+            const upperPts = buildBollingerPolyline(technicals.bollinger.upper, stepX)
+            const lowerPts = buildBollingerPolyline(technicals.bollinger.lower, stepX)
+            if (!upperPts || !lowerPts) return null
+            const lowerArr = technicals.bollinger.lower
+            let lowerRev = ''
+            for (let i = lowerArr.length - 1; i >= 0; i--) {
+              if (lowerArr[i] === null) continue
+              const x = MARGIN.left + i * stepX
+              const y = chartHeight - ((lowerArr[i]! - yScale.min) / (yScale.max - yScale.min)) * chartHeight + MARGIN.top
+              lowerRev += `${x},${y} `
+            }
+            if (!lowerRev.trim()) return null
+            return (
+              <path
+                d={`M ${upperPts} L ${lowerRev.trim()} Z`}
+                fill="rgba(59,130,246,0.06)"
+                stroke="none"
+                pointerEvents="none"
+              />
+            )
+          })()}
 
-              {/* Bollinger Bands fill */}
-              {showBollinger && technicals && (() => {
-                const stepX = chartWidth / Math.max(data.length - 1, 1)
-                const upperPts = buildBollingerPolyline(technicals.bollinger.upper, stepX)
-                const lowerPts = buildBollingerPolyline(technicals.bollinger.lower, stepX)
-                if (!upperPts || !lowerPts) return null
-                // 需要反转 lower 的 points 以形成闭合路径
-                const lowerArr = technicals.bollinger.lower
-                let lowerRev = ''
-                for (let i = lowerArr.length - 1; i >= 0; i--) {
-                  if (lowerArr[i] === null) continue
-                  const x = MARGIN.left + i * stepX
-                  const y = chartHeight - ((lowerArr[i]! - yScale.min) / (yScale.max - yScale.min)) * chartHeight + MARGIN.top
-                  lowerRev += `${x},${y} `
-                }
-                if (!lowerRev.trim()) return null
-                return (
-                  <path
-                    d={`M ${upperPts} L ${lowerRev.trim()} Z`}
-                    fill="rgba(59,130,246,0.06)"
-                    stroke="none"
-                    pointerEvents="none"
-                  />
-                )
-              })()}
+          {/* Bollinger Lines */}
+          {showBollinger && technicals && ['upper', 'middle', 'lower'].map((band) => {
+            const values = technicals!.bollinger[band as keyof typeof technicals.bollinger]
+            const stepX = chartWidth / Math.max(data.length - 1, 1)
+            const pts = buildBollingerPolyline(values as (number | null)[], stepX)
+            if (!pts) return null
+            return (
+              <polyline
+                key={`bb-${band}`}
+                points={pts}
+                fill="none"
+                stroke={band === 'middle' ? '#3b82f6' : '#93c5fd'}
+                strokeWidth={band === 'middle' ? 1 : 0.5}
+                strokeDasharray={band === 'middle' ? 'none' : '4,3'}
+                pointerEvents="none"
+              />
+            )
+          })}
 
-              {/* Bollinger Legend */}
-              {showBollinger && (
-                <g>
-                  <line x1={MARGIN.left + 8} y1={MARGIN.top + 12} x2={MARGIN.left + 20} y2={MARGIN.top + 12}
-                    stroke="#93c5fd" strokeWidth={0.5} strokeDasharray="4,3" />
-                  <line x1={MARGIN.left + 8} y1={MARGIN.top + 18} x2={MARGIN.left + 20} y2={MARGIN.top + 18}
-                    stroke="#3b82f6" strokeWidth={1} />
-                  <text x={MARGIN.left + 24} y={MARGIN.top + 16} fontSize={9} fill="#6b7280" dominantBaseline="middle">BOLL</text>
-                  {showMA && (
-                    <text x={MARGIN.left + 52} y={MARGIN.top + 16} fontSize={9} fill="#6b7280" dominantBaseline="middle">(20,2)</text>
-                  )}
-                </g>
-              )}
-
-              {/* MA 图例项 */}
-              {showMA && (
-                <g>
-                  {[0, 1, 2, 3].map((mi) => {
-                    const y = (showBollinger ? MARGIN.top + 24 : MARGIN.top + 6) + mi * 10
-                    // 只显示有数据的均线
-                    const maArr = [technicals?.ma.ma5, technicals?.ma.ma10, technicals?.ma.ma20, technicals?.ma.ma60][mi]
-                    const hasData = maArr?.some((v) => v !== null)
-                    if (!hasData) return null
-                    return (
-                      <g key={`ma-legend-${mi}`}>
-                        <line x1={MARGIN.left + 8} y1={y} x2={MARGIN.left + 20} y2={y}
-                          stroke={MA_COLORS[mi]} strokeWidth={1.5} />
-                        <text x={MARGIN.left + 24} y={y} fontSize={9} fill={MA_COLORS[mi]} dominantBaseline="middle" fontWeight={500}>
-                          {MA_LABELS[mi]}
-                        </text>
-                      </g>
-                    )
-                  })}
-                </g>
-              )}
-
-              {/* Bollinger Lines */}
-              {showBollinger && technicals && ['upper', 'middle', 'lower'].map((band) => {
-                const values = technicals!.bollinger[band as keyof typeof technicals.bollinger]
-                const stepX = chartWidth / Math.max(data.length - 1, 1)
-                const pts = buildBollingerPolyline(values as (number | null)[], stepX)
-                if (!pts) return null
-                return (
-                  <polyline
-                    key={`bb-${band}`}
-                    points={pts}
-                    fill="none"
-                    stroke={band === 'middle' ? '#3b82f6' : '#93c5fd'}
-                    strokeWidth={band === 'middle' ? 1 : 0.5}
-                    strokeDasharray={band === 'middle' ? 'none' : '4,3'}
-                    pointerEvents="none"
-                  />
-                )
-              })}
-
-              {/* MA Lines */}
-              {showMA && technicals && [
-                technicals.ma.ma5,
-                technicals.ma.ma10,
-                technicals.ma.ma20,
-                technicals.ma.ma60,
-              ].map((maArr, mi) => {
-                if (!maArr) return null
-                const stepX = chartWidth / Math.max(data.length - 1, 1)
-                const pts = buildMAPolyline(maArr, stepX)
-                if (!pts) return null
-                return (
-                  <polyline
-                    key={`ma-${mi}`}
-                    points={pts}
-                    fill="none"
-                    stroke={MA_COLORS[mi]}
-                    strokeWidth={1.2}
-                    pointerEvents="none"
-                  />
-                )
-              })}
-            </g>
-          )}
+          {/* MA Lines */}
+          {showMA && technicals && [
+            technicals.ma.ma5,
+            technicals.ma.ma10,
+            technicals.ma.ma20,
+            technicals.ma.ma60,
+          ].map((maArr, mi) => {
+            if (!maArr) return null
+            const stepX = chartWidth / Math.max(data.length - 1, 1)
+            const pts = buildMAPolyline(maArr, stepX)
+            if (!pts) return null
+            return (
+              <polyline
+                key={`ma-${mi}`}
+                points={pts}
+                fill="none"
+                stroke={MA_COLORS[mi]}
+                strokeWidth={1.2}
+                pointerEvents="none"
+              />
+            )
+          })}
 
           {/* Volume bars */}
           {candles.map((c, i) => (
@@ -383,6 +337,30 @@ export default function CandlestickChart({
           })()}
         </svg>
       </div>
+
+      {/* 技术指标图例 — 置于 SVG 之外，防止与 K 线重叠 */}
+      {(showMA || showBollinger) && technicals && (
+        <div className="flex items-center gap-3 px-1 pt-1 pb-0.5 text-[10px] flex-wrap">
+          {/* Bollinger 图例 */}
+          {showBollinger && (
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5 rounded" style={{ background: '#93c5fd', opacity: 0.7 }} />
+              <span className="text-muted-foreground">BOLL (20,2)</span>
+            </span>
+          )}
+          {/* MA 图例 */}
+          {showMA && [0, 1, 2, 3].map((mi) => {
+            const maArr = [technicals!.ma.ma5, technicals!.ma.ma10, technicals!.ma.ma20, technicals!.ma.ma60][mi]
+            if (!maArr?.some((v) => v !== null)) return null
+            return (
+              <span key={`ma-legend-${mi}`} className="flex items-center gap-1">
+                <span className="inline-block w-3 h-0.5 rounded" style={{ background: MA_COLORS[mi] }} />
+                <span style={{ color: MA_COLORS[mi] }}>{MA_LABELS[mi]}</span>
+              </span>
+            )
+          })}
+        </div>
+      )}
 
       {/* 底部信息栏 — 固定高度容器，防止显示/隐藏时布局移动 */}
       <div style={{ marginTop: 4, height: INFO_BAR_H }}>

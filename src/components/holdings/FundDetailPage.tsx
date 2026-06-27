@@ -489,6 +489,17 @@ export default function FundDetailPage() {
                   >BOLL</button>
                 </div>
               )}
+              {/* 技术指标说明 */}
+              {(showMA || showBollinger) && (
+                <div className="mt-1.5 text-[10px] text-muted-foreground leading-relaxed space-y-0.5">
+                  {showMA && (
+                    <p><span className="font-medium text-amber-600 dark:text-amber-400">MA</span>（移动平均线）：过去 N 日收盘价的算术平均。MA5（黄色）=近 5 日均价，MA10（蓝色）=近 10 日均价，反映短期趋势。价格在均线上方=短期偏强，下方=短期偏弱。</p>
+                  )}
+                  {showBollinger && (
+                    <p><span className="font-medium text-blue-600 dark:text-blue-400">BOLL</span>（布林带）：中轨=MA20，上/下轨=中轨 ± 2 倍标准差。带越宽=波动越大，价格触及上轨=超买，触及下轨=超卖，带宽收窄=即将变盘。</p>
+                  )}
+                </div>
+              )}
             </div>
             </CardHeader>
             <CardContent>
