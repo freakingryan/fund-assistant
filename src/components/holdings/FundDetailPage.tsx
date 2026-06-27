@@ -76,6 +76,8 @@ export default function FundDetailPage() {
   const [klineUpdateTime, setKlineUpdateTime] = useState<string | null>(null)
   const [klineRefreshKey, setKlineRefreshKey] = useState(0)
   const [useEtfKline, setUseEtfKline] = useState(true)
+  const [showMA, setShowMA] = useState(true)
+  const [showBollinger, setShowBollinger] = useState(false)
 
   // ETF 映射
   const etfCode = useMemo(() => {
@@ -470,6 +472,23 @@ export default function FundDetailPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {/* 技术指标切换 */}
+              {useEtfKline && etfCode && klineData[0]?.volume && (
+                <div className="flex items-center gap-1 mt-2">
+                  <button
+                    onClick={() => setShowMA(!showMA)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                      showMA ? 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-950 dark:border-amber-700 dark:text-amber-400' : 'border-transparent text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >MA</button>
+                  <button
+                    onClick={() => setShowBollinger(!showBollinger)}
+                    className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${
+                      showBollinger ? 'bg-blue-50 border-blue-300 text-blue-700 dark:bg-blue-950 dark:border-blue-700 dark:text-blue-400' : 'border-transparent text-muted-foreground hover:bg-muted/50'
+                    }`}
+                  >BOLL</button>
+                </div>
+              )}
             </div>
             </CardHeader>
             <CardContent>
@@ -484,7 +503,7 @@ export default function FundDetailPage() {
               {klineLoading ? (
                 <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
               ) : useEtfKline && etfCode && klineData[0]?.volume ? (
-                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} />
+                <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={setHoveredKlineIndex} showMA={showMA} showBollinger={showBollinger} />
               ) : (
                 <div className="flex items-center justify-center h-[200px]">
                   {klineData.length > 0 ? (
