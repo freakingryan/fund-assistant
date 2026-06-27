@@ -715,6 +715,61 @@ export default function FundDetailPage() {
                         }}
                       />
                     </div>
+                    {/* 关键指标一览（始终显示） */}
+                    {(() => {
+                      const rsiContribution = signalResult.contributions.find((c) => c.key === 'rsi')
+                      const macdContribution = signalResult.contributions.find((c) => c.key === 'macdCross')
+                      const maContribution = signalResult.contributions.find((c) => c.key === 'maTrend')
+                      const bollingerContribution = signalResult.contributions.find((c) => c.key === 'bollinger')
+                      const volumeContribution = signalResult.contributions.find((c) => c.key === 'volume')
+                      return (
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mb-1.5">
+                          {/* RSI */}
+                          {rsiContribution && (
+                            <span className={`text-[10px] font-medium ${
+                              rsiContribution.score >= 4 ? 'text-green-500' : rsiContribution.score <= -4 ? 'text-red-500' : 'text-muted-foreground'
+                            }`}>
+                              RSI {rsiContribution.detail.replace(/^RSI[^0-9]*/i, '').split(/[^\d.]/)[0] || ''}
+                              <span className="text-[9px] text-muted-foreground/60 ml-0.5">
+                                {rsiContribution.score >= 4 ? '⬆超卖' : rsiContribution.score <= -4 ? '⬇超买' : ''}
+                              </span>
+                            </span>
+                          )}
+                          {/* MACD */}
+                          {macdContribution && (
+                            <span className={`text-[10px] font-medium ${
+                              macdContribution.score >= 5 ? 'text-red-500' : macdContribution.score <= -5 ? 'text-green-500' : 'text-muted-foreground'
+                            }`}>
+                              MACD {macdContribution.detail.includes('金叉') ? '↑金叉' : macdContribution.detail.includes('死叉') ? '↓死叉' : macdContribution.detail.includes('上方') ? '↗偏多' : '↘偏空'}
+                            </span>
+                          )}
+                          {/* MA 趋势 */}
+                          {maContribution && (
+                            <span className={`text-[10px] font-medium ${
+                              maContribution.score >= 5 ? 'text-red-500' : maContribution.score <= -5 ? 'text-green-500' : 'text-muted-foreground'
+                            }`}>
+                              MA {maContribution.detail.includes('多头') ? '↑多头' : maContribution.detail.includes('空头') ? '↓空头' : '↔交叉'}
+                            </span>
+                          )}
+                          {/* Bollinger */}
+                          {bollingerContribution && (
+                            <span className={`text-[10px] font-medium ${
+                              bollingerContribution.score >= 3 ? 'text-red-500' : bollingerContribution.score <= -3 ? 'text-green-500' : 'text-muted-foreground'
+                            }`}>
+                              BOLL {bollingerContribution.detail.includes('收窄') ? '⟷变盘' : bollingerContribution.detail.includes('上轨') ? '⬇超买' : bollingerContribution.detail.includes('下轨') ? '⬆支撑' : '中性'}
+                            </span>
+                          )}
+                          {/* 量能 */}
+                          {volumeContribution && (
+                            <span className={`text-[10px] font-medium ${
+                              volumeContribution.score >= 3 ? 'text-red-500' : 'text-muted-foreground'
+                            }`}>
+                              量 {volumeContribution.detail.includes('激增') ? '🔥异动' : volumeContribution.detail.includes('放大') ? '📈放量' : volumeContribution.detail.includes('萎缩') ? '📉缩量' : '正常'}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
                     {/* 展开详情 */}
                     <button
                       onClick={() => setShowSignalDetail(!showSignalDetail)}
