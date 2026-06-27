@@ -22,6 +22,8 @@ import { detectPatterns, formatPatternsSummary, getPatternLabel } from '@/servic
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
 import type { KlineAnalysisResult } from '@/services/klineAnalysis'
+import { evaluateSignal, DEFAULT_WEIGHTS, WEIGHT_LABELS } from '@/services/signalEngine'
+import type { SignalResult } from '@/services/signalEngine'
 
 const TYPE_LABELS: Record<string, string> = {
   stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
@@ -106,6 +108,9 @@ export default function FundDetailPage() {
   const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)
   const [klineAnalyzing, setKlineAnalyzing] = useState(false)
   const [klineAnalysisError, setKlineAnalysisError] = useState<string | null>(null)
+  // 多指标融合评分
+  const [signalResult, setSignalResult] = useState<SignalResult | null>(null)
+  const [showSignalDetail, setShowSignalDetail] = useState(false)
   // 联动：K 线图悬停索引
   const [hoveredKlineIndex, setHoveredKlineIndex] = useState<number | null>(null)
   const [glossaryOpen, setGlossaryOpen] = useState(false)
@@ -211,7 +216,7 @@ export default function FundDetailPage() {
     return () => { cancelled = true; clearTimeout(timer) }
   }, [fund, period, etfCode, useEtfKline, klineRefreshKey])
 
-  // K 线加载完成后运行算法检测
+  // K 线加载完成后运行算法检测 + 综合评分
   useEffect(() => {
     if (klineData.length === 0) return
     const patterns = detectPatterns(klineData)
@@ -219,6 +224,9 @@ export default function FundDetailPage() {
     setKlinePatterns(formatPatternsSummary(patterns, klineData))
     setKlineAnalysis(null)
     setKlineAnalysisError(null)
+    // 综合评分
+    const signal = evaluateSignal(klineData, patterns)
+    setSignalResult(signal)
   }, [klineData])
 
   // AI 分析 K 线
@@ -670,6 +678,72 @@ export default function FundDetailPage() {
                     </div>
                   )}
                 </div>
+
+                {/* 多指标融合评分 */}
+                {signalResult && (
+                  <div className="border-t pt-2">
+                    <p className="text-[10px] text-muted-foreground mb-1.5">综合评分</p>
+                    {/* 主评分 + 方向 */}
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className={`text-xs font-bold px-2 py-0.5 rounded ${
+                        signalResult.direction === 'strong_bullish' || signalResult.direction === 'bullish'
+                          ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
+                          : signalResult.direction === 'strong_bearish' || signalResult.direction === 'bearish'
+                            ? 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+                            : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                      }`}>
+                        {signalResult.totalScore >= 0 ? '+' : ''}{signalResult.totalScore}
+                      </div>
+                      <span className={`text-xs font-medium ${
+                        signalResult.direction.startsWith('strong_bullish') || signalResult.direction === 'bullish'
+                          ? 'text-red-500' : signalResult.direction.startsWith('strong_bearish') || signalResult.direction === 'bearish'
+                            ? 'text-green-500' : 'text-muted-foreground'
+                      }`}>
+                        {signalResult.directionLabel}
+                      </span>
+                    </div>
+                    {/* 进度条 */}
+                    <div className="w-full h-1.5 bg-muted/40 rounded-full overflow-hidden mb-1.5">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.abs(signalResult.totalScore)}%`,
+                          marginLeft: signalResult.totalScore < 0 ? `${(100 + signalResult.totalScore)}%` : '50%',
+                          background: signalResult.totalScore >= 0
+                            ? 'linear-gradient(90deg, #f87171, #ef4444)'
+                            : 'linear-gradient(90deg, #34d399, #10b981)',
+                        }}
+                      />
+                    </div>
+                    {/* 展开详情 */}
+                    <button
+                      onClick={() => setShowSignalDetail(!showSignalDetail)}
+                      className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <span className={`inline-block transition-transform ${showSignalDetail ? 'rotate-90' : ''}`}>▶</span>
+                      评分详情（权重可调）
+                    </button>
+                    {showSignalDetail && (
+                      <div className="mt-1 space-y-1">
+                        {signalResult.contributions.map((c) => (
+                          <div key={c.key} className="flex items-center gap-2 text-[10px] px-1.5 py-1 rounded bg-muted/20">
+                            <span className={`shrink-0 w-5 text-center font-mono text-[9px] font-bold ${
+                              c.score > 0 ? 'text-red-500' : c.score < 0 ? 'text-green-500' : 'text-muted-foreground'
+                            }`}>
+                              {c.score > 0 ? '+' : ''}{c.score}
+                            </span>
+                            <span className="shrink-0 font-medium text-muted-foreground w-16">{c.label}</span>
+                            <span className="text-[9px] text-muted-foreground/60 shrink-0">×{c.weight}%</span>
+                            <span className="truncate text-muted-foreground/80 flex-1 min-w-0">{c.detail}</span>
+                          </div>
+                        ))}
+                        <p className="text-[9px] text-muted-foreground/40 mt-0.5">
+                          评分范围 -100~+100 · 权重合计 {(Object.values(DEFAULT_WEIGHTS) as number[]).reduce((a, b) => a + b, 0)}% · 支持 AI 自动优化
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* AI 分析结果 */}
                 {klineAnalysis && (
