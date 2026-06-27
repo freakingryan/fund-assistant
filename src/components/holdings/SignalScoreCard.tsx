@@ -9,8 +9,71 @@ interface Props {
   setShowSignalDetail: (v: boolean) => void
 }
 
+/** 根据评分和指标生成调仓建议 */
+function buildAdvice(signalResult: SignalResult): { label: string; color: string; details: string[] } {
+  const score = signalResult.totalScore
+  const rsiC = signalResult.contributions.find((c) => c.key === 'rsi')
+  const bollC = signalResult.contributions.find((c) => c.key === 'bollinger')
+  const maC = signalResult.contributions.find((c) => c.key === 'maTrend')
+  const macdC = signalResult.contributions.find((c) => c.key === 'macdCross')
+  const volC = signalResult.contributions.find((c) => c.key === 'volume')
+
+  const isOverheat = (rsiC && rsiC.score <= -4) || (bollC && bollC.score <= -3)
+  const isOversold = (rsiC && rsiC.score >= 4) || (bollC && bollC.score >= 3)
+  const trendUp = (maC && maC.score >= 5) || (macdC && macdC.score >= 5)
+  const trendDown = (maC && maC.score <= -5) || (macdC && macdC.score <= -5)
+  const volSurge = volC && volC.score >= 3
+  const volShrink = volC && volC.score <= -2
+
+  const details: string[] = []
+
+  if (score >= 60 && isOverheat) {
+    details.push('评分虽高但 RSI/BOLL 提示过热，建议观望或分批止盈')
+  } else if (score >= 60) {
+    details.push('多头趋势强劲，可持有或分批止盈锁定利润')
+  } else if (score >= 20 && isOversold) {
+    details.push('趋势偏多 + 超卖信号，较好的补仓窗口')
+  } else if (score >= 20) {
+    details.push('趋势温和偏多，适合小额定投或分批建仓')
+  } else if (score > -20) {
+    details.push('多空信号不明确，建议等待方向确认后再操作')
+  } else if (score > -60 && isOversold) {
+    details.push('偏空但已出现超卖信号，观望等待企稳')
+  } else if (score > -60) {
+    details.push('偏空趋势，不建议补仓，已有仓位可考虑减仓')
+  } else {
+    details.push('强烈看空信号，减仓避险为主')
+  }
+
+  if (trendUp && isOversold) {
+    details.push('📌 MA/MACD 偏多 + 超卖 = 趋势向上的回调买入机会')
+  }
+  if (trendDown && isOverheat) {
+    details.push('📌 MA/MACD 偏空 + 超买 = 趋势向下的反弹减仓机会')
+  }
+  if (volSurge && score > 0) {
+    details.push('📌 成交量放大配合多头信号，上涨有量能支持')
+  }
+  if (volShrink && score < 0) {
+    details.push('📌 缩量下跌，抛压减弱，可能接近底部')
+  }
+
+  if (details.length === 0) details.push('信号混杂，建议结合其他信息综合判断')
+
+  let label: string
+  let color: string
+  if (score >= 60) { label = '持有/分批止盈'; color = 'text-red-500' }
+  else if (score >= 20) { label = '适合补仓/定投'; color = 'text-red-500' }
+  else if (score > -20) { label = '观望等待'; color = 'text-muted-foreground' }
+  else if (score > -60) { label = '减仓/观望'; color = 'text-green-500' }
+  else { label = '减仓避险'; color = 'text-green-500' }
+
+  return { label, color, details }
+}
+
 export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail }: Props) {
   if (!signalResult) return null
+  const advice = buildAdvice(signalResult)
 
   return (
     <Card>
@@ -89,6 +152,18 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
             </div>
           )
         })()}
+
+        {/* 调仓建议 */}
+        <div className="mb-2 p-2 rounded bg-muted/15 space-y-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-muted-foreground">操作建议：</span>
+            <span className={`text-xs font-bold ${advice.color}`}>{advice.label}</span>
+          </div>
+          {advice.details.map((d, i) => (
+            <p key={i} className="text-[10px] text-muted-foreground leading-relaxed">{d}</p>
+          ))}
+        </div>
+
         {/* 展开详情 */}
         <button onClick={() => setShowSignalDetail(!showSignalDetail)}
           className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
@@ -113,6 +188,22 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
             </p>
           </div>
         )}
+
+        {/* 评分区间说明 */}
+        <div className="mt-2 pt-2 border-t">
+          <p className="text-[9px] text-muted-foreground/50 leading-relaxed">
+            评分参考：
+            <span className="text-red-400/70">+60↑ 持有/止盈</span>
+            <span className="text-muted-foreground/50 mx-0.5">·</span>
+            <span className="text-red-400/70">+20~+60 适合补仓</span>
+            <span className="text-muted-foreground/50 mx-0.5">·</span>
+            <span className="text-muted-foreground/50">±20 观望</span>
+            <span className="text-muted-foreground/50 mx-0.5">·</span>
+            <span className="text-green-400/70">-60~-20 减仓</span>
+            <span className="text-muted-foreground/50 mx-0.5">·</span>
+            <span className="text-green-400/70">-60↓ 避险</span>
+          </p>
+        </div>
       </CardContent>
     </Card>
   )
