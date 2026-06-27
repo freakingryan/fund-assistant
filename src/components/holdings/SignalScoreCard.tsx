@@ -1,0 +1,119 @@
+import type { SignalResult } from '@/services/signalEngine'
+import { DEFAULT_WEIGHTS } from '@/services/signalEngine'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { TrendingUp } from 'lucide-react'
+
+interface Props {
+  signalResult: SignalResult | null
+  showSignalDetail: boolean
+  setShowSignalDetail: (v: boolean) => void
+}
+
+export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail }: Props) {
+  if (!signalResult) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-1.5">
+          <TrendingUp className="h-3.5 w-3.5 text-primary" />综合评分
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {/* 主评分 + 方向 */}
+        <div className="flex items-center gap-2 mb-1">
+          <div className={`text-base font-bold px-2 py-0.5 rounded ${
+            signalResult.direction === 'strong_bullish' || signalResult.direction === 'bullish'
+              ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
+              : signalResult.direction === 'strong_bearish' || signalResult.direction === 'bearish'
+                ? 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+                : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+          }`}>
+            {signalResult.totalScore >= 0 ? '+' : ''}{signalResult.totalScore}
+          </div>
+          <span className={`text-sm font-bold ${
+            signalResult.direction.startsWith('strong_bullish') || signalResult.direction === 'bullish'
+              ? 'text-red-500' : signalResult.direction.startsWith('strong_bearish') || signalResult.direction === 'bearish'
+                ? 'text-green-500' : 'text-muted-foreground'
+          }`}>
+            {signalResult.directionLabel}
+          </span>
+        </div>
+        {/* 进度条 */}
+        <div className="w-full h-2 bg-muted/40 rounded-full overflow-hidden mb-2">
+          <div className="h-full rounded-full transition-all" style={{
+            width: `${Math.abs(signalResult.totalScore)}%`,
+            marginLeft: signalResult.totalScore < 0 ? `${(100 + signalResult.totalScore)}%` : '50%',
+            background: signalResult.totalScore >= 0
+              ? 'linear-gradient(90deg, #f87171, #ef4444)'
+              : 'linear-gradient(90deg, #34d399, #10b981)',
+          }} />
+        </div>
+        {/* 关键指标一览 */}
+        {(() => {
+          const rsiC = signalResult.contributions.find((c) => c.key === 'rsi')
+          const macdC = signalResult.contributions.find((c) => c.key === 'macdCross')
+          const maC = signalResult.contributions.find((c) => c.key === 'maTrend')
+          const bollC = signalResult.contributions.find((c) => c.key === 'bollinger')
+          const volC = signalResult.contributions.find((c) => c.key === 'volume')
+          return (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
+              {rsiC && (
+                <span className={`text-[11px] font-medium ${rsiC.score >= 4 ? 'text-green-500' : rsiC.score <= -4 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  RSI {rsiC.detail.replace(/^RSI[^0-9]*/i, '').split(/[^\d.]/)[0] || ''}
+                  <span className="text-[10px] text-muted-foreground/60 ml-0.5">
+                    {rsiC.score >= 4 ? '⬆超卖' : rsiC.score <= -4 ? '⬇超买' : ''}
+                  </span>
+                </span>
+              )}
+              {macdC && (
+                <span className={`text-[11px] font-medium ${macdC.score >= 5 ? 'text-red-500' : macdC.score <= -5 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  MACD {macdC.detail.includes('金叉') ? '↑金叉' : macdC.detail.includes('死叉') ? '↓死叉' : macdC.detail.includes('上方') ? '↗偏多' : '↘偏空'}
+                </span>
+              )}
+              {maC && (
+                <span className={`text-[11px] font-medium ${maC.score >= 5 ? 'text-red-500' : maC.score <= -5 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  MA {maC.detail.includes('多头') ? '↑多头' : maC.detail.includes('空头') ? '↓空头' : '↔交叉'}
+                </span>
+              )}
+              {bollC && (
+                <span className={`text-[11px] font-medium ${bollC.score >= 3 ? 'text-red-500' : bollC.score <= -3 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  BOLL {bollC.detail.includes('收窄') ? '⟷变盘' : bollC.detail.includes('上轨') ? '⬇超买' : bollC.detail.includes('下轨') ? '⬆支撑' : '中性'}
+                </span>
+              )}
+              {volC && (
+                <span className={`text-[11px] font-medium ${volC.score >= 3 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  量 {volC.detail.includes('激增') ? '🔥异动' : volC.detail.includes('放大') ? '📈放量' : volC.detail.includes('萎缩') ? '📉缩量' : '正常'}
+                </span>
+              )}
+            </div>
+          )
+        })()}
+        {/* 展开详情 */}
+        <button onClick={() => setShowSignalDetail(!showSignalDetail)}
+          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        >
+          <span className={`inline-block transition-transform ${showSignalDetail ? 'rotate-90' : ''}`}>▶</span>
+          评分详情（权重可调）
+        </button>
+        {showSignalDetail && (
+          <div className="mt-1.5 space-y-1">
+            {signalResult.contributions.map((c) => (
+              <div key={c.key} className="flex items-center gap-2 text-[10px] px-1.5 py-1 rounded bg-muted/20">
+                <span className={`shrink-0 w-5 text-center font-mono text-[9px] font-bold ${c.score > 0 ? 'text-red-500' : c.score < 0 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                  {c.score > 0 ? '+' : ''}{c.score}
+                </span>
+                <span className="shrink-0 font-medium text-muted-foreground w-16">{c.label}</span>
+                <span className="text-[9px] text-muted-foreground/60 shrink-0">×{c.weight}%</span>
+                <span className="truncate text-muted-foreground/80 flex-1 min-w-0">{c.detail}</span>
+              </div>
+            ))}
+            <p className="text-[9px] text-muted-foreground/40 mt-0.5">
+              评分范围 -100~+100 · 权重合计 {(Object.values(DEFAULT_WEIGHTS) as number[]).reduce((a, b) => a + b, 0)}% · 支持 AI 自动优化
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
