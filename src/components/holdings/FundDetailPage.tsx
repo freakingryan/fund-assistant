@@ -8,10 +8,10 @@ import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
 import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, getPortfolioCacheTime, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
 import type { KLineData } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import SearchableSelect from '@/components/ui/searchable-select'
 import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, Wallet } from 'lucide-react'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
@@ -274,30 +274,28 @@ export default function FundDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* 返回 + 基金切换 */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <Select value={fund.id} onValueChange={handleSwitchFund}>
-              <SelectTrigger className="w-[280px] h-8 text-xs"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {holdings.map((h) => (
-                  <SelectItem key={h.id} value={h.id}>
-                    <span className="font-mono text-[10px] mr-2">{h.code}</span>
-                    {h.name || h.code}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="flex items-center gap-1 text-sm text-muted-foreground">
-              <Badge variant="secondary" className="text-[10px]">{MARKET_LABELS[fund.market] || fund.market}</Badge>
-              <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[fund.type] || fund.type}</Badge>
-              <Badge variant="outline" className="text-[10px]">{SECTOR_LABELS[fund.sector] || fund.sector}</Badge>
-              {etfCode && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200">ETF {etfCode}</Badge>}
-            </div>
+      {/* 标题行：基金名称 + 标签（左侧），基金切换下拉（右侧） */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">{fund.name || fund.code}</h1>
+          <div className="flex items-center gap-1 shrink-0">
+            <Badge variant="secondary" className="text-[10px]">{MARKET_LABELS[fund.market] || fund.market}</Badge>
+            <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[fund.type] || fund.type}</Badge>
+            <Badge variant="outline" className="text-[10px]">{SECTOR_LABELS[fund.sector] || fund.sector}</Badge>
+            {etfCode && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200">ETF {etfCode}</Badge>}
           </div>
-          <h1 className="text-xl font-bold tracking-tight mt-1">{fund.name || fund.code}</h1>
         </div>
+        <SearchableSelect
+          options={holdings.map((h) => ({
+            value: h.id,
+            label: `${h.code} ${h.name || h.code}`,
+            searchText: `${h.code} ${h.name || h.code}`.toLowerCase(),
+          }))}
+          value={fund.id}
+          onValueChange={handleSwitchFund}
+          placeholder="搜基金代码/名称..."
+          className="w-[220px] sm:w-[280px] shrink-0"
+        />
       </div>
 
       {/* 持仓信息 + 调仓/编辑 */}
