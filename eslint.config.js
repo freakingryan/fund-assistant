@@ -42,6 +42,8 @@ export default defineConfig([
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       // 临时降级: useEffect 中同步 setState 是高频合法模式
       'react-hooks/set-state-in-effect': 'warn',
+      // 临时降级: TanStack Table useReactTable 等三方库不兼容 React Compiler
+      'react-hooks/incompatible-library': 'warn',
     },
   },
 ])
