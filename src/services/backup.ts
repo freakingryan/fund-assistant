@@ -175,7 +175,7 @@ export async function loadFromGist(token: string, gistId: string): Promise<Backu
 /**
  * 验证 GitHub Token 是否有效（只读访问 /user 端点）
  */
-export async function verifyGistToken(token: string): Promise<{ ok: boolean; message: string }> {
+export async function verifyGistToken(token: string): Promise<{ ok: boolean; msg: string }> {
   try {
     const res = await fetch('https://api.github.com/user', {
       headers: {
@@ -184,13 +184,14 @@ export async function verifyGistToken(token: string): Promise<{ ok: boolean; mes
       },
     })
     if (!res.ok) {
-      if (res.status === 401) return { ok: false, message: 'Token 无效或已过期，请重新生成' }
-      return { ok: false, message: `GitHub API 响应异常 (${res.status})` }
+      const body = await res.text().catch(() => '')
+      if (res.status === 401) return { ok: false, msg: 'Token 无效或已过期。注意：需生成 Personal access tokens (classic)，且在 Scopes 中勾选 gist' }
+      return { ok: false, msg: `GitHub API 响应异常 (${res.status}): ${body.slice(0, 80)}` }
     }
     const user = await res.json()
-    return { ok: true, message: `登录用户: ${user.login}` }
+    return { ok: true, msg: `登录用户: ${user.login}（Token 有效）` }
   } catch (e) {
-    return { ok: false, message: String(e) }
+    return { ok: false, msg: String(e) }
   }
 }
 
