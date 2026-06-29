@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
 import { testAIConnection } from '@/services/ai'
-import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist } from '@/services/backup'
+import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist, verifyGistToken } from '@/services/backup'
 import { toast } from '@/components/ui/toast'
 
 export default function SettingsPage() {
@@ -54,6 +54,21 @@ export default function SettingsPage() {
   }
 
   // 推送到 Gist
+  const [gistVerifyResult, setGistVerifyResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [verifyingToken, setVerifyingToken] = useState(false)
+
+  const handleVerifyToken = async () => {
+    if (!settings.sync.gistToken) return
+    setVerifyingToken(true); setGistVerifyResult(null)
+    try {
+      const result = await verifyGistToken(settings.sync.gistToken)
+      setGistVerifyResult(result)
+    } catch (e) {
+      setGistVerifyResult({ ok: false, msg: String(e) })
+    }
+    setVerifyingToken(false)
+  }
+
   const handleGistPush = async () => {
     setSyncing(true); setSyncResult(null)
     try {
@@ -437,10 +452,25 @@ export default function SettingsPage() {
             <CardContent className="space-y-3">
               <div>
                 <Label className="text-xs">GitHub Personal Access Token</Label>
-                <Input type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-                  value={settings.sync.gistToken}
-                  onChange={(e) => updateSettings({ sync: { ...settings.sync, gistToken: e.target.value } })}
-                  className="text-xs font-mono h-8 mt-1" />
+                <div className="flex gap-2 mt-1">
+                  <Input type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                    value={settings.sync.gistToken}
+                    onChange={(e) => updateSettings({ sync: { ...settings.sync, gistToken: e.target.value } })}
+                    className="text-xs font-mono h-8 flex-1" />
+                  <Button variant="outline" size="sm" className="h-8 text-xs shrink-0"
+                    disabled={!settings.sync.gistToken || verifyingToken}
+                    onClick={handleVerifyToken}
+                  >
+                    {verifyingToken ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    验证 Token
+                  </Button>
+                </div>
+                {gistVerifyResult && (
+                  <p className={`text-[10px] mt-1 ${gistVerifyResult.ok ? 'text-green-500' : 'text-red-500'}`}>
+                    {gistVerifyResult.ok ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                    {gistVerifyResult.msg}
+                  </p>
+                )}
               </div>
               <div>
                 <Label className="text-xs">Gist ID（首次推送后自动生成）</Label>

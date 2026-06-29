@@ -173,6 +173,28 @@ export async function loadFromGist(token: string, gistId: string): Promise<Backu
 }
 
 /**
+ * 验证 GitHub Token 是否有效（只读访问 /user 端点）
+ */
+export async function verifyGistToken(token: string): Promise<{ ok: boolean; message: string }> {
+  try {
+    const res = await fetch('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+      },
+    })
+    if (!res.ok) {
+      if (res.status === 401) return { ok: false, message: 'Token 无效或已过期，请重新生成' }
+      return { ok: false, message: `GitHub API 响应异常 (${res.status})` }
+    }
+    const user = await res.json()
+    return { ok: true, message: `登录用户: ${user.login}` }
+  } catch (e) {
+    return { ok: false, message: String(e) }
+  }
+}
+
+/**
  * 在用户的 Gist 列表中查找基金投资助手的备份 Gist
  * 用于新设备恢复：用户输入 Token 后自动找到已有的备份
  */
@@ -184,7 +206,11 @@ export async function findFundGist(token: string): Promise<string | null> {
     },
   })
   if (!res.ok) {
-    throw new Error(`查询 Gist 列表失败 (${res.status})`)
+    const body = await res.text().catch(() => '')
+    if (res.status === 401) {
+      throw new Error(`GitHub Token 无效或未勾选 gist 权限。请在 https://github.com/settings/tokens 检查：\n1) Token 已勾选 gist scope\n2) Token 未过期\n3) 该 Token 与旧设备使用的是同一个 GitHub 账号 (当前账号: 请到备份页点击"验证Token"查看)`)
+    }
+    throw new Error(`查询 Gist 列表失败 (${res.status}): ${body.slice(0, 100)}`)
   }
   const gists = await res.json()
   const found = gists.find((g: any) =>
