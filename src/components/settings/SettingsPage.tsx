@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
 import { testAIConnection } from '@/services/ai'
-import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist } from '@/services/backup'
+import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist } from '@/services/backup'
 import { toast } from '@/components/ui/toast'
 
 export default function SettingsPage() {
@@ -73,7 +73,16 @@ export default function SettingsPage() {
   const handleGistPull = async () => {
     setSyncing(true); setSyncResult(null)
     try {
-      const data = await loadFromGist(settings.sync.gistToken, settings.sync.gistId)
+      let gistId = settings.sync.gistId
+      if (!gistId) {
+        gistId = await findFundGist(settings.sync.gistToken)
+        if (!gistId) {
+          setSyncResult({ ok: false, msg: '未找到备份 Gist，请先在原设备上推送到 Gist' })
+          setSyncing(false); return
+        }
+        updateSettings({ sync: { ...settings.sync, gistId } })
+      }
+      const data = await loadFromGist(settings.sync.gistToken, gistId)
       await importAllData(data)
       setSyncResult({ ok: true, msg: `已从 Gist 恢复 ${data.holdings.length} 只持仓` })
       setTimeout(() => { setSyncResult(null); window.location.reload() }, 1500)
@@ -445,7 +454,7 @@ export default function SettingsPage() {
                   {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Upload className="h-3 w-3 mr-2" />}
                   推送到 Gist
                 </Button>
-                <Button size="sm" variant="outline" disabled={!settings.sync.gistToken || !settings.sync.gistId || syncing} onClick={handleGistPull}>
+                <Button size="sm" variant="outline" disabled={!settings.sync.gistToken || syncing} onClick={handleGistPull}>
                   {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Download className="h-3 w-3 mr-2" />}
                   从 Gist 恢复
                 </Button>

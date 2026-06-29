@@ -171,3 +171,24 @@ export async function loadFromGist(token: string, gistId: string): Promise<Backu
 
   return JSON.parse(file.content) as BackupData
 }
+
+/**
+ * 在用户的 Gist 列表中查找基金投资助手的备份 Gist
+ * 用于新设备恢复：用户输入 Token 后自动找到已有的备份
+ */
+export async function findFundGist(token: string): Promise<string | null> {
+  const res = await fetch(`${GIST_API}?per_page=100`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+    },
+  })
+  if (!res.ok) {
+    throw new Error(`查询 Gist 列表失败 (${res.status})`)
+  }
+  const gists = await res.json()
+  const found = gists.find((g: any) =>
+    g.files?.[GIST_FILENAME] || g.description === GIST_DESCRIPTION
+  )
+  return found?.id || null
+}
