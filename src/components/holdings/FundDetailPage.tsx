@@ -319,25 +319,39 @@ export default function FundDetailPage() {
           {(() => {
             const q = quotes.find((q) => q.code === fund.code)
             const currentNAV = q?.nav
-            const costValue1 = fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0
-            const costValue2 = fund.holdingAmount != null && fund.holdingProfit != null
+
+            // 方式一：成本净值 × 份额
+            const costByShares = fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0
+            // 方式二：持有金额 - 持有收益（即成本）
+            const costByProfit = fund.holdingAmount != null && fund.holdingProfit != null
               ? fund.holdingAmount - fund.holdingProfit : 0
-            const investment = costValue1 || costValue2 || 0
-            const currentValue = fund.holdingAmount || (fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0)
-            const profit = currentValue - investment
+            // 实际投入本金（优先方式一）
+            const investment = costByShares || costByProfit || 0
+
+            // 当前市值 = 份额 × 最新净值（优先），否则用持有金额，最后用成本
+            const currentMarketValue = (fund.shares && currentNAV)
+              ? fund.shares * currentNAV
+              : (fund.holdingAmount || investment || 0)
+
+            // 如果通过方式二录入且无份额，从持有金额反算份额
+            const derivedShares = fund.shares || (currentNAV && currentNAV > 0
+              ? Math.round((fund.holdingAmount || 0) / currentNAV * 100) / 100
+              : 0)
+
+            const profit = currentMarketValue - investment
             const returnRate = investment > 0 ? (profit / investment) * 100 : 0
             const isProfit = profit >= 0
             return (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                <Item label="持有份额" value={fund.shares?.toLocaleString() || '-'} />
-                <Item label="持仓成本" value={`¥${fund.costNAV?.toFixed(4) || '-'}`} />
+                <Item label="持有份额" value={fund.shares ? fund.shares.toLocaleString() : (derivedShares ? `≈${derivedShares.toLocaleString()}` : '-')} />
+                <Item label="持仓成本价" value={fund.costNAV ? `¥${fund.costNAV?.toFixed(4)}` : (investment && fund.shares ? `¥${(investment / fund.shares).toFixed(4)}` : '-')} />
                 <Item label={`最新净值${q?.navDate ? `(${q.navDate.slice(5)})` : ''}`}
                   value={<>{currentNAV ? `¥${currentNAV.toFixed(4)}` : '-'}{q?.dailyChange != null && (
                     <span className={`ml-1 text-[10px] ${q.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
                       {q.dailyChange >= 0 ? '+' : ''}{q.dailyChange.toFixed(2)}%
                     </span>)}</>} />
                 <Item label="投入本金" value={investment ? `¥${investment.toFixed(2)}` : '-'} />
-                <Item label="当前市值" value={currentValue ? `¥${currentValue.toFixed(2)}` : '-'} />
+                <Item label="当前市值" value={currentMarketValue ? `¥${currentMarketValue.toFixed(2)}` : '-'} />
                 <Item label="浮动盈亏" value={profit ? `${isProfit ? '+' : ''}¥${profit.toFixed(2)}` : '-'}
                   className={isProfit ? 'text-red-500' : 'text-green-500'} />
                 <Item label="收益率" value={investment > 0 ? `${isProfit ? '+' : ''}${returnRate.toFixed(2)}%` : '-'}
