@@ -316,7 +316,7 @@ export default function FundDetailPage() {
             </CardTitle>
             <div className="flex items-center gap-2">
               <button onClick={handleRefreshQuotes} disabled={refreshing.quotes}
-                className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">
+                className="text-[10px] px-1 py-0.5 rounded hover:bg-muted/40 transition-colors cursor-pointer disabled:opacity-30">
                 {refreshing.quotes ? '⟳' : '⟳'}
               </button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>

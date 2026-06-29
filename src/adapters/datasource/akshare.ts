@@ -10,6 +10,21 @@ function parsePct(v: any): number {
   return Number(String(v).replace('%', '')) || 0
 }
 
+/** 判断当前是否为 A 股交易时段（周一至周五 9:30~15:00） */
+function isTradingHours(): boolean {
+  const now = new Date()
+  const day = now.getDay()
+  if (day === 0 || day === 6) return false
+  const h = now.getHours(), m = now.getMinutes()
+  const total = h * 60 + m
+  return total >= 9 * 60 + 30 && total < 15 * 60
+}
+
+/** 判断基金代码是否为场内 ETF（深交所 159 开头，上交所 51 开头） */
+function isEtfFund(code: string): boolean {
+  return code.startsWith('159') || code.startsWith('51')
+}
+
 /**
  * AKShare 数据源适配器（通过 AKTools HTTP API）
  *
@@ -62,28 +77,99 @@ export class AKShareAdapter implements FundDataSource {
 
   /**
    * fund_open_fund_daily_em — 开放式基金实时净值
+   * 盘中+盘后混合策略：交易时段尝试估算净值，盘后使用官方日频净值
    */
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
     try {
-      const list = await this.call<Record<string, any>>('fund_open_fund_daily_em')
-      const results: FundQuote[] = []
-      for (const code of codes) {
-        const item = list.find((i: any) => String(i['基金代码'] || '') === code)
-        if (item) {
-          results.push({
-            code,
-            name: item['基金简称'] || code,
-            nav: Number(item['单位净值'] || item['最新净值'] || 1),
-            accNav: Number(item['累计净值'] || item['单位净值'] || 1),
-            dailyChange: Number(item['日增长率']?.replace('%', '') || item['pct_change'] || 0),
-            navDate: item['净值日期'] || item['trade_date'] || '',
-          })
-        } else {
-          results.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
+      // 区分 ETF 和非 ETF
+      const etfCodes = codes.filter((c) => isEtfFund(c))
+      const fundCodes = codes.filter((c) => !isEtfFund(c))
+      const allQuotes: FundQuote[] = []
+
+      // 1) ETF 基金：尝试实时行情接口
+      if (etfCodes.length > 0) {
+        try {
+          const etfList = await this.call<Record<string, any>>('fund_etf_spot_em')
+          for (const code of etfCodes) {
+            const item = etfList.find((i: any) => String(i['代码'] || i['fund_code'] || '') === code)
+            if (item) {
+              allQuotes.push({
+                code,
+                name: item['名称'] || item['fund_name'] || code,
+                nav: Number(item['最新价'] || item['price'] || 0),
+                accNav: 0,
+                dailyChange: parsePct(item['涨跌幅'] || item['pct_chg']),
+                navDate: new Date().toISOString().slice(0, 10),
+              })
+            } else {
+              allQuotes.push({ code, name: `ETF ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
+            }
+          }
+        } catch {
+          // ETF 实时行情失败时回退到日频
+          for (const code of etfCodes) {
+            allQuotes.push({ code, name: `ETF ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
+          }
         }
       }
-      return results
+
+      // 2) 非 ETF 基金：盘中用估算净值，盘后用官方净值
+      if (fundCodes.length > 0) {
+        // 盘中尝试估算净值
+        let useEstimation = isTradingHours()
+        if (useEstimation) {
+          try {
+            const estList = await this.call<Record<string, any>>('fund_value_estimation_em')
+            for (const code of fundCodes) {
+              const item = estList.find((i: any) => String(i['基金代码'] || '') === code)
+              if (item) {
+                const estNav = Number(item['估算净值'] || 0)
+                const estChange = parsePct(item['估算涨幅'] || item['估算增长率'])
+                if (estNav > 0) {
+                  allQuotes.push({
+                    code,
+                    name: item['基金简称'] || code,
+                    nav: estNav,
+                    accNav: 0,
+                    dailyChange: estChange,
+                    navDate: new Date().toISOString().slice(0, 10),
+                  })
+                  continue // 跳过后面的日频查询
+                }
+              }
+              // 估算失败，标记为待日频补查
+              useEstimation = false
+            }
+          } catch {
+            useEstimation = false
+          }
+        }
+
+        // 盘后或估算失败：走官方日频净值
+        if (!useEstimation) {
+          const dailyList = await this.call<Record<string, any>>('fund_open_fund_daily_em')
+          for (const code of fundCodes) {
+            // 如果已经通过估算接口加入了且有效，跳过
+            if (allQuotes.some((q) => q.code === code && q.nav > 0.001 && q.nav !== 1)) continue
+            const item = dailyList.find((i: any) => String(i['基金代码'] || '') === code)
+            if (item) {
+              allQuotes.push({
+                code,
+                name: item['基金简称'] || code,
+                nav: Number(item['单位净值'] || item['最新净值'] || 0),
+                accNav: Number(item['累计净值'] || item['单位净值'] || 0),
+                dailyChange: parsePct(item['日增长率']),
+                navDate: item['净值日期'] || item['trade_date'] || '',
+              })
+            } else {
+              allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
+            }
+          }
+        }
+      }
+
+      return allQuotes
     } catch { /* fallback */ }
     return generateMockQuotes(codes)
   }
