@@ -140,6 +140,41 @@ python -m aktools     # 默认监听 http://127.0.0.1:8080
 
 可用平台：DeepSeek / Google AI Studio / OpenAI / Groq / OpenRouter / 自定义。
 
+### 配置 Gist 云端备份（可选）
+
+备份数据（基金持仓 + 投资计划 + 所有配置）到 GitHub Gist，换设备可直接恢复。
+
+#### 1. 创建 GitHub Token
+
+1. 打开 https://github.com/settings/tokens
+2. 点击 **Generate new token (classic)**
+3. 名称填 `fund-assistant`，过期时间选 **No expiration**
+4. 勾选权限：**`gist`**（只需这一个）
+5. 生成并复制 Token（以 `ghp_` 开头）
+
+#### 2. 备份到云端（旧设备）
+
+```
+设置 → 备份 → GitHub Gist
+1. 粘贴 Token
+2. 点击「推送到 Gist」
+3. 看到 ✓ 已同步到 Gist (xxx) 即完成
+```
+
+> Gist ID 会自动保存，后续再次推送会更新同一份数据。
+
+#### 3. 从云端恢复（新设备）
+
+```
+设置 → 备份 → GitHub Gist
+1. 粘贴**同一个 Token**
+2. 直接点击「从 Gist 恢复」← 无需先推送
+3. 系统自动搜索你的 Gist 列表找到备份
+4. 确认恢复后页面自动刷新，所有数据还原
+```
+
+> 如果系统提示「未找到备份 Gist」，确认旧设备已推送到 Gist，且使用的是同一个 GitHub 账号的 Token。
+
 ## 项目结构
 
 ```
