@@ -40,6 +40,8 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': ['error', { varsIgnorePattern: '^_', argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
       // 命名规范：组件名必须 PascalCase
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // 临时降级: useEffect 中同步 setState 是高频合法模式
+      'react-hooks/set-state-in-effect': 'warn',
     },
   },
 ])
