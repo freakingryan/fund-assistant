@@ -5,7 +5,7 @@ import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
-import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
+import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, deleteQuotesCache, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
 import type { KLineData } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -140,6 +140,15 @@ export default function FundDetailPage() {
     setPortfolio(null)
     setRefreshing((s) => ({ ...s, portfolio: false }))
   }, [fund])
+
+  // 刷新行情缓存
+  const handleRefreshQuotes = useCallback(async () => {
+    if (!fund) return
+    setRefreshing((s) => ({ ...s, quotes: true }))
+    await deleteQuotesCache([fund.code])
+    await loadQuotes(true)
+    setRefreshing((s) => ({ ...s, quotes: false }))
+  }, [fund, loadQuotes])
 
   // ─── K 线数据加载 ─────────────────────────────
   useEffect(() => {
@@ -306,6 +315,10 @@ export default function FundDetailPage() {
               <Wallet className="h-3.5 w-3.5" />持仓信息
             </CardTitle>
             <div className="flex items-center gap-2">
+              <button onClick={handleRefreshQuotes} disabled={refreshing.quotes}
+                className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">
+                {refreshing.quotes ? '⟳' : '⟳'}
+              </button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
                 <TrendingUp className="h-3 w-3 mr-1 text-green-500" />调仓
               </Button>
@@ -318,7 +331,8 @@ export default function FundDetailPage() {
         <CardContent>
           {(() => {
             const q = quotes.find((q) => q.code === fund.code)
-            const currentNAV = q?.nav
+            // 有效净值必须 > 1 且不是默认值 1.0000
+            const currentNAV = (q?.nav && q.nav > 0.001 && q.nav !== 1) ? q.nav : null
 
             // 方式一：成本净值 × 份额
             const costByShares = fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0
@@ -327,6 +341,9 @@ export default function FundDetailPage() {
               ? fund.holdingAmount - fund.holdingProfit : 0
             // 实际投入本金（优先方式一）
             const investment = costByShares || costByProfit || 0
+
+            // 持仓成本单价：优先用户录入，否则反算
+            const costNAV = fund.costNAV || (investment && fund.shares ? investment / fund.shares : 0) || 0
 
             // 当前市值 = 份额 × 最新净值（优先），否则用持有金额，最后用成本
             const currentMarketValue = (fund.shares && currentNAV)
@@ -344,9 +361,9 @@ export default function FundDetailPage() {
             return (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 <Item label="持有份额" value={fund.shares ? fund.shares.toLocaleString() : (derivedShares ? `≈${derivedShares.toLocaleString()}` : '-')} />
-                <Item label="持仓成本价" value={fund.costNAV ? `¥${fund.costNAV?.toFixed(4)}` : (investment && fund.shares ? `¥${(investment / fund.shares).toFixed(4)}` : '-')} />
+                <Item label="持仓成本单价" value={costNAV > 0 ? `¥${costNAV.toFixed(4)}` : '-'} />
                 <Item label={`最新净值${q?.navDate ? `(${q.navDate.slice(5)})` : ''}`}
-                  value={<>{currentNAV ? `¥${currentNAV.toFixed(4)}` : '-'}{q?.dailyChange != null && (
+                  value={<>{currentNAV ? `¥${currentNAV.toFixed(4)}` : '-'}{q?.dailyChange != null && currentNAV && (
                     <span className={`ml-1 text-[10px] ${q.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
                       {q.dailyChange >= 0 ? '+' : ''}{q.dailyChange.toFixed(2)}%
                     </span>)}</>} />
