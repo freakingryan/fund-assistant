@@ -185,7 +185,7 @@ export async function verifyGistToken(token: string): Promise<{ ok: boolean; msg
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
-      if (res.status === 401) return { ok: false, msg: 'Token 无效或已过期。注意：需生成 Personal access tokens (classic)，且在 Scopes 中勾选 gist' }
+      if (res.status === 401) return { ok: false, msg: 'Token 无效或已过期。注意：Token 需在 Scopes 中勾选 gist（支持 classic 和 fine-grained 两种类型，生成后立即复制，页面关闭后不再显示）' }
       return { ok: false, msg: `GitHub API 响应异常 (${res.status}): ${body.slice(0, 80)}` }
     }
     const user = await res.json()

@@ -316,7 +316,8 @@ export default function FundDetailPage() {
             </CardTitle>
             <div className="flex items-center gap-2">
               <button onClick={handleRefreshQuotes} disabled={refreshing.quotes}
-                className="text-[10px] px-1 py-0.5 rounded hover:bg-muted/40 transition-colors cursor-pointer disabled:opacity-30">
+                className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                title="刷新行情">
                 {refreshing.quotes ? '⟳' : '⟳'}
               </button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
@@ -415,8 +416,10 @@ export default function FundDetailPage() {
                     {portfolioUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {portfolioUpdateTime}</span>}
                   </div>
                   <button onClick={handleRefreshPortfolio} disabled={refreshing.portfolio}
-                    className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">
-                    {refreshing.portfolio ? '⟳' : '⟳ 刷新'}
+                    className="inline-flex items-center gap-1 text-xs px-2.5 h-7 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="刷新重仓股">
+                    {refreshing.portfolio ? '⟳' : '⟳'}
+                    <span className="hidden sm:inline">刷新</span>
                   </button>
                 </div>
               </CardHeader>

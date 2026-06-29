@@ -61,7 +61,11 @@ export default function KlineChartCard({
                 >BOLL</button>
               </>
             )}
-            <button onClick={handleRefreshKline} disabled={refreshing.kline} className="text-[10px] px-1.5 py-0.5 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50">{refreshing.kline ? '⟳' : '⟳'}</button>
+            <button onClick={handleRefreshKline} disabled={refreshing.kline}
+              className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+              title="刷新K线">
+              {refreshing.kline ? '⟳' : '⟳'}
+            </button>
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger className="h-7 text-xs w-[62px]"><SelectValue /></SelectTrigger>
               <SelectContent>
