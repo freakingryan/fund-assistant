@@ -11,7 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useHoldingsStore } from '@/stores/holdings'
 import type { FundHolding } from '@/types'
-import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, TrendingDown } from 'lucide-react'
+import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp } from 'lucide-react'
 import EditFundDialog from './EditFundDialog'
 import QuickAdjustDialog from './QuickAdjustDialog'
 import {

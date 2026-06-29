@@ -20,16 +20,12 @@ export default function SettingsPage() {
   const updateAIConfig = useSettingsStore((s) => s.updateAIConfig)
   const updateNotifications = useSettingsStore((s) => s.updateNotifications)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
-  const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
-  const removeEtfMapping = useSettingsStore((s) => s.removeEtfMapping)
 
   const [_saving, setSaving] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testingAi, setTestingAi] = useState<string | null>(null)
-
-  const etfMappings = settings.etfMappings
 
   const _handleSave = async (action: string, fn: () => Promise<void>) => {
     setSaving(action)

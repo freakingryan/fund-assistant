@@ -5,7 +5,7 @@ import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
-import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, getPortfolioCacheTime, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
+import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
 import type { KLineData } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -85,7 +85,7 @@ export default function FundDetailPage() {
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
   const [portfolioLoading, setPortfolioLoading] = useState(false)
-  const [portfolioUpdateTime, setPortfolioUpdateTime] = useState<string | null>(null)
+  const [portfolioUpdateTime, _setPortfolioUpdateTime] = useState<string | null>(null)
   const [klineDetectedPatterns, setKlineDetectedPatterns] = useState<DetectedPattern[]>([])
   const [klinePatterns, setKlinePatterns] = useState<string>('')
   const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)

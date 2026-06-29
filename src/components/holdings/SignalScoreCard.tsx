@@ -73,9 +73,9 @@ function buildAdvice(signalResult: SignalResult): { label: string; color: string
 }
 
 export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail }: Props) {
+  const [showRef, setShowRef] = useState(false)
   if (!signalResult) return null
   const advice = buildAdvice(signalResult)
-  const [showRef, setShowRef] = useState(false)
 
   return (
     <Card>

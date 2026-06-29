@@ -115,7 +115,7 @@ function scoreMATrend(technicals: TechnicalIndicators, latestIdx: number): { sco
 
 /** MACD 信号 */
 function scoreMACD(technicals: TechnicalIndicators, latestIdx: number): { score: number; detail: string } {
-  const { macd, signal, histogram } = technicals.macd
+  const { macd, signal } = technicals.macd
   if (latestIdx < 2) return { score: 0, detail: 'MACD 数据不足' }
 
   const m = macd[latestIdx]
