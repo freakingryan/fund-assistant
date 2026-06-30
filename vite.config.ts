@@ -6,6 +6,16 @@ import path from 'path'
 
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : '/fund-assistant/',
+  server: {
+    proxy: {
+      // 开发环境下将 /aktools 请求代理到本地 AKTools 服务，避免 CORS
+      '/aktools': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/aktools/, ''),
+      },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),

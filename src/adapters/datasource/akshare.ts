@@ -38,7 +38,13 @@ export class AKShareAdapter implements FundDataSource {
 
   private get baseURL(): string {
     const cfg = useSettingsStore.getState().settings.dataSource.akshareURL
-    return cfg || 'http://127.0.0.1:8080'
+    // 开发模式下用 Vite proxy 避免 CORS；有自定义配置则用自定义
+    if (cfg) return cfg
+    // 检测是否在 Vite dev server 下运行（通过 window.location.port 判断非 8080）
+    if (typeof window !== 'undefined' && window.location.port && window.location.port !== '8080') {
+      return '/aktools'
+    }
+    return 'http://127.0.0.1:8080'
   }
 
   private async call<T = any[]>(apiName: string, params: Record<string, string> = {}): Promise<T[]> {
