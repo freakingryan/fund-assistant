@@ -340,7 +340,7 @@ export function detectMultiPatterns(
   // ── 晨星 / 暮星（3 K 线） ──
   for (let i = 2; i < len; i++) {
     const c0 = data[i - 2]; const f0 = features[i - 2]
-    const _c1 = data[i - 1]; const f1 = features[i - 1]
+    const f1 = features[i - 1]
     const c2 = data[i]; const f2 = features[i]
 
     const c0IsBullish = c0.close >= c0.open

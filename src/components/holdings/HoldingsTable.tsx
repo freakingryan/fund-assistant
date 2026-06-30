@@ -62,10 +62,6 @@ export default function HoldingsTable() {
       : holdings.filter((h) => h.type === typeFilter)
   }, [holdings, typeFilter])
 
-  // 稳定的引用，避免因 selectedIds 频繁变化导致 useMemo 重算
-  const allSelected = holdings.length > 0 && selectedIds.length === holdings.length
-  const _someSelected = selectedIds.length > 0 && !allSelected
-
   const columns = useMemo(() => [
     columnHelper.display({
       id: 'select',

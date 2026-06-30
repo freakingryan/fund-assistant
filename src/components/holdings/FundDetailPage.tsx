@@ -145,7 +145,7 @@ export default function FundDetailPage() {
   const handleRefreshQuotes = useCallback(async () => {
     if (!fund) return
     setRefreshing((s) => ({ ...s, quotes: true }))
-    await deleteQuotesCache([fund.code])
+    await deleteQuotesCache()
     await loadQuotes(true)
     setRefreshing((s) => ({ ...s, quotes: false }))
   }, [fund, loadQuotes])

@@ -217,8 +217,9 @@ export default function AddFundDialog() {
       const etfMappingsToQuery = codes.filter(
         (code) => !etfMappings.some((m) => m.otcCode === code)
       )
+      let etfResults: PromiseSettledResult<any>[] = []
       if (etfMappingsToQuery.length > 0) {
-        const etfResults = await Promise.allSettled(
+        etfResults = await Promise.allSettled(
           etfMappingsToQuery.map(async (code) => {
             const cached = await getEtfMappingCache(code)
             if (cached) return cached

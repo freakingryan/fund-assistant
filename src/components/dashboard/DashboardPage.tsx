@@ -352,7 +352,7 @@ export default function DashboardPage() {
                     <Cell key={i} fill={TYPE_COLORS[entry.type] || '#6b7280'} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Tooltip formatter={(v: any) => formatCurrency(Number(v) || 0)} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
@@ -370,7 +370,7 @@ export default function DashboardPage() {
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => formatCurrency(v)} />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={50} />
-                <Tooltip formatter={(v: number) => formatCurrency(v)} />
+                <Tooltip formatter={(v: any) => formatCurrency(Number(v) || 0)} />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                   {sectorDistribution.map((_, i) => (
                     <Cell key={i} fill={SECTOR_COLORS[i % SECTOR_COLORS.length]} />

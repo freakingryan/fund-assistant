@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { CheckCircle, XCircle, X } from 'lucide-react'
+import { CheckCircle, XCircle, AlertCircle, Info, X } from 'lucide-react'
 
 interface ToastData {
-  type: 'success' | 'error'
+  type: 'success' | 'error' | 'warning' | 'info'
   message: string
 }
 
@@ -36,10 +36,16 @@ export default function ToastContainer() {
           key={t.id}
           className={cn(
             'flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg text-sm animate-in slide-in-from-right',
-            t.type === 'success' ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800',
+            t.type === 'success' ? 'bg-green-50 border border-green-200 text-green-800' :
+            t.type === 'warning' ? 'bg-orange-50 border border-orange-200 text-orange-800' :
+            t.type === 'info' ? 'bg-blue-50 border border-blue-200 text-blue-800' :
+            'bg-red-50 border border-red-200 text-red-800',
           )}
         >
-          {t.type === 'success' ? <CheckCircle className="h-4 w-4 shrink-0" /> : <XCircle className="h-4 w-4 shrink-0" />}
+          {t.type === 'success' ? <CheckCircle className="h-4 w-4 shrink-0" /> :
+           t.type === 'warning' ? <AlertCircle className="h-4 w-4 shrink-0" /> :
+           t.type === 'info' ? <Info className="h-4 w-4 shrink-0" /> :
+           <XCircle className="h-4 w-4 shrink-0" />}
           <span className="flex-1 text-xs">{t.message}</span>
           <button onClick={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))}>
             <X className="h-3 w-3 opacity-60 hover:opacity-100" />

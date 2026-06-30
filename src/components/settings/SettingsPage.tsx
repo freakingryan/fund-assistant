@@ -21,17 +21,10 @@ export default function SettingsPage() {
   const updateNotifications = useSettingsStore((s) => s.updateNotifications)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
 
-  const [_saving, setSaving] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testingAi, setTestingAi] = useState<string | null>(null)
-
-  const _handleSave = async (action: string, fn: () => Promise<void>) => {
-    setSaving(action)
-    try { await fn(); toast({ type: 'success', message: '保存成功' }) } catch (e) { toast({ type: 'error', message: String(e) }) }
-    setSaving(null)
-  }
 
   // 导出备份
   const handleExport = async () => {
@@ -88,7 +81,7 @@ export default function SettingsPage() {
   const handleGistPull = async () => {
     setSyncing(true); setSyncResult(null)
     try {
-      let gistId = settings.sync.gistId
+      let gistId: string | null = settings.sync.gistId || null
       if (!gistId) {
         gistId = await findFundGist(settings.sync.gistToken)
         if (!gistId) {
@@ -97,7 +90,7 @@ export default function SettingsPage() {
         }
         updateSettings({ sync: { ...settings.sync, gistId } })
       }
-      const data = await loadFromGist(settings.sync.gistToken, gistId)
+      const data = await loadFromGist(settings.sync.gistToken, gistId!)
       await importAllData(data)
       setSyncResult({ ok: true, msg: `已从 Gist 恢复 ${data.holdings.length} 只持仓` })
       setTimeout(() => { setSyncResult(null); window.location.reload() }, 1500)

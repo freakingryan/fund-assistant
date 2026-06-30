@@ -28,7 +28,7 @@ const COLUMN_ALIASES: Record<string, string> = {
   '持有份额': 'shares', '份额': 'shares', 'shares': 'shares',
   '购买日期': 'purchaseDate', '日期': 'purchaseDate', 'date': 'purchaseDate',
   '标签': 'tags', 'tags': 'tags',
-  '备注': 'notes', '备注': 'notes', 'notes': 'notes',
+  '备注': 'notes', 'notes': 'notes',
 }
 
 type ImportRow = Partial<Record<string, string | number>>
@@ -49,6 +49,8 @@ interface ParsedRow {
   sector: FundSector
   costNAV: number
   shares: number
+  holdingAmount: number
+  holdingProfit: number
   purchaseDate: string
   tags: string
   notes: string
@@ -96,6 +98,8 @@ function normalizeRow(row: ImportRow): ParsedRow | null {
     sector: (mapped.sector as FundSector) || auto.sector,
     costNAV: Number(mapped.costNAV) || 0,
     shares: Number(mapped.shares) || 0,
+    holdingAmount: Number(mapped.holdingAmount) || 0,
+    holdingProfit: Number(mapped.holdingProfit) || 0,
     purchaseDate: mapped.purchaseDate || new Date().toISOString().slice(0, 10),
     tags: mapped.tags || '',
     notes: mapped.notes || '',
@@ -153,6 +157,7 @@ export default function ImportDialog() {
           market: auto.market, type: auto.type, sector: auto.sector,
           costNAV: h.costNAV || 0,
           shares: h.shares || 0,
+          holdingAmount: 0, holdingProfit: 0,
           purchaseDate: new Date().toISOString().slice(0, 10),
           tags: '', notes: '',
         }
@@ -172,7 +177,9 @@ export default function ImportDialog() {
   const handleImport = useCallback(async () => {
     const records = rows.map((r) => ({
       code: r.code, name: r.name, market: r.market, type: r.type, sector: r.sector,
-      costNAV: r.costNAV, shares: r.shares, purchaseDate: r.purchaseDate,
+      costNAV: r.costNAV, shares: r.shares,
+      holdingAmount: r.holdingAmount || 0, holdingProfit: r.holdingProfit || 0,
+      purchaseDate: r.purchaseDate,
       tags: r.tags ? r.tags.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean) : [],
       notes: r.notes,
     }))
