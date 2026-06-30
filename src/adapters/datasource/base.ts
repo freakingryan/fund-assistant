@@ -17,23 +17,46 @@ export interface FundDataSource {
   isConfigured(): boolean
 }
 
+/** 简单哈希：将字符串转为数字种子 */
+function hashStr(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0
+  }
+  return Math.abs(h)
+}
+
+/** 种子随机数生成器（Mulberry32） */
+function seededRandom(seed: number): () => number {
+  let s = seed | 0
+  return () => {
+    s = (s + 0x6d2b79f5) | 0
+    let t = Math.imul(s ^ (s >>> 15), 1 | s)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
 /**
- * 生成模拟 K 线数据（当数据源不可用时）
+ * 生成模拟 K 线数据（基于 fund code + period 的确定性种子）
+ * 同一基金同周期每次调用数据一致
  */
 export function generateMockKLine(code: string, _period = '3m', basePrice = 1): KLineData[] {
+  const seed = hashStr(`${code}_${_period}`)
+  const rand = seededRandom(seed)
   const now = Date.now()
   const days = _period === '1m' ? 22 : _period === '6m' ? 132 : _period === '1y' ? 250 : 66
   const data: KLineData[] = []
-  let price = basePrice * (0.8 + Math.random() * 0.4)
-  const trend = (Math.random() - 0.3) * 0.002 // slight upward bias
+  let price = basePrice * (0.8 + rand() * 0.4)
+  const trend = (rand() - 0.3) * 0.002
 
   for (let i = days; i >= 0; i--) {
     const open = price
-    const change = (Math.random() - 0.5) * price * 0.015 + trend * price
+    const change = (rand() - 0.5) * price * 0.015 + trend * price
     const close = price + change
-    const high = Math.max(open, close) * (1 + Math.random() * 0.01)
-    const low = Math.min(open, close) * (1 - Math.random() * 0.01)
-    const volume = Math.floor(Math.random() * 100000) + 10000
+    const high = Math.max(open, close) * (1 + rand() * 0.01)
+    const low = Math.min(open, close) * (1 - rand() * 0.01)
+    const volume = Math.floor(rand() * 100000) + 10000
 
     data.push({
       date: new Date(now - i * 86400000).toISOString().slice(0, 10),
@@ -49,15 +72,20 @@ export function generateMockKLine(code: string, _period = '3m', basePrice = 1): 
 }
 
 /**
- * 生成模拟行情数据
+ * 生成模拟行情数据（基于 fund code 的确定性种子）
+ * 同一基金每次调用数据一致
  */
 export function generateMockQuotes(codes: string[]): FundQuote[] {
-  return codes.map((code) => ({
-    code,
-    name: `基金 ${code}`,
-    nav: Math.round((0.5 + Math.random() * 2.5) * 10000) / 10000,
-    accNav: Math.round((1 + Math.random() * 3) * 10000) / 10000,
-    dailyChange: Math.round((Math.random() * 6 - 2) * 100) / 100,
-    navDate: new Date().toISOString().slice(0, 10),
-  }))
+  return codes.map((code) => {
+    const seed = hashStr(code)
+    const rand = seededRandom(seed)
+    return {
+      code,
+      name: `基金 ${code}`,
+      nav: Math.round((0.5 + rand() * 2.5) * 10000) / 10000,
+      accNav: Math.round((1 + rand() * 3) * 10000) / 10000,
+      dailyChange: Math.round((rand() * 6 - 2) * 100) / 100,
+      navDate: new Date().toISOString().slice(0, 10),
+    }
+  })
 }
