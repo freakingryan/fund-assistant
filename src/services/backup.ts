@@ -20,7 +20,7 @@ export interface BackupData {
 const CURRENT_VERSION = 1
 
 /**
- * 从 IndexedDB 导出所有数据
+ * 从 IndexedDB 导出所有数据（排除敏感字段，防止 GitHub 自动吊销 Token）
  */
 export async function exportAllData(): Promise<BackupData> {
   const [holdings, plans, alerts, settings] = await Promise.all([
@@ -30,6 +30,14 @@ export async function exportAllData(): Promise<BackupData> {
     db.settings.toArray(),
   ])
 
+  // 清除敏感字段：Token、API Key 等（推送到 Gist 时如包含 Token 会被 GitHub 自动吊销）
+  const sanitizedSettings = settings.map((s) => ({
+    ...s,
+    sync: { ...s.sync, gistToken: '', gistId: s.sync?.gistId || '' },
+    dataSource: { ...s.dataSource, tushareToken: '' },
+    aiConfigs: (s.aiConfigs || []).map((c: any) => ({ ...c, apiKey: '' })),
+  }))
+
   return {
     version: CURRENT_VERSION,
     exportedAt: new Date().toISOString(),
@@ -37,7 +45,7 @@ export async function exportAllData(): Promise<BackupData> {
     holdings,
     plans,
     alerts,
-    settings,
+    settings: sanitizedSettings,
   }
 }
 
