@@ -5,6 +5,7 @@ import { useHoldingsStore } from './stores/holdings'
 import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
 import ToastContainer from './components/ui/toast'
+import InstallPrompt from './components/layout/InstallPrompt'
 import { AlertCircle } from 'lucide-react'
 import { Button } from './components/ui/button'
 
@@ -73,6 +74,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <RouterProvider router={router} />
+      <InstallPrompt />
       <ToastContainer />
     </ErrorBoundary>
   )
