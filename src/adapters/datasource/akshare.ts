@@ -1,7 +1,6 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
 import { useSettingsStore } from '@/stores/settings'
-import { generateMockQuotes, generateMockKLine } from './base'
 
 /** 解析百分比/数值字段，兼容 number 和 "12.34%" 字符串 */
 function parsePct(v: any): number {
@@ -171,7 +170,7 @@ export class AKShareAdapter implements FundDataSource {
 
       return allQuotes
     } catch { /* fallback */ }
-    return generateMockQuotes(codes)
+    return []
   }
 
   /**
@@ -194,7 +193,7 @@ export class AKShareAdapter implements FundDataSource {
         })) // AKShare 返回旧→新，无需反转
       }
     } catch { /* fallback */ }
-    return generateMockKLine(code, period)
+    return []
   }
 
   /**

@@ -1,6 +1,5 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
-import { generateMockKLine, generateMockQuotes } from './base'
 
 // ── 全局 JSONP 回调 ──────────────────────────────────
 type JsonpResolver = (data: any) => void
@@ -87,7 +86,7 @@ export class EastMoneyAdapter implements FundDataSource {
         }
       } catch { /* try next */ }
     }
-    if (results.length === 0) return generateMockQuotes(codes)
+    if (results.length === 0) return []
     for (const code of codes) {
       if (!results.find((r) => r.code === code)) {
         results.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
@@ -96,9 +95,9 @@ export class EastMoneyAdapter implements FundDataSource {
     return results
   }
 
-  async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
-    // 东财 lsjz JSONP 接口需要 jQuery 回调，与页面 jQuery 冲突，暂用模拟
-    return generateMockKLine(code, period)
+  async fetchKLine(code: string, _period = '3m'): Promise<KLineData[]> {
+    // 东财 JSONP 接口暂未实现，返回空数组
+    return []
   }
 
   private classifyType(name: string): string {

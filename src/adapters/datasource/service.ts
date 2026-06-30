@@ -1,6 +1,5 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
-import { generateMockQuotes, generateMockKLine } from './base'
 import { tushareAdapter } from './tushare'
 import { eastMoneyAdapter } from './eastmoney'
 import { akshareAdapter } from './akshare'
@@ -55,7 +54,7 @@ class DataSourceService implements FundDataSource {
         }
       } catch { /* try next */ }
     }
-    return generateMockQuotes(codes)
+    return []
   }
 
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
@@ -65,7 +64,7 @@ class DataSourceService implements FundDataSource {
         if (data.length > 0) return data
       } catch { /* try next */ }
     }
-    return generateMockKLine(code, period)
+    return []
   }
 
   /**
