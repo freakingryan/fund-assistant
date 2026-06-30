@@ -9,6 +9,23 @@ function parsePct(v: any): number {
   return Number(String(v).replace('%', '')) || 0
 }
 
+/** 在对象中查找以指定后缀结尾的字段值（支持日期前缀动态键名） */
+function findSuffixValue(obj: Record<string, any>, suffix: string): any {
+  for (const key of Object.keys(obj)) {
+    if (key.endsWith(suffix)) return obj[key]
+  }
+  return undefined
+}
+
+/** 在对象中查找所有以指定后缀结尾的字段，返回键值对 */
+function findSuffixValues(obj: Record<string, any>, suffix: string): [string, any][] {
+  const result: [string, any][] = []
+  for (const key of Object.keys(obj)) {
+    if (key.endsWith(suffix)) result.push([key, obj[key]])
+  }
+  return result
+}
+
 /** 判断当前是否为 A 股交易时段（周一至周五 9:30~15:00） */
 function isTradingHours(): boolean {
   const now = new Date()
@@ -159,13 +176,19 @@ export class AKShareAdapter implements FundDataSource {
             if (allQuotes.some((q) => q.code === code && q.nav > 0.001 && q.nav !== 1)) continue
             const item = dailyList.find((i: any) => String(i['基金代码'] || '') === code)
             if (item) {
+              // fund_open_fund_daily_em 列名是动态日期前缀，如 2026-06-30-单位净值
+              const navEntries = findSuffixValues(item, '-单位净值').sort((a, b) => b[0].localeCompare(a[0]))
+              const latestNav = navEntries.length > 0 ? Number(navEntries[0][1]) : 0
+              const navDate = navEntries.length > 0 ? navEntries[0][0].replace(/-单位净值$/, '') : ''
+              const accNavEntries = findSuffixValues(item, '-累计净值')
+              const latestAccNav = accNavEntries.length > 0 ? Number(accNavEntries[0][1]) : 0
               allQuotes.push({
                 code,
                 name: item['基金简称'] || code,
-                nav: Number(item['单位净值'] || item['最新净值'] || 0),
-                accNav: Number(item['累计净值'] || item['单位净值'] || 0),
+                nav: latestNav,
+                accNav: latestAccNav,
                 dailyChange: parsePct(item['日增长率']),
-                navDate: item['净值日期'] || item['trade_date'] || '',
+                navDate,
               })
             } else {
               allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
@@ -186,17 +209,16 @@ export class AKShareAdapter implements FundDataSource {
     try {
       const data = await this.call<Record<string, any>>('fund_open_fund_info_em', {
         symbol: code,
-        indicator: 'unit_nav',
       })
       if (data.length > 0) {
         return data.map((item: any) => ({
-          date: item['净值日期'] || item['date'] || '',
+          date: (item['净值日期'] || '').slice(0, 10),
           open: Number(item['单位净值'] || item['nav'] || 0),
           close: Number(item['单位净值'] || item['nav'] || 0),
           high: Number(item['单位净值'] || item['nav'] || 0),
           low: Number(item['单位净值'] || item['nav'] || 0),
           volume: 0,
-        })) // AKShare 返回旧→新，无需反转
+        }))
       }
     } catch { /* fallback */ }
     return []
