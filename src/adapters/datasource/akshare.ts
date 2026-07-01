@@ -204,6 +204,9 @@ export class AKShareAdapter implements FundDataSource {
         }
       }
 
+      // DEBUG: log first non-ETF quote for troubleshooting
+      const firstQuote = allQuotes.find((q) => !isEtfFund(q.code))
+      if (firstQuote) console.log('[AKShare fetchQuotes]', firstQuote.code, firstQuote.name, 'nav:', firstQuote.nav, 'navDate:', firstQuote.navDate, 'dailyChange:', firstQuote.dailyChange)
       return allQuotes
     } catch { /* fallback */ }
     return []
