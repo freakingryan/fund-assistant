@@ -27,11 +27,6 @@ class DataSourceService implements FundDataSource {
     // 3. 东方财富 JSONP（免费，无需配置）
     adapters.push(eastMoneyAdapter)
 
-    // 调试日志
-    if (adapters.length > 0) {
-      console.log('[DataSourceService] 使用的适配器顺序:', adapters.map(a => a.name).join(' → '))
-    }
-
     return adapters
   }
 
@@ -51,18 +46,13 @@ class DataSourceService implements FundDataSource {
 
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
-    const adapters = this.getAdapters()
-    for (const adapter of adapters) {
+    for (const adapter of this.getAdapters()) {
       try {
-        console.log(`[DataSourceService] 尝试适配器: ${adapter.name}, 基金代码:`, codes)
         const data = await adapter.fetchQuotes(codes)
-        console.log(`[DataSourceService] ${adapter.name} 返回数据:`, data.length, '条, 示例:', data.slice(0, 2))
         if (data.length > 0 && data.some((q) => q.nav !== 1 || q.dailyChange !== 0)) {
           return data
         }
-      } catch (e) {
-        console.warn(`[DataSourceService] ${adapter.name} 失败:`, e)
-      }
+      } catch { /* try next */ }
     }
     return []
   }
