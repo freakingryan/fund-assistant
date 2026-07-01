@@ -27,6 +27,11 @@ class DataSourceService implements FundDataSource {
     // 3. 东方财富 JSONP（免费，无需配置）
     adapters.push(eastMoneyAdapter)
 
+    // 调试日志
+    if (adapters.length > 0) {
+      console.log('[DataSourceService] 使用的适配器顺序:', adapters.map(a => a.name).join(' → '))
+    }
+
     return adapters
   }
 

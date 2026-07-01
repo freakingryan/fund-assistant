@@ -146,11 +146,15 @@ export class AKShareAdapter implements FundDataSource {
               const publishedChange = findSuffixValue(item, '-公布数据-日增长率')
               const estimatedChange = findSuffixValue(item, '-估算数据-估算增长率')
 
-              let nav = 0, dailyChange = 0
+              let nav = 0, dailyChange = 0, navDate = ''
               if (publishedNav != null && Number(publishedNav) > 0) {
                 nav = Number(publishedNav); dailyChange = parsePct(publishedChange)
+                // 从列名解析净值日期，例如 "2026-07-01-公布数据-单位净值" → "2026-07-01"
+                const pubKey = Object.keys(item).find(k => k.endsWith('-公布数据-单位净值'))
+                navDate = pubKey ? pubKey.replace(/-公布数据-单位净值$/, '') : new Date().toISOString().slice(0, 10)
               } else if (estimatedNav != null && Number(estimatedNav) > 0) {
                 nav = Number(estimatedNav); dailyChange = parsePct(estimatedChange)
+                navDate = new Date().toISOString().slice(0, 10)
               }
 
               if (nav > 0) {
@@ -160,7 +164,7 @@ export class AKShareAdapter implements FundDataSource {
                   nav,
                   accNav: 0,
                   dailyChange,
-                  navDate: new Date().toISOString().slice(0, 10),
+                  navDate,
                 })
                 continue
               }
