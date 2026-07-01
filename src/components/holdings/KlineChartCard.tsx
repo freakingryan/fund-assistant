@@ -41,7 +41,7 @@ export default function KlineChartCard({
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CardTitle className="text-sm">K 线走势</CardTitle>
+            <CardTitle className="text-sm">{useEtfKline && etfCode && klineData[0]?.volume ? 'K 线走势' : '净值走势'}</CardTitle>
             {klineUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {klineUpdateTime}</span>}
           </div>
           <div className="flex items-center gap-1.5">
@@ -63,7 +63,7 @@ export default function KlineChartCard({
             )}
             <button onClick={handleRefreshKline} disabled={refreshing.kline}
               className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              title="刷新K线">
+              title={useEtfKline ? '刷新K线' : '刷新净值'}>
               {refreshing.kline ? '⟳' : '⟳'}
             </button>
             <Select value={period} onValueChange={setPeriod}>
@@ -83,7 +83,7 @@ export default function KlineChartCard({
           <div className="flex items-center gap-2 mb-3">
             <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
             <Label htmlFor="etf-kline" className="text-xs cursor-pointer">
-              场内 ETF 真实 K 线 <span className="text-[10px] text-muted-foreground">（{etfCode}）</span>
+              {useEtfKline ? '场内 ETF 真实 K 线' : '基金净值走势'} <span className="text-[10px] text-muted-foreground">（{etfCode}）</span>
             </Label>
           </div>
         )}

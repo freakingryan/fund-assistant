@@ -26,16 +26,6 @@ function findSuffixValues(obj: Record<string, any>, suffix: string): [string, an
   return result
 }
 
-/** 判断当前是否为 A 股交易时段（周一至周五 9:30~15:00） */
-function isTradingHours(): boolean {
-  const now = new Date()
-  const day = now.getDay()
-  if (day === 0 || day === 6) return false
-  const h = now.getHours(), m = now.getMinutes()
-  const total = h * 60 + m
-  return total >= 9 * 60 + 30 && total < 15 * 60
-}
-
 /** 判断基金代码是否为场内 ETF（深交所 159 开头，上交所 51 开头） */
 function isEtfFund(code: string): boolean {
   return code.startsWith('159') || code.startsWith('51')
@@ -136,60 +126,77 @@ export class AKShareAdapter implements FundDataSource {
         }
       }
 
-      // 2) 非 ETF 基金：盘中用估算净值，盘后用官方净值
+      // 2) 非 ETF 基金：优先通过估值接口获取（含公布净值和估算净值），
+      //    估值接口失败则走传统日频净值接口
       if (fundCodes.length > 0) {
-        // 盘中尝试估算净值
-        let useEstimation = isTradingHours()
-        if (useEstimation) {
-          try {
-            const estList = await this.call<Record<string, any>>('fund_value_estimation_em')
-            for (const code of fundCodes) {
-              const item = estList.find((i: any) => String(i['基金代码'] || '') === code)
-              if (item) {
-                const estNav = Number(item['估算净值'] || 0)
-                const estChange = parsePct(item['估算涨幅'] || item['估算增长率'])
-                if (estNav > 0) {
-                  allQuotes.push({
-                    code,
-                    name: item['基金简称'] || code,
-                    nav: estNav,
-                    accNav: 0,
-                    dailyChange: estChange,
-                    navDate: new Date().toISOString().slice(0, 10),
-                  })
-                  continue // 跳过后面的日频查询
-                }
+        // 先尝试估值接口
+        let estimationFailed = false
+        try {
+          const estList = await this.call<Record<string, any>>('fund_value_estimation_em')
+          // fund_value_estimation_em 列名动态：
+          //   - 2026-07-01-估算数据-估算值 (盘中估算)
+          //   - 2026-07-01-公布数据-单位净值 (盘后官方)
+          //   - 基金名称 (字段名)
+          for (const code of fundCodes) {
+            const item = estList.find((i: any) => String(i['基金代码'] || '') === code)
+            if (item) {
+              // 优先取已公布的官方净值(盘后)，其次估算净值(盘中)
+              const publishedNav = findSuffixValue(item, '-公布数据-单位净值')
+              const estimatedNav = findSuffixValue(item, '-估算数据-估算值')
+              const publishedChange = findSuffixValue(item, '-公布数据-日增长率')
+              const estimatedChange = findSuffixValue(item, '-估算数据-估算增长率')
+
+              let nav = 0, dailyChange = 0
+              if (publishedNav != null && Number(publishedNav) > 0) {
+                nav = Number(publishedNav); dailyChange = parsePct(publishedChange)
+              } else if (estimatedNav != null && Number(estimatedNav) > 0) {
+                nav = Number(estimatedNav); dailyChange = parsePct(estimatedChange)
               }
-              // 估算失败，标记为待日频补查
-              useEstimation = false
+
+              if (nav > 0) {
+                allQuotes.push({
+                  code,
+                  name: item['基金名称'] || item['基金简称'] || code,
+                  nav,
+                  accNav: 0,
+                  dailyChange,
+                  navDate: new Date().toISOString().slice(0, 10),
+                })
+                continue
+              }
             }
-          } catch {
-            useEstimation = false
+            // 单个基金在估值接口中没找到，标记后续补查
+            estimationFailed = true
           }
+        } catch {
+          estimationFailed = true
         }
 
-        // 盘后或估算失败：走官方日频净值
-        if (!useEstimation) {
+        // 估值接口失败或部分基金未找到 → 走日频净值接口兜底
+        if (estimationFailed) {
           const dailyList = await this.call<Record<string, any>>('fund_open_fund_daily_em')
           for (const code of fundCodes) {
-            // 如果已经通过估算接口加入了且有效，跳过
-            if (allQuotes.some((q) => q.code === code && q.nav > 0.001 && q.nav !== 1)) continue
+            // 已通过估值接口成功获取的跳过
+            if (allQuotes.some((q) => q.code === code && q.nav > 0.001)) continue
             const item = dailyList.find((i: any) => String(i['基金代码'] || '') === code)
             if (item) {
-              // fund_open_fund_daily_em 列名是动态日期前缀，如 2026-06-30-单位净值
               const navEntries = findSuffixValues(item, '-单位净值').sort((a, b) => b[0].localeCompare(a[0]))
               const latestNav = navEntries.length > 0 ? Number(navEntries[0][1]) : 0
               const navDate = navEntries.length > 0 ? navEntries[0][0].replace(/-单位净值$/, '') : ''
               const accNavEntries = findSuffixValues(item, '-累计净值')
               const latestAccNav = accNavEntries.length > 0 ? Number(accNavEntries[0][1]) : 0
-              allQuotes.push({
-                code,
-                name: item['基金简称'] || code,
-                nav: latestNav,
-                accNav: latestAccNav,
-                dailyChange: parsePct(item['日增长率']),
-                navDate,
-              })
+              if (latestNav > 0) {
+                allQuotes.push({
+                  code,
+                  name: item['基金简称'] || code,
+                  nav: latestNav,
+                  accNav: latestAccNav,
+                  dailyChange: parsePct(item['日增长率']),
+                  navDate,
+                })
+              } else {
+                allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
+              }
             } else {
               allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
             }
@@ -205,7 +212,7 @@ export class AKShareAdapter implements FundDataSource {
   /**
    * fund_open_fund_info_em — 历史净值走势
    */
-  async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
+  async fetchKLine(code: string, _period = '3m'): Promise<KLineData[]> {
     try {
       const data = await this.call<Record<string, any>>('fund_open_fund_info_em', {
         symbol: code,
