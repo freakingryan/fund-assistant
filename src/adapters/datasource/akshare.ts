@@ -55,7 +55,9 @@ export class AKShareAdapter implements FundDataSource {
   }
 
   private async call<T = any[]>(apiName: string, params: Record<string, string> = {}): Promise<T[]> {
-    const url = new URL(`${this.baseURL}/api/public/${apiName}`)
+    // 构建完整 URL：如果 baseURL 是相对路径（以 / 开头），需要加上 origin
+    const base = this.baseURL.startsWith('/') ? `${window.location.origin}${this.baseURL}` : this.baseURL
+    const url = new URL(`${base}/api/public/${apiName}`)
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
 
     const res = await fetch(url.toString(), { mode: 'cors' })
