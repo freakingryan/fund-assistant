@@ -51,13 +51,18 @@ class DataSourceService implements FundDataSource {
 
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
-    for (const adapter of this.getAdapters()) {
+    const adapters = this.getAdapters()
+    for (const adapter of adapters) {
       try {
+        console.log(`[DataSourceService] 尝试适配器: ${adapter.name}, 基金代码:`, codes)
         const data = await adapter.fetchQuotes(codes)
+        console.log(`[DataSourceService] ${adapter.name} 返回数据:`, data.length, '条, 示例:', data.slice(0, 2))
         if (data.length > 0 && data.some((q) => q.nav !== 1 || q.dailyChange !== 0)) {
           return data
         }
-      } catch { /* try next */ }
+      } catch (e) {
+        console.warn(`[DataSourceService] ${adapter.name} 失败:`, e)
+      }
     }
     return []
   }

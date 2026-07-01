@@ -93,6 +93,7 @@ export class AKShareAdapter implements FundDataSource {
    */
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
+    console.log('[AKShare fetchQuotes] 开始, codes:', codes, 'baseURL:', this.baseURL)
     try {
       // 区分 ETF 和非 ETF
       const etfCodes = codes.filter((c) => isEtfFund(c))
@@ -102,7 +103,9 @@ export class AKShareAdapter implements FundDataSource {
       // 1) ETF 基金：尝试实时行情接口
       if (etfCodes.length > 0) {
         try {
+          console.log('[AKShare fetchQuotes] 调用 fund_etf_spot_em...')
           const etfList = await this.call<Record<string, any>>('fund_etf_spot_em')
+          console.log('[AKShare fetchQuotes] fund_etf_spot_em 返回', etfList.length, '条')
           for (const code of etfCodes) {
             const item = etfList.find((i: any) => String(i['代码'] || i['fund_code'] || '') === code)
             if (item) {
@@ -118,7 +121,8 @@ export class AKShareAdapter implements FundDataSource {
               allQuotes.push({ code, name: `ETF ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
             }
           }
-        } catch {
+        } catch (e) {
+          console.warn('[AKShare fetchQuotes] fund_etf_spot_em 失败:', e)
           // ETF 实时行情失败时回退到日频
           for (const code of etfCodes) {
             allQuotes.push({ code, name: `ETF ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
@@ -132,7 +136,9 @@ export class AKShareAdapter implements FundDataSource {
         // 先尝试估值接口
         let estimationFailed = false
         try {
+          console.log('[AKShare fetchQuotes] 调用 fund_value_estimation_em...')
           const estList = await this.call<Record<string, any>>('fund_value_estimation_em')
+          console.log('[AKShare fetchQuotes] fund_value_estimation_em 返回', estList.length, '条, 示例字段:', estList.length > 0 ? Object.keys(estList[0]) : '空')
           // fund_value_estimation_em 列名动态：
           //   - 2026-07-01-估算数据-估算值 (盘中估算)
           //   - 2026-07-01-公布数据-单位净值 (盘后官方)
@@ -172,47 +178,57 @@ export class AKShareAdapter implements FundDataSource {
             // 单个基金在估值接口中没找到，标记后续补查
             estimationFailed = true
           }
-        } catch {
+        } catch (e) {
+          console.warn('[AKShare fetchQuotes] fund_value_estimation_em 失败:', e)
           estimationFailed = true
         }
 
         // 估值接口失败或部分基金未找到 → 走日频净值接口兜底
         if (estimationFailed) {
-          const dailyList = await this.call<Record<string, any>>('fund_open_fund_daily_em')
-          for (const code of fundCodes) {
-            // 已通过估值接口成功获取的跳过
-            if (allQuotes.some((q) => q.code === code && q.nav > 0.001)) continue
-            const item = dailyList.find((i: any) => String(i['基金代码'] || '') === code)
-            if (item) {
-              const navEntries = findSuffixValues(item, '-单位净值').sort((a, b) => b[0].localeCompare(a[0]))
-              const latestNav = navEntries.length > 0 ? Number(navEntries[0][1]) : 0
-              const navDate = navEntries.length > 0 ? navEntries[0][0].replace(/-单位净值$/, '') : ''
-              const accNavEntries = findSuffixValues(item, '-累计净值')
-              const latestAccNav = accNavEntries.length > 0 ? Number(accNavEntries[0][1]) : 0
-              if (latestNav > 0) {
-                allQuotes.push({
-                  code,
-                  name: item['基金简称'] || code,
-                  nav: latestNav,
-                  accNav: latestAccNav,
-                  dailyChange: parsePct(item['日增长率']),
-                  navDate,
-                })
+          try {
+            console.log('[AKShare fetchQuotes] 调用 fund_open_fund_daily_em...')
+            const dailyList = await this.call<Record<string, any>>('fund_open_fund_daily_em')
+            console.log('[AKShare fetchQuotes] fund_open_fund_daily_em 返回', dailyList.length, '条, 示例字段:', dailyList.length > 0 ? Object.keys(dailyList[0]) : '空')
+            for (const code of fundCodes) {
+              // 已通过估值接口成功获取的跳过
+              if (allQuotes.some((q) => q.code === code && q.nav > 0.001)) continue
+              const item = dailyList.find((i: any) => String(i['基金代码'] || '') === code)
+              if (item) {
+                const navEntries = findSuffixValues(item, '-单位净值').sort((a, b) => b[0].localeCompare(a[0]))
+                const latestNav = navEntries.length > 0 ? Number(navEntries[0][1]) : 0
+                const navDate = navEntries.length > 0 ? navEntries[0][0].replace(/-单位净值$/, '') : ''
+                const accNavEntries = findSuffixValues(item, '-累计净值')
+                const latestAccNav = accNavEntries.length > 0 ? Number(accNavEntries[0][1]) : 0
+                if (latestNav > 0) {
+                  allQuotes.push({
+                    code,
+                    name: item['基金简称'] || code,
+                    nav: latestNav,
+                    accNav: latestAccNav,
+                    dailyChange: parsePct(item['日增长率']),
+                    navDate,
+                  })
+                } else {
+                  allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
+                }
               } else {
                 allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
               }
-            } else {
-              allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
             }
+          } catch (e) {
+            console.warn('[AKShare fetchQuotes] fund_open_fund_daily_em 失败:', e)
           }
         }
       }
 
       // DEBUG: log first non-ETF quote for troubleshooting
       const firstQuote = allQuotes.find((q) => !isEtfFund(q.code))
-      if (firstQuote) console.log('[AKShare fetchQuotes]', firstQuote.code, firstQuote.name, 'nav:', firstQuote.nav, 'navDate:', firstQuote.navDate, 'dailyChange:', firstQuote.dailyChange)
+      if (firstQuote) console.log('[AKShare fetchQuotes] 完成', firstQuote.code, firstQuote.name, 'nav:', firstQuote.nav, 'navDate:', firstQuote.navDate, 'dailyChange:', firstQuote.dailyChange)
+      else console.warn('[AKShare fetchQuotes] 未完成：所有 quotes 均为默认值', allQuotes)
       return allQuotes
-    } catch { /* fallback */ }
+    } catch (e) {
+      console.error('[AKShare fetchQuotes] 顶层异常:', e)
+    }
     return []
   }
 
