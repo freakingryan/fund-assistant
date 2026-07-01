@@ -11,11 +11,11 @@ class DataSourceService implements FundDataSource {
   /** 获取适配器列表（按优先级） */
   private getAdapters(): FundDataSource[] {
     const adapters: FundDataSource[] = []
-    const primary = useSettingsStore.getState().settings.dataSource.primarySource
     const akshareURL = useSettingsStore.getState().settings.dataSource.akshareURL
+    const primary = useSettingsStore.getState().settings.dataSource.primarySource
 
-    // 1. AKShare（本地运行 AKTools，最可靠）
-    if (primary === 'akshare' || akshareURL) {
+    // 1. AKShare（本地运行 AKTools，最可靠）— 始终优先尝试
+    if (akshareURL || akshareAdapter.baseURL) {
       adapters.push(akshareAdapter)
     }
 

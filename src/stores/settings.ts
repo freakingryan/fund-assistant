@@ -8,7 +8,7 @@ const defaultSettings: UserSettings = {
   defaultAIProvider: 'deepseek',
   dataSource: {
     tushareToken: '',
-    primarySource: 'tushare',
+    primarySource: 'akshare',
   },
   storage: {
     type: 'local',
