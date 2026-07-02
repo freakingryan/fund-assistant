@@ -208,12 +208,12 @@ export class AKShareAdapter implements FundDataSource {
                 allQuotes.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
               }
             }
-          }
+          } catch (_) { /* 日频净值接口也失败，保持 allQuotes 中已有的数据 */ }
         }
       }
 
       return allQuotes
-    } catch { /* 顶层异常，返回空数组 */ }
+    } catch (_) { /* 顶层异常，返回空数组 */ }
     return []
   }
 
