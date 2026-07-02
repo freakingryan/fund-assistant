@@ -241,6 +241,7 @@ export class AKShareAdapter implements FundDataSource {
 
   /**
    * fund_etf_hist_em — 场内 ETF 日频真实行情（OHLC + 成交量）
+   * 失败时自动降级到 fund_open_fund_info_em（净值走势）
    * 参数示例：symbol=512880, period=daily, start_date=20250601, end_date=20250620
    */
   async fetchEtfKLine(code: string, period = '3m'): Promise<KLineData[]> {
@@ -249,6 +250,7 @@ export class AKShareAdapter implements FundDataSource {
     const start = new Date(end.getTime() - days * 86400000)
     const fmt = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
 
+    // 第一优先：ETF 真实 K 线（OHLC）
     try {
       const data = await this.call<Record<string, any>>('fund_etf_hist_em', {
         symbol: code,
@@ -266,7 +268,45 @@ export class AKShareAdapter implements FundDataSource {
           volume: Number(item['成交量'] || item['volume'] || 0),
         })) // AKShare 返回旧→新，无需反转
       }
-    } catch { /* fallback */ }
+    } catch { /* 降级到净值走势 */ }
+
+    // 第二优先：场内 ETF A 股行情
+    try {
+      const data = await this.call<Record<string, any>>('stock_zh_a_hist', {
+        symbol: code,
+        period: 'daily',
+        start_date: fmt(start),
+        end_date: fmt(end),
+        adjust: 'qfq',
+      })
+      if (data.length > 0) {
+        return data.map((item: any) => ({
+          date: item['日期'] || item['date'] || '',
+          open: Number(item['开盘'] || item['open'] || 0),
+          close: Number(item['收盘'] || item['close'] || 0),
+          high: Number(item['最高'] || item['high'] || 0),
+          low: Number(item['最低'] || item['low'] || 0),
+          volume: Number(item['成交量'] || item['volume'] || 0),
+        }))
+      }
+    } catch { /* 降级到净值走势 */ }
+
+    // 第三优先：基金历史净值走势（盘后日频，无 OHLC）
+    try {
+      const navData = await this.call<Record<string, any>>('fund_open_fund_info_em', {
+        symbol: code,
+      })
+      if (navData.length > 0) {
+        return navData.map((item: any) => ({
+          date: (item['净值日期'] || '').slice(0, 10),
+          open: Number(item['单位净值'] || 0),
+          close: Number(item['单位净值'] || 0),
+          high: Number(item['单位净值'] || 0),
+          low: Number(item['单位净值'] || 0),
+          volume: 0,
+        }))
+      }
+    } catch { /* 无数据 */ }
     return []
   }
 
