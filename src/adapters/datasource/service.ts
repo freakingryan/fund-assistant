@@ -3,7 +3,6 @@ import type { FundDataSource } from './base'
 import { stockApiAdapter } from './stock-api'
 import { tushareAdapter } from './tushare'
 import { eastMoneyAdapter } from './eastmoney'
-import { akshareAdapter } from './akshare'
 import { useSettingsStore } from '@/stores/settings'
 
 class DataSourceService implements FundDataSource {
@@ -12,23 +11,17 @@ class DataSourceService implements FundDataSource {
   /** 获取适配器列表（按优先级） */
   private getAdapters(): FundDataSource[] {
     const adapters: FundDataSource[] = []
-    const akshareURL = useSettingsStore.getState().settings.dataSource.akshareURL
     const primary = useSettingsStore.getState().settings.dataSource.primarySource
 
     // 1. stock-api（纯前端，零后端依赖，腾讯/新浪/东方财富自动兜底）
     adapters.push(stockApiAdapter)
 
-    // 2. AKShare（需要本地运行 AKTools 或 Railway 部署）
-    if (akshareURL || (akshareAdapter as any).baseURL) {
-      adapters.push(akshareAdapter)
-    }
-
-    // 3. Tushare
+    // 2. Tushare
     if (primary === 'tushare' && tushareAdapter.isConfigured()) {
       adapters.push(tushareAdapter)
     }
 
-    // 4. 东方财富 JSONP（免费，无需配置）
+    // 3. 东方财富 JSONP（免费，无需配置）
     adapters.push(eastMoneyAdapter)
 
     return adapters
@@ -119,14 +112,6 @@ class DataSourceService implements FundDataSource {
     }
     return []
   }
-  /**
-   * 是否配置了 AKShare（AKTools 服务）
-   */
-  isAkshareConfigured(): boolean {
-    const cfg = useSettingsStore.getState().settings.dataSource
-    return cfg.primarySource === 'akshare' || !!cfg.akshareURL
-  }
-
   /**
    * 查询场外基金对应的场内 ETF 代码
    */

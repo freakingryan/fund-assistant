@@ -79,14 +79,12 @@ export default function AddFundDialog() {
   const [error, setError] = useState('')
   const [queryLoading, setQueryLoading] = useState(false)
   const [rankOpen, setRankOpen] = useState(false)
-  const [akshareReady, setAkshareReady] = useState(false)
   const [showAllDetails, setShowAllDetails] = useState(false)
   const [_selected, setSelected] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (open) {
       setTimeout(() => {
-        setAkshareReady(dataSourceService.isAkshareConfigured())
         setRows([makeRow()])
         setError('')
         setSelected(new Set())
@@ -153,7 +151,7 @@ export default function AddFundDialog() {
   // Deselect all
   const _deselectAll = () => setSelected(new Set())
 
-  // AKTools 批量查询：获取基金名称 + 类型 + ETF 映射（带缓存）
+  // 批量查询：获取基金名称 + 类型 + ETF 映射（带缓存）
   const handleQuickQuery = async () => {
     if (codes.length === 0) { setError('请先输入基金代码'); return }
     setQueryLoading(true); setError('')
@@ -292,35 +290,25 @@ export default function AddFundDialog() {
         <DialogHeader>
           <DialogTitle>添加基金</DialogTitle>
           <DialogDescription>
-            只需输入基金代码（必填），其余信息可选。{akshareReady && '点击「快速查询」自动补全名称和 ETF 映射。'}
+            输入基金代码（必填），点击「快速查询」自动补全名称和 ETF 映射。
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* 快速查询（AKTools） */}
-          {akshareReady ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleQuickQuery}
-              disabled={codes.length === 0 || queryLoading}
-              className="w-full"
-            >
-              {queryLoading ? (
-                <><Loader2 className="h-4 w-4 animate-spin mr-2" />正在查询 {codes.length} 只基金...</>
-              ) : (
-                <><Sparkles className="h-3 w-3 mr-2" />快速查询 ({codes.length} 只) · 自动补全 + ETF 映射</>
-              )}
-            </Button>
-          ) : (
-            <div className="text-xs text-muted-foreground bg-muted/30 rounded-md p-3 space-y-1">
-              <p>💡 配置 AKTools 后可自动查询基金名称、类型及场内 ETF 映射</p>
-              <a href="/settings" className="text-primary hover:underline cursor-pointer" onClick={(e) => { e.preventDefault(); navigate('/settings') }}>
-                前往设置 → 数据源
-              </a>
-              <p className="text-[10px] text-muted-foreground/70">需要本地运行 AKTools：python -m aktools</p>
-            </div>
-          )}
+          {/* 快速查询 */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleQuickQuery}
+            disabled={codes.length === 0 || queryLoading}
+            className="w-full"
+          >
+            {queryLoading ? (
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" />正在查询 {codes.length} 只基金...</>
+            ) : (
+              <><Sparkles className="h-3 w-3 mr-2" />快速查询 ({codes.length} 只) · 自动补全 + ETF 映射</>
+            )}
+          </Button>
 
           {/* Fund rows */}
           <div className="space-y-3 max-h-[50vh] overflow-auto">

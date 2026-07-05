@@ -2,7 +2,7 @@
  * 技术指标计算 — 纯前端实现
  *
  * 所有指标均为标准化数学公式，无需依赖外部数据源。
- * AKShare 的 fund_etf_hist_em 返回的是前复权数据，
+ * stock-api（腾讯数据源）返回的是前复权数据，
  * 基于此计算的均线/布林带与主流交易软件一致。
  *
  * @module technicalIndicators

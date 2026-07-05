@@ -149,8 +149,7 @@ export interface AIConfig {
 
 export interface DataSourceConfig {
   tushareToken: string
-  primarySource: 'tushare' | 'westock' | 'neodata' | 'akshare'
-  akshareURL?: string
+  primarySource: 'tushare' | 'westock' | 'neodata'
 }
 
 export interface NotionConfig {

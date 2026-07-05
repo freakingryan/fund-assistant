@@ -134,7 +134,6 @@ export default function SettingsPage() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="tushare">Tushare</SelectItem>
-                    <SelectItem value="akshare">AKShare（本地 AKTools）</SelectItem>
                     <SelectItem value="westock">西股数据</SelectItem>
                     <SelectItem value="neodata">NeoData</SelectItem>
                   </SelectContent>
@@ -152,18 +151,6 @@ export default function SettingsPage() {
                   placeholder="可选 — 供浏览器端直接调用 Tushare HTTP API"
                   className="flex-1"
                 />
-              </div>
-              <div className="space-y-2">
-                <Label>AKTools 地址</Label>
-                <Input
-                  value={settings.dataSource.akshareURL || ''}
-                  onChange={(e) => updateDataSource({ akshareURL: e.target.value })}
-                  placeholder="http://127.0.0.1:8080（默认）"
-                  className="flex-1"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  需要本地运行 <code className="bg-muted px-1 rounded">python -m aktools</code>，或自行部署 AKShare HTTP API
-                </p>
               </div>
             </CardContent>
           </Card>

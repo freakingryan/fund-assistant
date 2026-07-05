@@ -2,7 +2,7 @@
  * useRealtimeQuotes — 实时行情 Hook
  *
  * 利用 ETF 映射查询实时行情，为持仓列表/详情页/Dashboard 提供实时估值数据。
- * 通过 stock-api（内置）或 AKShare（降级）获取数据，零后端依赖。
+ * 通过 stock-api + fundgz + pingzhongdata 获取数据，零后端依赖。
  *
  * 缓存策略：使用 klineCache 已有的 getQuotesCache/setQuotesCache
  * TTL 策略：交易时段内自动过期（A 股 9:30-15:00），非交易时段长缓存

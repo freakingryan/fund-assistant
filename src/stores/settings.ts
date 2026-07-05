@@ -8,7 +8,7 @@ const defaultSettings: UserSettings = {
   defaultAIProvider: 'deepseek',
   dataSource: {
     tushareToken: '',
-    primarySource: 'akshare',
+    primarySource: 'westock',
   },
   storage: {
     type: 'local',
@@ -48,11 +48,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const saved = await db.settings.get('user-settings')
       if (saved) {
-        // 迁移：强制 primarySource 为 akshare（AKTools 本地运行更可靠）
-        if (saved.dataSource?.primarySource === 'tushare') {
-          saved.dataSource.primarySource = 'akshare'
-          await db.settings.put({ ...saved, id: 'user-settings' })
-        }
         set({ settings: { ...defaultSettings, ...saved }, loading: false })
       } else {
         await db.settings.put({ ...defaultSettings, id: 'user-settings' })

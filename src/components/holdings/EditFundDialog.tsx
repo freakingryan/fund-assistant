@@ -68,7 +68,6 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [queryLoading, setQueryLoading] = useState(false)
-  const [akshareReady, setAkshareReady] = useState(false)
 
   // ETF 映射字段
   const [etfOpen, setEtfOpen] = useState(false)
@@ -99,7 +98,6 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
       setError('')
       setSaving(false)
       setQueryLoading(false)
-      setAkshareReady(dataSourceService.isAkshareConfigured())
       // ETF 映射
       const m = etfMappings.find((em) => em.otcCode === fund.code)
       setExchangeCode(m?.exchangeCode || '')
@@ -109,7 +107,7 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
     }
   }, [open, fund, etfMappings])
 
-  // AKTools 自动补全
+  // 自动补全
   const handleAutofill = async () => {
     if (!code.trim()) { setError('请先输入基金代码'); return }
     setQueryLoading(true); setError('')
@@ -171,7 +169,7 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
     setEtfSearchLoading(true)
     setEtfSearchResults([])
     try {
-      // 先尝试 AKTools 的 ETF 列表查询
+      // 先尝试 stock-api 的 ETF 数据源匹配
       try {
         const result = await dataSourceService.queryEtfMapping(code.trim())
         if (result?.exchangeCode) {
@@ -251,21 +249,19 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* AKTools 自动补全 */}
-          {akshareReady && (
-            <Button
-              variant="secondary" size="sm"
-              onClick={handleAutofill}
-              disabled={!code.trim() || queryLoading}
-              className="w-full h-7 text-xs"
-            >
-              {queryLoading ? (
-                <><Loader2 className="h-3 w-3 mr-1 animate-spin" />查询中...</>
-              ) : (
-                <><Sparkles className="h-3 w-3 mr-1" />AKTools 自动补全名称 / 类型 / 领域 + ETF 映射</>
-              )}
-            </Button>
-          )}
+          {/* 自动补全 */}
+          <Button
+            variant="secondary" size="sm"
+            onClick={handleAutofill}
+            disabled={!code.trim() || queryLoading}
+            className="w-full h-7 text-xs"
+          >
+            {queryLoading ? (
+              <><Loader2 className="h-3 w-3 mr-1 animate-spin" />查询中...</>
+            ) : (
+              <><Sparkles className="h-3 w-3 mr-1" />自动补全名称 / 类型 / 领域 + ETF 映射</>
+            )}
+          </Button>
 
           {/* 代码 + 名称 */}
           <div className="grid grid-cols-2 gap-3">

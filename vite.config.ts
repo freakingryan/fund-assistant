@@ -20,12 +20,6 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/pingzhongdata/, ''),
       },
-      // 保留 AKTools 代理（兼容旧配置，不启用也不会报错）
-      '/aktools': {
-        target: 'http://127.0.0.1:8080',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/aktools/, ''),
-      },
     },
   },
   plugins: [

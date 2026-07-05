@@ -2,7 +2,7 @@
  * RealtimePanel — Dashboard 实时行情面板
  *
  * 展示所有持仓的实时估值，按 ETF 映射优先获取实时行情。
- * 数据来源：stock-api（内置）→ AKShare → EastMoney 自动兜底
+ * 数据来源：stock-api（内置）→ EastMoney 自动兜底
  */
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
