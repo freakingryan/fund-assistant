@@ -188,7 +188,7 @@ export interface PortfolioCache {
   holdings: { code: string; name: string; ratio: number; value: number }[]
 }
 
-const PORTFOLIO_TTL = 2 * 60 * 60 * 1000 // 2 小时
+const PORTFOLIO_TTL = 7 * 24 * 60 * 60 * 1000 // 7 天（基金持仓季度更新，缓存一周足够）
 
 export async function getPortfolioCache(fundCode: string): Promise<PortfolioCache | null> {
   return getCache<PortfolioCache>(`pf_${fundCode}`, PORTFOLIO_TTL)

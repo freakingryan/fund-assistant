@@ -84,7 +84,7 @@ export default function FundDetailPage() {
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
   const [portfolioLoading, setPortfolioLoading] = useState(false)
-  const [portfolioUpdateTime, _setPortfolioUpdateTime] = useState<string | null>(null)
+  const [portfolioRefreshKey, setPortfolioRefreshKey] = useState(0)
   const [klineDetectedPatterns, setKlineDetectedPatterns] = useState<DetectedPattern[]>([])
   const [klinePatterns, setKlinePatterns] = useState<string>('')
   const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)
@@ -141,6 +141,7 @@ export default function FundDetailPage() {
     await deletePortfolioCache(fund.code)
     setPortfolioLoading(true)
     setPortfolio(null)
+    setPortfolioRefreshKey((k) => k + 1)
     setRefreshing((s) => ({ ...s, portfolio: false }))
   }, [fund])
 
@@ -224,17 +225,20 @@ export default function FundDetailPage() {
   useEffect(() => {
     if (!fund) return
     let cancelled = false
-    setTimeout(() => setPortfolioLoading(true), 0)
+    setPortfolioLoading(true)
     const load = async () => {
       const cached = await getPortfolioCache(fund.code)
       if (!cancelled && cached) { setPortfolio(cached); setPortfolioLoading(false); return }
       const data = await dataSourceService.fetchFundPortfolio(fund.code)
-      if (!cancelled && data) { setPortfolioCache(fund.code, data); setPortfolio(data) }
+      if (!cancelled && data) {
+        await setPortfolioCache(fund.code, data)
+        setPortfolio(data)
+      }
       if (!cancelled) setPortfolioLoading(false)
     }
     load()
     return () => { cancelled = true }
-  }, [fund])
+  }, [fund, portfolioRefreshKey])
 
   // ─── Prompt ───────────────────────────────────
   const handleGenerate = useCallback(() => {
@@ -425,13 +429,13 @@ export default function FundDetailPage() {
         {/* Right Column */}
         <div className="space-y-4">
           {/* 重仓股 */}
-          {portfolio?.holdings && portfolio.holdings.length > 0 && (
+          {fund && (
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <CardTitle className="text-sm">重仓股</CardTitle>
-                    {portfolioUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {portfolioUpdateTime}</span>}
+                    <span className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">前 10 大</span>
                   </div>
                   <button onClick={handleRefreshPortfolio} disabled={refreshing.portfolio}
                     className="inline-flex items-center gap-1 text-xs px-2.5 h-7 rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
@@ -444,7 +448,7 @@ export default function FundDetailPage() {
               <CardContent>
                 {portfolioLoading ? (
                   <div className="flex items-center justify-center h-16"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-                ) : (
+                ) : portfolio && portfolio.holdings.length > 0 ? (
                   <div className="space-y-2">
                     <p className="text-[10px] text-muted-foreground">报告期：{portfolio.date}</p>
                     <div className="space-y-1">
@@ -462,6 +466,8 @@ export default function FundDetailPage() {
                       ))}
                     </div>
                   </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground py-2">暂无重仓股数据</p>
                 )}
               </CardContent>
             </Card>
