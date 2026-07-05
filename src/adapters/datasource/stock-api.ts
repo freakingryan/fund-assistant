@@ -13,6 +13,7 @@
  */
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
+import { fetchFundGzJsonp } from './jsonp-utils'
 
 // stock-api 是 ESM-only 库，动态 import 以适应项目构建配置
 let stocks: any = null
@@ -57,21 +58,13 @@ function periodToCount(period: string): number {
 /**
  * 从 fundgz.1234567.com.cn 获取场外基金实时估算净值
  * 返回格式：jsonpgz({ fundcode, name, jzrq, dwjz, gsz, gszzl, gztime })
- * 文档：天天基金开放接口
+ * 使用 JSONP 方式（<script> 标签加载）规避 CORS 限制
  */
 async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
   try {
-    const url = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
-    const res = await fetch(url)
-    if (!res.ok) return null
-    const text = await res.text()
-    // 解析 JSONP: jsonpgz({...})
-    const match = text.trim().match(/^jsonpgz\((.+)\);?\s*$/)
-    if (!match) return null
-    const data = JSON.parse(match[1])
+    const data = await fetchFundGzJsonp(code)
     if (!data || data.fundcode !== code) return null
 
-    // gsz: 估算净值, gszzl: 估算涨跌幅(%), dwjz: 昨日单位净值, jzrq: 净值日期
     const gsz = Number(data.gsz) || 0
     const gszzl = Number(data.gszzl) || 0
     const dwjz = Number(data.dwjz) || 0
@@ -79,7 +72,7 @@ async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
     return {
       code,
       name: String(data.name || code),
-      nav: gsz > 0 ? gsz : dwjz,     // 优先估算净值，其次昨日净值
+      nav: gsz > 0 ? gsz : dwjz,
       accNav: 0,
       dailyChange: gszzl,
       navDate: String(data.gztime || data.jzrq || '').slice(0, 10),

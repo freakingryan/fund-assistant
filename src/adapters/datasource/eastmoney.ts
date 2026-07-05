@@ -1,28 +1,6 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
-
-// ── 全局 JSONP 回调 ──────────────────────────────────
-type JsonpResolver = (data: any) => void
-let fundgzResolver: JsonpResolver | null = null
-
-// 延迟注册 jsonpgz（首次调用时），避免模块加载时污染全局
-function ensureJsonpgz() {
-  if ((window as any).jsonpgz) return
-  ;(window as any).jsonpgz = (data: any) => {
-    fundgzResolver?.(data)
-    fundgzResolver = null
-  }
-}
-
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const el = document.createElement('script')
-    el.src = src
-    el.onload = () => resolve()
-    el.onerror = () => reject(new Error(`脚本加载失败: ${src}`))
-    document.head.appendChild(el)
-  })
-}
+import { fetchFundGzJsonp } from './jsonp-utils'
 
 /**
  * 东方财富基金数据源（免费、无 Token、JSONP 规避 CORS）
@@ -35,22 +13,8 @@ export class EastMoneyAdapter implements FundDataSource {
   }
 
   async fetchFundInfo(code: string): Promise<{ name: string; type: string }> {
-    ensureJsonpgz()
     try {
-      const data = await new Promise<any>((resolve, reject) => {
-        fundgzResolver = resolve
-        loadScript(`https://fundgz.1234567.com.cn/js/${code}.js`).catch(() => {
-          fundgzResolver = null
-          reject(new Error('加载失败'))
-        })
-        // 5s timeout
-        setTimeout(() => {
-          if (fundgzResolver) {
-            fundgzResolver = null
-            reject(new Error('超时'))
-          }
-        }, 5000)
-      })
+      const data = await fetchFundGzJsonp(code)
       if (data?.name) {
         return { name: data.name, type: this.classifyType(data.name) }
       }
@@ -59,28 +23,20 @@ export class EastMoneyAdapter implements FundDataSource {
   }
 
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
-    ensureJsonpgz()
     const results: FundQuote[] = []
     for (const code of codes) {
       try {
-        const data = await new Promise<any>((resolve, reject) => {
-          fundgzResolver = resolve
-          loadScript(`https://fundgz.1234567.com.cn/js/${code}.js`).catch(() => {
-            fundgzResolver = null
-            reject(new Error('加载失败'))
-          })
-          setTimeout(() => {
-            if (fundgzResolver) { fundgzResolver = null; reject(new Error('超时')) }
-          }, 5000)
-        })
+        const data = await fetchFundGzJsonp(code)
         if (data) {
+          const gsz = Number(data.gsz) || 0
+          const dwjz = Number(data.dwjz) || 0
           results.push({
             code: data.fundcode,
             name: data.name,
-            nav: Number(data.dwjz) || 1,
+            nav: gsz > 0 ? gsz : dwjz, // 优先估算净值，其次昨日净值
             accNav: Number(data.dwjz) || 1,
             dailyChange: Number(data.gszzl) || 0,
-            navDate: data.jzrq || '',
+            navDate: String(data.gztime || data.jzrq || '').slice(0, 10),
           })
           continue
         }
