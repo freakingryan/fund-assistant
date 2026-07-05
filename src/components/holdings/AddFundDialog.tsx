@@ -8,7 +8,7 @@ import {
   DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
-import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp, TrendingUp,
+import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp,
   AlertCircle, X, Search,
 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
@@ -509,9 +509,6 @@ export default function AddFundDialog() {
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={addRow}>
               <Plus className="h-3 w-3 mr-1" />添加基金代码
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setRankOpen(true)}>
-              <TrendingUp className="h-3 w-3 mr-1" />基金排行
             </Button>
             <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={toggleShowAll}>
               {showAllDetails ? '收起' : '展开'}全部详情
