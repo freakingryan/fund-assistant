@@ -134,13 +134,6 @@ export default function AppLayout() {
           </nav>
 
           <Separator />
-
-          {/* Footer */}
-          <div className="p-3">
-            <p className="text-xs text-muted-foreground px-3">
-              本地数据 · 零成本 · PWA
-            </p>
-          </div>
         </aside>
 
         {/* Main area */}
@@ -162,7 +155,9 @@ export default function AppLayout() {
                 value={globalSearch}
                 onChange={(e) => setGlobalSearch(e.target.value)}
                 placeholder="搜索基金/ETF..."
-                className="pl-8 h-8 text-xs"
+                autoComplete="off"
+                name="fund-global-search"
+                className="pl-8 h-8 text-xs bg-background dark:bg-muted/30 dark:border-muted dark:text-foreground"
               />
               {searchLoading && (
                 <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -194,7 +189,6 @@ export default function AppLayout() {
               <SunMoon className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{themeLabel}</span>
             </button>
-            <span className="text-xs text-muted-foreground">v0.1.0</span>
           </header>
 
           {/* Content */}

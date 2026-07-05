@@ -71,7 +71,8 @@ export default function RealtimePanel({ holdings }: Props) {
             )}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <div className="flex gap-1">
+            <span className="text-[10px] text-muted-foreground hidden sm:inline">排序:</span>
+            <div className="flex gap-1" title="按市值/盈亏/涨跌从高到低排序">
               {(['value', 'pnl', 'change'] as const).map((key) => (
                 <button
                   key={key}
@@ -92,14 +93,14 @@ export default function RealtimePanel({ holdings }: Props) {
       </CardHeader>
       <CardContent className="p-0">
         {/* 列标题 */}
-        <div className="hidden sm:flex items-center px-4 py-1.5 text-[10px] text-muted-foreground border-b">
+        <div className="hidden sm:flex items-center gap-3 px-4 py-1.5 text-[10px] text-muted-foreground border-b">
           <div className="flex-1" />
-          <div className="w-[90px] text-right shrink-0">最新价</div>
-          <div className="w-[64px] text-right shrink-0">涨跌幅</div>
-          <div className="w-[100px] text-right shrink-0">盈亏</div>
-          <div className="w-[80px] text-right shrink-0">市值</div>
+          <div className="w-[96px] text-right shrink-0">最新价</div>
+          <div className="w-[80px] text-right shrink-0">涨跌幅</div>
+          <div className="w-[140px] text-right shrink-0">盈亏</div>
+          <div className="w-[96px] text-right shrink-0">持仓市值</div>
         </div>
-        <div className="divide-y">
+        <div className="divide-y overflow-x-auto">
           {sorted.map(({ holding, quote, mv, pnl, pnlRate, loading: itemLoading }) => {
             const isProfit = pnl >= 0
             const isUp = (quote?.dailyChange ?? 0) >= 0
@@ -107,7 +108,7 @@ export default function RealtimePanel({ holdings }: Props) {
               <div
                 key={holding.id}
                 onClick={() => navigate(`/detail/${holding.id}`)}
-                className="flex items-center px-4 py-2 text-xs hover:bg-muted/40 cursor-pointer transition-colors"
+                className="flex items-center gap-3 px-4 py-2 text-xs hover:bg-muted/40 cursor-pointer transition-colors"
               >
                 {/* 名称 + 代码 */}
                 <div className="flex-1 min-w-0">
@@ -118,7 +119,7 @@ export default function RealtimePanel({ holdings }: Props) {
                 </div>
 
                 {/* 最新价 */}
-                <div className="w-[90px] text-right shrink-0">
+                <div className="w-[96px] text-right shrink-0">
                   {itemLoading ? (
                     <span className="text-muted-foreground">加载中...</span>
                   ) : quote ? (
@@ -131,7 +132,7 @@ export default function RealtimePanel({ holdings }: Props) {
                 </div>
 
                 {/* 涨跌幅 */}
-                <div className="w-[64px] text-right shrink-0">
+                <div className="w-[80px] text-right shrink-0">
                   {quote && (
                     <span className={`font-mono ${isUp ? 'text-red-500' : 'text-green-500'}`}>
                       {quote.dailyChange >= 0 ? '+' : ''}{quote.dailyChange.toFixed(2)}%
@@ -140,7 +141,7 @@ export default function RealtimePanel({ holdings }: Props) {
                 </div>
 
                 {/* 盈亏 */}
-                <div className="w-[100px] text-right shrink-0 whitespace-nowrap">
+                <div className="w-[140px] text-right shrink-0 whitespace-nowrap">
                   <span className={`font-mono ${isProfit ? 'text-red-500' : 'text-green-500'}`}>
                     {pnl >= 0 ? '+' : '-'}¥{Math.abs(pnl).toFixed(2)}
                   </span>
@@ -149,8 +150,8 @@ export default function RealtimePanel({ holdings }: Props) {
                   </span>
                 </div>
 
-                {/* 市值标签 */}
-                <div className="w-[80px] text-right shrink-0 text-muted-foreground">
+                {/* 持仓市值标签 */}
+                <div className="w-[96px] text-right shrink-0 text-muted-foreground">
                   <Badge variant="outline" className="text-[10px] font-mono">
                     ¥{mv.toFixed(0)}
                   </Badge>
