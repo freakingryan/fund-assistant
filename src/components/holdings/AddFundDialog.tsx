@@ -15,8 +15,7 @@ import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { autoClassify } from '@/lib/classification'
 import { dataSourceService } from '@/adapters/datasource/service'
-import { getFundInfoCache, setFundInfoCache, getEtfMappingCache, setEtfMappingCache } from '@/services/klineCache'
-import type { FundInfoCache } from '@/services/klineCache'
+import { getEtfMappingCache, setEtfMappingCache } from '@/services/klineCache'
 import type { Market, FundType, FundSector } from '@/types'
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
@@ -70,7 +69,6 @@ export default function AddFundDialog() {
   const _addHolding = useHoldingsStore((s) => s.addHolding)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
-  const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
 
   const [rows, setRows] = useState<FundRow[]>([makeRow()])
   const [error, setError] = useState('')
@@ -80,6 +78,8 @@ export default function AddFundDialog() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  // ETF 映射查询结果：otcCode → { exchangeCode, exchangeName } | null（null=未找到）
+  const [etfLookupResults, setEtfLookupResults] = useState<Map<string, { exchangeCode: string; exchangeName: string } | null>>(new Map())
 
   useEffect(() => {
     if (open) {
@@ -90,13 +90,21 @@ export default function AddFundDialog() {
         setShowAllDetails(false)
         setSearchQuery('')
         setSearchResults([])
+        setEtfLookupResults(new Map())
       }, 0)
     }
   }, [open])
 
   const codes = useMemo(() => rows.map((r) => r.code.trim()).filter(Boolean), [rows])
+  const searchCode = useMemo(() => /^\d{6}$/.test(searchQuery.trim()) ? searchQuery.trim() : '', [searchQuery])
+  const totalCodes = useMemo(() => {
+    const set = new Set(codes)
+    if (searchCode) set.add(searchCode)
+    return [...set]
+  }, [codes, searchCode])
 
   // 搜索防抖
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => {
     if (!searchQuery.trim() || searchQuery.trim().length < 2) {
       setSearchResults([])
@@ -113,42 +121,27 @@ export default function AddFundDialog() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  const handleSelectFromSearch = async (fund: { code: string; name: string }) => {
-    // 如果已存在则跳过
+  const handleSelectFromSearch = (fund: { code: string; name: string }) => {
+    // 1) 将代码填入搜索框
+    setSearchQuery(fund.code)
+    setSearchResults([])
+    // 2) 立即填充基金行（代码 + 名称 + 自动分类）
     setRows((prev) => {
       if (prev.some((r) => r.code.trim() === fund.code)) return prev
-      return prev
-    })
-    
-    // 填充第一个空行，否则新增行
-    setRows((prev) => {
-      if (prev.some((r) => r.code.trim() === fund.code)) return prev
-      const firstEmpty = prev.findIndex((r) => !r.code.trim())
       const auto = autoClassify(fund.code, fund.name)
       const rowData = {
+        code: fund.code,
         name: fund.name,
         type: auto.type,
         sector: auto.sector,
       }
+      const firstEmpty = prev.findIndex((r) => !r.code.trim())
       if (firstEmpty >= 0) {
-        return prev.map((r, i) => i === firstEmpty ? { ...r, ...rowData, code: fund.code } : r)
+        return prev.map((r, i) => i === firstEmpty ? { ...r, ...rowData } : r)
       }
-      const newRow = makeRow()
-      return [...prev, { ...newRow, ...rowData, code: fund.code }]
+      return [...prev, { ...makeRow(), ...rowData }]
     })
-
-    // 异步查询 ETF 映射
-    try {
-      const cached = await getEtfMappingCache(fund.code)
-      if (cached?.exchangeCode) return
-      const mapping = await dataSourceService.queryEtfMapping(fund.code)
-      if (mapping?.exchangeCode) {
-        addEtfMapping(mapping.otcCode, mapping.otcName, mapping.exchangeCode, mapping.exchangeName)
-      }
-    } catch { /* ignore */ }
-
-    setSearchQuery('')
-    setSearchResults([])
+    // ETF 映射不在此处展示，用户点击「查找 ETF 映射」按钮后统一查询展示
   }
 
   // Add empty row
@@ -192,106 +185,63 @@ export default function AddFundDialog() {
   // Deselect all
   const _deselectAll = () => setSelected(new Set())
 
-  // 批量查询：获取基金名称 + 类型 + ETF 映射（带缓存）
-  const handleQuickQuery = async () => {
-    if (codes.length === 0) { setError('请先输入基金代码'); return }
+  // 查询 ETF 映射（仅映射，不补全基金信息）
+  const handleEtfMappingLookup = async () => {
+    const codesFromRows = rows.map((r) => r.code.trim()).filter(Boolean)
+    const searchCode = /^\d{6}$/.test(searchQuery.trim()) ? searchQuery.trim() : ''
+    const allCodes = [...new Set([...codesFromRows, ...(searchCode ? [searchCode] : [])])]
+
+    if (allCodes.length === 0) { setError('请先输入或搜索基金代码'); return }
     setQueryLoading(true); setError('')
 
     try {
-      // 批量查询（并行）：先查缓存，未缓存的一起并发查询
-      const cachedResults = new Map<string, FundInfoCache>()
-      const uncachedCodes: string[] = []
-      for (const code of codes) {
-        const cached = await getFundInfoCache(code)
-        if (cached) {
-          cachedResults.set(code, cached)
-        } else {
-          uncachedCodes.push(code)
-        }
+      // 清空上次查询结果
+      setEtfLookupResults(new Map())
+
+      // 添加搜索框中的新代码到行（如果尚未存在且搜索框有代码）
+      if (searchCode && !codesFromRows.includes(searchCode)) {
+        setRows((prev) => {
+          if (prev.some((r) => r.code.trim() === searchCode)) return prev
+          const auto = autoClassify(searchCode, '')
+          const rowData = { code: searchCode, name: '', type: auto.type, sector: auto.sector }
+          const firstEmpty = prev.findIndex((r) => !r.code.trim())
+          if (firstEmpty >= 0) return prev.map((r, i) => i === firstEmpty ? { ...r, ...rowData } : r)
+          return [...prev, { ...makeRow(), ...rowData }]
+        })
       }
 
-      // 未缓存的并发查询
-      if (uncachedCodes.length > 0) {
-        const results = await Promise.allSettled(
-          uncachedCodes.map(async (code) => {
-            const info = await dataSourceService.fetchFundInfo(code)
-            const auto = autoClassify(code, info.name)
-            const fundInfo: FundInfoCache = {
-              code,
-              name: info.name,
-              type: info.type || auto.type,
-              sector: auto.sector,
-              description: '',
-            }
-            await setFundInfoCache(code, fundInfo)
-            return fundInfo
-          })
-        )
-        for (const result of results) {
-          if (result.status === 'fulfilled') {
-            cachedResults.set(result.value.code, result.value)
+      // 并行查询 ETF 映射
+      const results = await Promise.allSettled(
+        allCodes.map(async (code) => {
+          const cached = await getEtfMappingCache(code)
+          if (cached) return cached
+          const mapping = await dataSourceService.queryEtfMapping(code)
+          if (mapping?.exchangeCode) {
+            await setEtfMappingCache(code, mapping)
+            return mapping
           }
-        }
-      }
-
-      // 批量更新表格行
-      const typeMap: Record<string, FundType> = {
-        '股票型': 'stock', '混合型': 'mixed', '债券型': 'bond',
-        '指数型': 'index', 'qdii': 'qdii', '货币型': 'money', 'etf': 'etf',
-      }
-      setRows((prev) => prev.map((row) => {
-        const info = cachedResults.get(row.code?.trim())
-        if (!info) return row
-        const auto = autoClassify(info.code, info.name)
-        return {
-          ...row,
-          name: info.name || row.name,
-          type: typeMap[info.type] || auto.type,
-          sector: auto.sector,
-          description: info.description || '',
-        }
-      }))
-
-      // 批量查询 ETF 映射（并行）
-      const etfMappingsToQuery = codes.filter(
-        (code) => !etfMappings.some((m) => m.otcCode === code)
+          return null
+        })
       )
-      let etfResults: PromiseSettledResult<any>[] = []
-      if (etfMappingsToQuery.length > 0) {
-        etfResults = await Promise.allSettled(
-          etfMappingsToQuery.map(async (code) => {
-            const cached = await getEtfMappingCache(code)
-            if (cached) return cached
-            const mapping = await dataSourceService.queryEtfMapping(code)
-            if (mapping?.exchangeCode) {
-              await setEtfMappingCache(code, mapping)
-              return mapping
-            }
-            return null
-          })
-        )
-        for (const result of etfResults) {
-          if (result.status === 'fulfilled' && result.value) {
-            addEtfMapping(result.value.otcCode, result.value.otcName, result.value.exchangeCode, result.value.exchangeName)
-          }
+
+      const newResults = new Map<string, { exchangeCode: string; exchangeName: string } | null>()
+      let succeeded = 0
+      let failed = 0
+
+      for (const [i, result] of results.entries()) {
+        const code = allCodes[i]
+        if (result.status === 'fulfilled' && result.value) {
+          succeeded++
+          newResults.set(code, { exchangeCode: result.value.exchangeCode, exchangeName: result.value.exchangeName })
+          addEtfMapping(result.value.otcCode, result.value.otcName, result.value.exchangeCode, result.value.exchangeName)
+        } else {
+          failed++
+          newResults.set(code, null)
         }
       }
 
-      // ETF 映射结果反馈
-      const totalQueried = etfMappingsToQuery.length
-      const succeeded = etfResults.filter((r) => r.status === 'fulfilled' && r.value).length
-      const failed = totalQueried - succeeded
-      const totalMapped = codes.filter((c) => etfMappings.some((m) => m.otcCode === c) || etfResults.some(
-        (r) => r.status === 'fulfilled' && r.value && r.value.otcCode === c
-      )).length
-      if (totalQueried > 0) {
-        toast({ type: succeeded > 0 ? 'success' : 'info', message: `ETF 映射查询完成：${succeeded} 条成功${failed > 0 ? `，${failed} 条未找到映射` : ''}（共 ${totalMapped}/${codes.length} 只基金已映射）` })
-      } else {
-        const alreadyAll = codes.every((c) => etfMappings.some((m) => m.otcCode === c))
-        if (!alreadyAll) {
-          toast({ type: 'info', message: 'ETF 映射查询完成，所有查询均已缓存或已有映射' })
-        }
-      }
+      setEtfLookupResults(newResults)
+      toast({ type: succeeded > 0 ? 'success' : 'info', message: `ETF 映射查询完成：${succeeded} 条成功${failed > 0 ? `，${failed} 条未找到映射` : ''}` })
     } catch (err) {
       setError(String(err))
     }
@@ -300,10 +250,17 @@ export default function AddFundDialog() {
 
   const handleSubmit = async () => {
     setError('')
-    const valid = rows.filter((r) => r.code.trim())
-    if (valid.length === 0) { setError('请至少输入一个基金代码'); return }
+    let validRows = rows.filter((r) => r.code.trim())
+    
+    // 如果搜索框有代码且未在行中，补充新增
+    if (searchCode && !validRows.some((r) => r.code.trim() === searchCode)) {
+      const auto = autoClassify(searchCode, '')
+      validRows = [...validRows, { ...makeRow(), code: searchCode, ...auto }]
+    }
 
-    const records = valid.map((row) => ({
+    if (validRows.length === 0) { setError('请至少输入一个基金代码'); return }
+
+    const records = validRows.map((row) => ({
       code: row.code.trim(),
       name: row.name.trim() || row.code.trim(),
       market: row.market,
@@ -330,7 +287,7 @@ export default function AddFundDialog() {
         <DialogHeader>
           <DialogTitle>添加基金</DialogTitle>
           <DialogDescription>
-            输入基金代码（必填），点击「快速查询」自动补全名称和 ETF 映射。
+            从搜索框搜索基金，点击「+」自动补全信息。再点击「查找 ETF 映射」查询场内对应 ETF。
           </DialogDescription>
         </DialogHeader>
 
@@ -365,18 +322,18 @@ export default function AddFundDialog() {
             )}
           </div>
 
-          {/* 快速查询 */}
+          {/* 查找 ETF 映射 */}
           <Button
             variant="secondary"
             size="sm"
-            onClick={handleQuickQuery}
-            disabled={codes.length === 0 || queryLoading}
+            onClick={handleEtfMappingLookup}
+            disabled={totalCodes.length === 0 || queryLoading}
             className="w-full"
           >
             {queryLoading ? (
-              <><Loader2 className="h-4 w-4 animate-spin mr-2" />正在查询 {codes.length} 只基金...</>
+              <><Loader2 className="h-4 w-4 animate-spin mr-2" />正在查询 ETF 映射...</>
             ) : (
-              <><Sparkles className="h-3 w-3 mr-2" />快速查询 ({codes.length} 只) · 自动补全 + ETF 映射</>
+              <><Sparkles className="h-3 w-3 mr-2" />查找 ETF 映射 ({totalCodes.length} 只)</>
             )}
           </Button>
 
@@ -516,6 +473,34 @@ export default function AddFundDialog() {
                     </div>
                   </div>
                 )}
+
+                {/* ETF 映射结果展示 */}
+                {(() => {
+                  const etf = etfLookupResults.get(row.code.trim())
+                  if (etf === undefined) return null // 未查询
+                  if (etf === null) return (
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />未找到场内 ETF 映射
+                    </p>
+                  )
+                  return (
+                    <div className="rounded-md border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20 p-2.5 space-y-1.5">
+                      <p className="text-[10px] font-medium text-green-700 dark:text-green-400">📈 场内 ETF 映射</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={etf.exchangeCode}
+                          readOnly
+                          className="h-7 text-xs font-mono flex-1 bg-transparent border-green-200 dark:border-green-800"
+                        />
+                        <Input
+                          value={etf.exchangeName}
+                          readOnly
+                          className="h-7 text-xs flex-[2] bg-transparent border-green-200 dark:border-green-800"
+                        />
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             ))}
           </div>
@@ -539,8 +524,8 @@ export default function AddFundDialog() {
             </p>
           )}
 
-          <Button className="w-full" onClick={handleSubmit} disabled={codes.length === 0}>
-            添加 {codes.length || 0} 只基金
+          <Button className="w-full" onClick={handleSubmit} disabled={totalCodes.length === 0}>
+            添加 {totalCodes.length || 0} 只基金
           </Button>
         </div>
       </DialogContent>

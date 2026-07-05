@@ -27,19 +27,19 @@ async function ensureStocks() {
 
 /**
  * 将场内 ETF 代码转换为 stock-api 格式（带市场前缀）
- * 159xxx → SZ159xxx（深交所）
- * 51xxxx → SH51xxxx（上交所）
+ * 159xxx/16xxxx → SZ159xxx/SZ16xxxx（深交所）
+ * 51xxxx/56xxxx/58xxxx → SH51xxxx/SH56xxxx/SH58xxxx（上交所）
  * 其他原样返回
  */
 function toApiCode(code: string): string {
   if (code.startsWith('159') || code.startsWith('16')) return `SZ${code}`
-  if (code.startsWith('51') || code.startsWith('56')) return `SH${code}`
+  if (code.startsWith('51') || code.startsWith('56') || code.startsWith('58')) return `SH${code}`
   return code
 }
 
 /** 判断是否为场内 ETF/LOF 代码 */
 function isExchangeCode(code: string): boolean {
-  return code.startsWith('159') || code.startsWith('51') || code.startsWith('56') || code.startsWith('16')
+  return code.startsWith('159') || code.startsWith('51') || code.startsWith('56') || code.startsWith('58') || code.startsWith('16')
 }
 
 /**
@@ -340,14 +340,60 @@ export class StockApiAdapter implements FundDataSource {
 
       const s = await ensureStocks()
 
-      // 尝试不同精度的关键词搜索，按匹配度优先级
-      const searchTerms = [
+      // 基金公司前缀列表
+      const fundCompanies = ['华宝', '华夏', '易方达', '广发', '南方', '富国', '嘉实', '博时', '招商', '天弘', '工银', '交银', '景顺', '汇添富', '鹏华', '国泰', '东财', '万家', '国联安', '银河', '银华', '长信', '前海开源', '申万菱信', '信达澳亚', '中欧', '兴全', '兴证全球']
+
+      // 生成基础搜索词
+      const baseTerms = [
         keyword,
-        // 去掉更广泛的标签
         keyword.replace(/发起式/i, '').replace(/连接/i, '').trim(),
-        // 提取核心名称（去掉基金公司前缀）
-        keyword.replace(/^(华宝|华夏|易方达|广发|南方|富国|嘉实|博时|招商|天弘)/, '').trim(),
-      ].filter(Boolean)
+        keyword.replace(new RegExp(`^(${fundCompanies.join('|')})`), '').trim(),
+      ]
+
+      // 补充搜索策略：生成多种命名惯例变体
+      const additionalTerms: string[] = []
+      for (const term of [...new Set(baseTerms)]) {
+        if (!term || term.length < 2) continue
+
+        // 去掉市场前缀（上证/深证/沪深等）
+        const noMarket = term.replace(/^(上证|深证|沪深|中证|创业板|科创板)/, '').trim()
+        if (noMarket && noMarket !== term) additionalTerms.push(noMarket)
+
+        // 替换 "科创板" → "科创"（ETF 名称常用简写）
+        const kc = term.replace(/科创板/, '科创').trim()
+        if (kc && kc !== term) {
+          additionalTerms.push(kc)
+          additionalTerms.push(kc + 'ETF')
+        }
+
+        // 尝试加 "ETF" 后缀
+        additionalTerms.push(term + 'ETF')
+      }
+
+      // 激进简化策略：去掉所有噪音，提取核心主题词
+      // 例如 "华宝上证科创板芯片发起式" → "科创板芯片" → "科创芯片ETF"
+      for (const term of [...new Set(baseTerms)]) {
+        if (!term || term.length < 2) continue
+        // 去公司名 → 去市场前缀 → 去噪音词
+        const simplified = term
+          .replace(new RegExp(`^(${fundCompanies.join('|')})`), '')
+          .replace(/^(上证|深证|沪深|中证|创业板|科创板)/, '')
+          .replace(/发起式|连接/i, '')
+          .trim()
+        if (simplified && simplified.length >= 2) {
+          additionalTerms.push(simplified)
+          additionalTerms.push(simplified + 'ETF')
+          // 对简化结果中的 "科创板" 再做一次替换
+          const kc2 = simplified.replace(/科创板/, '科创')
+          if (kc2 !== simplified) {
+            additionalTerms.push(kc2)
+            additionalTerms.push(kc2 + 'ETF')
+          }
+        }
+      }
+
+      // 去重搜索
+      const searchTerms = [...new Set([...baseTerms, ...additionalTerms].filter(Boolean))]
 
       // 去重搜索
       const allEtfs = new Map<string, { code: string; name: string }>()
@@ -356,7 +402,7 @@ export class StockApiAdapter implements FundDataSource {
         const results = await s.auto.searchStocks(term)
         for (const r of results) {
           const c = r.code?.replace(/^(SZ|SH)/, '')
-          if (c && (c.startsWith('159') || c.startsWith('51'))) {
+          if (c && (c.startsWith('159') || c.startsWith('51') || c.startsWith('56') || c.startsWith('58') || c.startsWith('16'))) {
             const key = c
             if (!allEtfs.has(key)) {
               allEtfs.set(key, { code: c, name: r.name || '' })
@@ -373,9 +419,46 @@ export class StockApiAdapter implements FundDataSource {
         return { otcCode, otcName, exchangeCode: etf.code, exchangeName: etf.name }
       }
 
-      // 多个结果时，按成交额排序（取流动性最好的）
+      // 多个结果时，按成交额 + 匹配度排序（取流动性最好且相关性最高的）
       const etfCodes = [...allEtfs.keys()]
       const apiCodes = etfCodes.map((c) => toApiCode(c))
+      // 提取基金公司名用于匹配
+      const otcCompany = fundCompanies.find((fc) => otcName.startsWith(fc)) || ''
+
+      // 提取主题关键词用于名称匹配（如 "中证机器人"、"上证科创板芯片" 等）
+      // 保留市场/指数前缀（中证、国证、创业板、上证科创板）以更精确匹配
+      const cleanedTheme = otcName
+        .replace(/ETF/i, '').replace(/联接/i, '').replace(/连接/i, '')
+        .replace(/发起式/i, '').replace(/C$/i, '').replace(/A$/i, '')
+        .replace(/\(QDII\)/i, '').replace(/指数/i, '')
+        .replace(new RegExp(`^(${fundCompanies.join('|')})`), '') // 只去掉公司名，保留市场前缀
+        .trim()
+
+      const kwSet = new Set<string>()
+
+      // 1) 完整主题词（含市场前缀）：如 "中证机器人"、"上证科创板芯片"
+      if (cleanedTheme.length >= 2) kwSet.add(cleanedTheme)
+
+      // 2) 去掉市场前缀的短主题：如 "机器人"、"科创板芯片"
+      const noMarket = cleanedTheme.replace(/^(上证|深证|沪深|中证|创业板|科创板)/, '').trim()
+      if (noMarket && noMarket !== cleanedTheme && noMarket.length >= 2) kwSet.add(noMarket)
+
+      // 3) "科创板" → "科创" 变体：如 "科创板芯片" → "科创芯片"
+      const kcTheme = (noMarket || cleanedTheme).replace(/科创板/, '科创').trim()
+      if (kcTheme && kcTheme.length >= 2 && !kwSet.has(kcTheme)) kwSet.add(kcTheme)
+
+      // 4) 2 字滑动窗口补充（覆盖 ETF 命名习惯中的简写差异）
+      //    "中证机器人" → "中证","证机","器人" ｜ "科创芯片" → "科创","创芯","芯片"
+      for (const kw of [...kwSet]) {
+        if (kw.length >= 3) {
+          for (let i = 0; i <= kw.length - 2; i++) {
+            kwSet.add(kw.slice(i, i + 2))
+          }
+        }
+      }
+
+      const uniqueThematicKeywords = [...kwSet].filter((s) => s.length >= 2)
+
       try {
         const stocksList = await s.auto.getStocks(apiCodes)
         const scored = stocksList.map((stock: any, i: number) => ({
@@ -383,11 +466,14 @@ export class StockApiAdapter implements FundDataSource {
           name: allEtfs.get(etfCodes[i])!.name,
           amount: stock?.amount || 0,
           percent: stock?.percent || 0,
-          // 名称匹配度加分
-          nameMatch: (allEtfs.get(etfCodes[i])?.name || '').includes(keyword) ? 100 : 0,
+          // ETF 名称中是否包含主题关键词（模糊匹配）
+          nameMatch: uniqueThematicKeywords.some((kw) => (allEtfs.get(etfCodes[i])?.name || '').includes(kw)) ? 50 : 0,
+          // 同一基金公司加分（如华宝场外 → 华宝场内 ETF）
+          companyMatch: otcCompany && (allEtfs.get(etfCodes[i])?.name || '').includes(otcCompany) ? 80 : 0,
         }))
-        // 按成交额降序排列（成交额越大，流动性越好）
-        scored.sort((a: any, b: any) => (b.amount + b.nameMatch) - (a.amount + a.nameMatch))
+        // 按(成交额 + 名称匹配 + 公司匹配)降序排列
+        // 成交额相等时，公司匹配优先；都相等时，名称匹配优先
+        scored.sort((a: any, b: any) => (b.amount + b.nameMatch + b.companyMatch) - (a.amount + a.nameMatch + a.companyMatch))
         const best = scored[0]
         return { otcCode, otcName, exchangeCode: best.code, exchangeName: best.name }
       } catch {
