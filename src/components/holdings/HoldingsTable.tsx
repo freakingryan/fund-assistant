@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useHoldingsStore } from '@/stores/holdings'
+import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import type { FundHolding } from '@/types'
-import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp } from 'lucide-react'
+import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, RefreshCw } from 'lucide-react'
 import EditFundDialog from './EditFundDialog'
 import QuickAdjustDialog from './QuickAdjustDialog'
 import {
@@ -54,6 +55,10 @@ export default function HoldingsTable() {
   const [editOpen, setEditOpen] = useState(false)
   const [adjustFund, setAdjustFund] = useState<FundHolding | null>(null)
   const [adjustOpen, setAdjustOpen] = useState(false)
+
+  // 实时行情（有 ETF 映射的持仓自动获取实时估值）
+  const holdingCodes = useMemo(() => holdings.map((h) => h.code), [holdings])
+  const { valuations, refresh: refreshQuotes, loading: quotesLoading, lastUpdated } = useRealtimeQuotes(holdingCodes, 0)
 
   // 根据类型筛选持仓
   const filteredHoldings = useMemo(() => {
@@ -127,6 +132,65 @@ export default function HoldingsTable() {
         return v != null ? <span className="font-mono text-sm">{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 90,
+    }),
+    // 实时估值列（基于 ETF 实时行情或盘后净值）
+    columnHelper.display({
+      id: 'realtimePrice',
+      header: () => (
+        <span className="flex items-center gap-1">
+          实时净值
+          {quotesLoading && <RefreshCw className="h-3 w-3 animate-spin" />}
+        </span>
+      ),
+      cell: ({ row }) => {
+        const val = valuations[row.original.code]
+        if (!val || val.loading) return <span className="text-xs text-muted-foreground">加载中...</span>
+        if (!val.quote) return <span className="text-xs text-muted-foreground">-</span>
+        const color = val.quote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'
+        const prefix = val.quote.dailyChange >= 0 ? '+' : ''
+        return (
+          <div className="flex flex-col">
+            <span className={`font-mono text-sm ${color}`}>
+              ¥{val.quote.nav.toFixed(4)}
+              {val.isRealtime && <span className="text-[10px] text-muted-foreground ml-1">实时</span>}
+            </span>
+            <span className={`font-mono text-[11px] ${color}`}>
+              {prefix}{val.quote.dailyChange.toFixed(2)}%
+            </span>
+          </div>
+        )
+      },
+      size: 110,
+    }),
+    columnHelper.display({
+      id: 'realtimePnl',
+      header: '实时盈亏',
+      cell: ({ row }) => {
+        const { costNAV, shares, holdingAmount, holdingProfit } = row.original
+        const val = valuations[row.original.code]
+        if (!val || val.loading) return <span className="text-xs text-muted-foreground">加载中...</span>
+        if (!val.quote || val.quote.nav <= 0.001) return <span className="text-xs text-muted-foreground">-</span>
+
+        // 计算实时市值
+        const currentMV = (shares && val.quote.nav > 0.001) ? shares * val.quote.nav
+          : holdingAmount || 0
+        // 计算投入成本
+        const cost = (costNAV && shares) ? costNAV * shares
+          : (holdingAmount != null && holdingProfit != null) ? holdingAmount - holdingProfit
+          : 0
+        const pnl = currentMV - cost
+        const pnlRate = cost > 0 ? (pnl / cost) * 100 : 0
+        const color = pnl >= 0 ? 'text-red-500' : 'text-green-500'
+        const prefix = pnl >= 0 ? '+' : ''
+
+        return (
+          <div className="flex flex-col">
+            <span className={`font-mono text-sm ${color}`}>{prefix}¥{pnl.toFixed(2)}</span>
+            <span className={`font-mono text-[11px] ${color}`}>{prefix}{pnlRate.toFixed(2)}%</span>
+          </div>
+        )
+      },
+      size: 110,
     }),
     columnHelper.accessor('holdingAmount', {
       header: '投入金额',
@@ -256,6 +320,10 @@ export default function HoldingsTable() {
         </div>
 
         <div className="ml-auto flex gap-2">
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={refreshQuotes} disabled={quotesLoading}>
+            <RefreshCw className={`h-3 w-3 mr-1 ${quotesLoading ? 'animate-spin' : ''}`} />
+            刷新估值
+          </Button>
           {selectedIds.length > 0 && (
             <Button
               variant="destructive"
@@ -351,15 +419,20 @@ export default function HoldingsTable() {
       </div>
 
       {/* Summary */}
-      <div className="text-xs text-muted-foreground">
-        共 {holdings.length} 只基金
-        {typeFilter !== 'all' && `（已筛选: ${TYPE_LABELS[typeFilter]}）`}
-        {selectedIds.length > 0 && `，已选 ${selectedIds.length} 只`}
-        {holdings.length > 0 && ` | 参考市值: ¥${holdings.reduce((sum, h) => sum + (
-          (h.costNAV && h.shares) ? h.costNAV * h.shares
-          : h.holdingAmount ? h.holdingAmount
-          : 0
-        ), 0).toFixed(2)}`}
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div>
+          共 {holdings.length} 只基金
+          {typeFilter !== 'all' && `（已筛选: ${TYPE_LABELS[typeFilter]}）`}
+          {selectedIds.length > 0 && `，已选 ${selectedIds.length} 只`}
+          {holdings.length > 0 && ` | 参考市值: ¥${holdings.reduce((sum, h) => sum + (
+            (h.costNAV && h.shares) ? h.costNAV * h.shares
+            : h.holdingAmount ? h.holdingAmount
+            : 0
+          ), 0).toFixed(2)}`}
+        </div>
+        {lastUpdated && (
+          <span>实时估值更新于 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+        )}
       </div>
       <EditFundDialog fund={editingFund} open={editOpen} onOpenChange={setEditOpen} />
       <QuickAdjustDialog fund={adjustFund} open={adjustOpen} onOpenChange={setAdjustOpen} />

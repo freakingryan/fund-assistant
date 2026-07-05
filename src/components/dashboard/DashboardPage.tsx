@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
 import { getKlineCache, setKlineCache, deleteKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
+import RealtimePanel from './RealtimePanel'
 
 const TYPE_COLORS: Record<string, string> = {
   stock: '#ef4444', mixed: '#f97316', bond: '#22c55e', index: '#3b82f6',
@@ -331,6 +332,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 实时持仓概览 */}
+      {holdings.length > 0 && <RealtimePanel holdings={holdings} />}
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
