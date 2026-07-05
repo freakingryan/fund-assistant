@@ -134,6 +134,42 @@ class DataSourceService implements FundDataSource {
   }
 
   /**
+   * 搜索所有基金/ETF（场外 + 场内）
+   * 查询时自动识别：
+   * - 纯数字代码 → 尝试 fundgz 直接获取场外基金信息
+   * - 关键词 → 通过 stock-api 搜索场内基金/ETF
+   */
+  async searchFunds(key: string): Promise<{ code: string; name: string }[]> {
+    const results: { code: string; name: string }[] = []
+    const seen = new Set<string>()
+
+    // 1) 如果是纯数字（场外基金代码），直接查询基金信息
+    if (/^\d{6}$/.test(key)) {
+      try {
+        const info = await this.fetchFundInfo(key)
+        if (info && info.name !== key) {
+          results.push({ code: key, name: info.name })
+          seen.add(key)
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 2) 通过 stock-api 搜索场内基金/ETF
+    try {
+      const stockResults = await this.searchStocks(key)
+      for (const r of stockResults) {
+        const cleanCode = r.code.replace(/^(SZ|SH)/, '')
+        if (!seen.has(cleanCode)) {
+          results.push({ code: cleanCode, name: r.name })
+          seen.add(cleanCode)
+        }
+      }
+    } catch { /* ignore */ }
+
+    return results
+  }
+
+  /**
    * 检查所有适配器的数据源健康状态
    */
   async checkHealth(): Promise<{

@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -67,7 +66,6 @@ function makeRow(code = ''): FundRow {
 }
 
 export default function AddFundDialog() {
-  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const _addHolding = useHoldingsStore((s) => s.addHolding)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
@@ -107,7 +105,7 @@ export default function AddFundDialog() {
     const t = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const results = await dataSourceService.searchStocks(searchQuery.trim())
+        const results = await dataSourceService.searchFunds(searchQuery.trim())
         setSearchResults(results.slice(0, 20))
       } catch { setSearchResults([]) }
       setSearchLoading(false)

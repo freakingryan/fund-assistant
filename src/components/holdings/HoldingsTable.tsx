@@ -118,19 +118,41 @@ export default function HoldingsTable() {
       },
       size: 80,
     }),
-    columnHelper.accessor('costNAV', {
+    columnHelper.display({
+      id: 'costNAV',
       header: '成本净值',
-      cell: ({ getValue }) => {
-        const v = getValue()
-        return v != null ? <span className="font-mono text-sm">¥{v.toFixed(4)}</span> : <span className="text-xs text-muted-foreground">-</span>
+      cell: ({ row }) => {
+        const { costNAV: storedNAV, holdingAmount, holdingShares } = row.original
+        const code = row.original.code
+        const val = valuations[code]
+        const currentNAV = val?.quote?.nav
+        // 优先存储值，否则反算：投入本金 / 份额
+        const investment = (storedNAV && holdingShares) ? storedNAV * holdingShares
+          : (holdingAmount != null && row.original.holdingProfit != null) ? holdingAmount - row.original.holdingProfit
+          : 0
+        const shares = holdingShares || (currentNAV && currentNAV > 0 ? Math.round((holdingAmount || 0) / currentNAV * 100) / 100 : 0)
+        const nav = storedNAV || (investment && shares ? investment / shares : 0)
+        if (nav > 0) {
+          return <span className="font-mono text-sm">{storedNAV ? '¥' : '≈¥'}{nav.toFixed(4)}</span>
+        }
+        return <span className="text-xs text-muted-foreground">-</span>
       },
       size: 100,
     }),
-    columnHelper.accessor('shares', {
+    columnHelper.display({
+      id: 'shares',
       header: '份额',
-      cell: ({ getValue }) => {
-        const v = getValue()
-        return v != null ? <span className="font-mono text-sm">{v.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
+      cell: ({ row }) => {
+        const { shares: storedShares, holdingAmount } = row.original
+        const code = row.original.code
+        const val = valuations[code]
+        const currentNAV = val?.quote?.nav
+        // 优先存储值，否则反算
+        const shares = storedShares || (currentNAV && currentNAV > 0 ? Math.round((holdingAmount || 0) / currentNAV * 100) / 100 : 0)
+        if (shares > 0) {
+          return <span className="font-mono text-sm">{storedShares ? shares.toFixed(2) : `≈${shares.toFixed(2)}`}</span>
+        }
+        return <span className="text-xs text-muted-foreground">-</span>
       },
       size: 90,
     }),

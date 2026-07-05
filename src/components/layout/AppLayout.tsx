@@ -51,7 +51,7 @@ export default function AppLayout() {
     const t = setTimeout(async () => {
       setSearchLoading(true)
       try {
-        const results = await dataSourceService.searchStocks(globalSearch.trim())
+        const results = await dataSourceService.searchFunds(globalSearch.trim())
         setSearchResults(results.slice(0, 15))
       } catch { setSearchResults([]) }
       setSearchLoading(false)
