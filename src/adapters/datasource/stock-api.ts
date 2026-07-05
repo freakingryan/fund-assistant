@@ -338,18 +338,63 @@ export class StockApiAdapter implements FundDataSource {
         .replace(/\(QDII\)/i, '').replace(/指数/i, '')
         .trim()
 
-      // 通过 stock-api 搜索匹配的 ETF
       const s = await ensureStocks()
-      const results = await s.auto.searchStocks(keyword)
-      // 过滤出 ETF 代码（159xxx / 51xxx）
-      const etf = results.find((r: any) => {
-        const c = r.code?.replace(/^(SZ|SH)/, '')
-        return c && (c.startsWith('159') || c.startsWith('51'))
-      })
-      if (!etf) return null
 
-      const exCode = etf.code?.replace(/^(SZ|SH)/, '') || ''
-      return { otcCode, otcName, exchangeCode: exCode, exchangeName: etf.name || '' }
+      // 尝试不同精度的关键词搜索，按匹配度优先级
+      const searchTerms = [
+        keyword,
+        // 去掉更广泛的标签
+        keyword.replace(/发起式/i, '').replace(/连接/i, '').trim(),
+        // 提取核心名称（去掉基金公司前缀）
+        keyword.replace(/^(华宝|华夏|易方达|广发|南方|富国|嘉实|博时|招商|天弘)/, '').trim(),
+      ].filter(Boolean)
+
+      // 去重搜索
+      const allEtfs = new Map<string, { code: string; name: string }>()
+      for (const term of [...new Set(searchTerms)]) {
+        if (term.length < 2) continue
+        const results = await s.auto.searchStocks(term)
+        for (const r of results) {
+          const c = r.code?.replace(/^(SZ|SH)/, '')
+          if (c && (c.startsWith('159') || c.startsWith('51'))) {
+            const key = c
+            if (!allEtfs.has(key)) {
+              allEtfs.set(key, { code: c, name: r.name || '' })
+            }
+          }
+        }
+      }
+
+      if (allEtfs.size === 0) return null
+
+      // 如果只有1个结果，直接返回
+      if (allEtfs.size === 1) {
+        const etf = [...allEtfs.values()][0]
+        return { otcCode, otcName, exchangeCode: etf.code, exchangeName: etf.name }
+      }
+
+      // 多个结果时，按成交额排序（取流动性最好的）
+      const etfCodes = [...allEtfs.keys()]
+      const apiCodes = etfCodes.map((c) => toApiCode(c))
+      try {
+        const stocksList = await s.auto.getStocks(apiCodes)
+        const scored = stocksList.map((stock: any, i: number) => ({
+          code: etfCodes[i],
+          name: allEtfs.get(etfCodes[i])!.name,
+          amount: stock?.amount || 0,
+          percent: stock?.percent || 0,
+          // 名称匹配度加分
+          nameMatch: (allEtfs.get(etfCodes[i])?.name || '').includes(keyword) ? 100 : 0,
+        }))
+        // 按成交额降序排列（成交额越大，流动性越好）
+        scored.sort((a: any, b: any) => (b.amount + b.nameMatch) - (a.amount + a.nameMatch))
+        const best = scored[0]
+        return { otcCode, otcName, exchangeCode: best.code, exchangeName: best.name }
+      } catch {
+        // 获取行情失败，直接返回第一个结果
+        const etf = [...allEtfs.values()][0]
+        return { otcCode, otcName, exchangeCode: etf.code, exchangeName: etf.name }
+      }
     } catch { return null }
   }
 

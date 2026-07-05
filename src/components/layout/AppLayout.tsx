@@ -10,6 +10,7 @@ import {
   LineChart,
   SunMoon,
   Search,
+  Loader2,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -44,7 +45,7 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (!globalSearch.trim() || globalSearch.trim().length < 2) {
-      setSearchResults([])
+      if (searchResults.length > 0) setSearchResults([])
       return
     }
     const t = setTimeout(async () => {
@@ -56,6 +57,7 @@ export default function AppLayout() {
       setSearchLoading(false)
     }, 300)
     return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
   }, [globalSearch])
 
   // 点击外部关闭搜索结果
@@ -69,7 +71,7 @@ export default function AppLayout() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const handleSearchSelect = (code: string) => {
+  const handleSearchSelect = (_code: string) => {
     setGlobalSearch('')
     setSearchResults([])
     navigate(`/holdings`)
