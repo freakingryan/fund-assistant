@@ -9,9 +9,10 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
+import { Button } from '@/components/ui/button'
 import {
   TrendingUp, Wallet, BarChart3, PieChartIcon,
-  DollarSign, Percent, Loader2, AlertCircle,
+  DollarSign, Percent, Loader2, AlertCircle, RefreshCw,
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
 import { getKlineCache, setKlineCache, deleteKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
@@ -265,17 +266,10 @@ export default function DashboardPage() {
             {quotesUpdateTime && <span className="text-[10px] text-muted-foreground ml-2">数据更新于 {quotesUpdateTime}</span>}
           </div>
         </div>
-        <button
-          onClick={handleRefreshQuotes}
-          disabled={quotesRefreshing}
-          className="text-xs px-2 py-1 rounded border hover:bg-muted/50 transition-colors cursor-pointer disabled:opacity-50 shrink-0"
-        >
-          {quotesRefreshing ? (
-            <><Loader2 className="h-3 w-3 inline mr-1 animate-spin" />刷新中</>
-          ) : (
-            <>⟳ 刷新数据</>
-          )}
-        </button>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleRefreshQuotes} disabled={quotesRefreshing}>
+          <RefreshCw className={`h-3 w-3 mr-1 ${quotesRefreshing ? 'animate-spin' : ''}`} />
+          刷新数据
+        </Button>
       </div>
 
       {/* Summary Cards */}
@@ -327,8 +321,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <PieChartIcon className="h-3 w-3" />持仓基金
             </div>
-            <p className="text-xl font-bold tracking-tight">{holdings.length}</p>
-            <p className="text-[10px] text-muted-foreground">只</p>
+            <p className="text-xl font-bold tracking-tight whitespace-nowrap">{holdings.length}<span className="text-xs text-muted-foreground font-normal ml-1">只</span></p>
           </CardContent>
         </Card>
       </div>

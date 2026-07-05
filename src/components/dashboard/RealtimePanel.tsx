@@ -91,6 +91,14 @@ export default function RealtimePanel({ holdings }: Props) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
+        {/* 列标题 */}
+        <div className="hidden sm:flex items-center px-4 py-1.5 text-[10px] text-muted-foreground border-b">
+          <div className="flex-1" />
+          <div className="w-[90px] text-right shrink-0">最新价</div>
+          <div className="w-[64px] text-right shrink-0">涨跌幅</div>
+          <div className="w-[100px] text-right shrink-0">盈亏</div>
+          <div className="w-[80px] text-right shrink-0">市值</div>
+        </div>
         <div className="divide-y">
           {sorted.map(({ holding, quote, mv, pnl, pnlRate, loading: itemLoading }) => {
             const isProfit = pnl >= 0
@@ -132,7 +140,7 @@ export default function RealtimePanel({ holdings }: Props) {
                 </div>
 
                 {/* 盈亏 */}
-                <div className="w-[100px] text-right shrink-0">
+                <div className="w-[100px] text-right shrink-0 whitespace-nowrap">
                   <span className={`font-mono ${isProfit ? 'text-red-500' : 'text-green-500'}`}>
                     {pnl >= 0 ? '+' : '-'}¥{Math.abs(pnl).toFixed(2)}
                   </span>

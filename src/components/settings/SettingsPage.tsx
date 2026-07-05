@@ -242,8 +242,8 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <Label>默认 AI 平台</Label>
                 <Select
-                  value={settings.defaultAIProvider}
-                  onValueChange={(v) => updateSettings({ defaultAIProvider: v as any })}
+                  value={settings.aiConfigs.some((c) => c.apiKey && c.provider === settings.defaultAIProvider) ? settings.defaultAIProvider : '__placeholder__'}
+                  onValueChange={(v) => v !== '__placeholder__' && updateSettings({ defaultAIProvider: v as any })}
                 >
                   <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择默认使用的平台" /></SelectTrigger>
                   <SelectContent>
@@ -256,7 +256,7 @@ export default function SettingsPage() {
                       </SelectItem>
                     ))}
                     {settings.aiConfigs.filter((c) => c.apiKey).length === 0 && (
-                      <SelectItem value="" disabled>请先配置并测试通过 API Key</SelectItem>
+                      <SelectItem value="__placeholder__" disabled>请先配置并测试通过 API Key</SelectItem>
                     )}
                   </SelectContent>
                 </Select>

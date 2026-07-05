@@ -3,6 +3,7 @@ import type { KLineData, FundQuote } from '@/types'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -98,17 +99,13 @@ export default function KlineChartCard({
               </>
             )}
             {onRefreshQuote && etfCode && (
-              <button onClick={onRefreshQuote} disabled={quoteRefreshing}
-                className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                title="刷新行情">
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onRefreshQuote} disabled={quoteRefreshing} title="刷新行情">
                 {quoteRefreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              </button>
+              </Button>
             )}
-            <button onClick={handleRefreshKline} disabled={refreshing.kline}
-              className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-              title={useEtfKline ? '刷新K线' : '刷新净值'}>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleRefreshKline} disabled={refreshing.kline} title={useEtfKline ? '刷新K线' : '刷新净值'}>
               {refreshing.kline ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            </button>
+            </Button>
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger className="h-7 text-xs w-[62px]"><SelectValue /></SelectTrigger>
               <SelectContent>
