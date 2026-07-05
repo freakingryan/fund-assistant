@@ -1,36 +1,38 @@
 /**
- * JSONP 工具模块（共享给 stock-api 和 eastmoney 适配器）
+ * 数据获取工具模块
  *
- * fundgz.1234567.com.cn 返回 JSONP 格式：jsonpgz({ fundcode, ... })
- * fund.eastmoney.com/pingzhongdata/{code}.js 通过 <script> 加载设置全局变量
- * 浏览器必须用 <script> 标签加载（不支持 CORS），该模块提供统一支持。
+ * fundgz.1234567.com.cn — 基金实时估算净值（JSONP，无 CORS）
+ * fund.eastmoney.com/pingzhongdata — 基金历史数据（JS，无 CORS）
+ *
+ * 策略：
+ * 1. Vite dev server 下：通过 Vite proxy（/fundgz, /pingzhongdata）用 fetch 获取，
+ *    同源请求无 CORS 问题。
+ * 2. 生产环境（GitHub Pages）/Vite proxy 不可用时：用 <script> 标签（JSONP）加载。
  */
 
-type Resolver = (data: any) => void
+// ── 工具函数 ─────────────────────────────────────
 
-// 按 fundcode 分派的 pending 请求
+/** 判断是否在 Vite dev server 下运行（可通过 proxy 走 fetch） */
+function isViteDev(): boolean {
+  return typeof window !== 'undefined' && !!window.location.port && window.location.port !== '8080'
+}
+
+/** 解析 fundgz JSONP 响应文本 {@code jsonpgz({...})} */
+function parseGzJsonp(text: string): any {
+  const m = text.trim().match(/^jsonpgz\((.+)\);?\s*$/)
+  return m ? JSON.parse(m[1]) : null
+}
+
+// ── JSONP 回调（生产环境降级） ──────────────────────
+type Resolver = (data: any) => void
 const pending = new Map<string, Resolver>()
 
-// pingzhongdata 脚本加载完成的回调
-type PingZhongResolver = (vars: Record<string, any>) => void
-const pingZhongPending = new Map<string, PingZhongResolver>()
-
-/**
- * 确保全局 jsonpgz 回调已注册。
- * 多次调用安全，只会注册一次。
- */
 function ensureGlobalCallback() {
   if ((window as any).__jsonpgzRegistered) return
   ;(window as any).__jsonpgzRegistered = true
-
-  // 备份旧的 jsonpgz（如果有其他库已经注册）
   const old = (window as any).jsonpgz
-
   ;(window as any).jsonpgz = (data: any) => {
-    // 通知旧的回调
     if (old) old(data)
-
-    // 按 fundcode 分派
     const code = data?.fundcode
     if (code && pending.has(code)) {
       pending.get(code)!(data)
@@ -39,55 +41,76 @@ function ensureGlobalCallback() {
   }
 }
 
-/**
- * 通过 JSONP 加载 fundgz.1234567.com.cn 的基金实时估算净值。
- * @param code 基金代码，如 021533
- * @param timeout 超时毫秒数，默认 10000
- * @returns JSONP 响应数据（fundcode, name, dwjz, gsz, gszzl, jzrq, gztime）
- */
-export function fetchFundGzJsonp(code: string, timeout = 10000): Promise<any> {
+function loadJsonp(code: string, timeout: number): Promise<any> {
   return new Promise((resolve, reject) => {
     ensureGlobalCallback()
     pending.set(code, resolve)
-
     const el = document.createElement('script')
-    const url = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
-    el.src = url
-    el.onerror = () => {
-      pending.delete(code)
-      reject(new Error(`JSONP 加载失败: ${url}`))
-    }
+    el.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
+    el.onerror = () => { pending.delete(code); reject(new Error('JSONP 加载失败')) }
     document.head.appendChild(el)
-
     setTimeout(() => {
-      if (pending.has(code)) {
-        pending.delete(code)
-        reject(new Error(`JSONP 超时: ${code}`))
-      }
+      if (pending.has(code)) { pending.delete(code); reject(new Error('JSONP 超时')) }
     }, timeout)
   })
 }
 
-/**
- * 通过 <script> 加载 fund.eastmoney.com/pingzhongdata/{code}.js
- * 该 JS 文件包含基金的历史净值、持仓等数据，无需执行 JS 引擎。
- * 脚本加载后会自动设置全局变量，我们通过轮询方式读取。
- *
- * @param code 基金代码
- * @param timeout 超时毫秒数，默认 15000
- * @returns 包含基金数据的对象（Data_netWorthTrend, Data_ACWorthTrend 等）
- */
-export function fetchFundPingZhongData(code: string, timeout = 15000): Promise<Record<string, any>> {
-  return new Promise((resolve, reject) => {
-    const el = document.createElement('script')
-    const url = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
-    el.src = url
+// ── 公开 API ─────────────────────────────────────
 
-    // 脚本加载后，全局变量会被设置，轮询读取
+/**
+ * 获取基金实时估算净值。
+ * 优先走 Vite proxy（开发环境），降级到 JSONP（生产环境）。
+ */
+export async function fetchFundGzJsonp(code: string, timeout = 10000): Promise<any> {
+  if (isViteDev()) {
+    // 开发环境：通过 Vite proxy 用 fetch 获取（同源，无 CORS）
+    const res = await fetch(`/fundgz/js/${code}.js?rt=${Date.now()}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    const data = parseGzJsonp(text)
+    if (!data || data.fundcode !== code) throw new Error('数据解析失败')
+    return data
+  }
+  // 生产环境：用 JSONP 方式加载
+  return loadJsonp(code, timeout)
+}
+
+/**
+ * 获取基金历史数据（净值走势、持仓等）。
+ * 优先走 Vite proxy，降级到 <script> 标签加载。
+ */
+export async function fetchFundPingZhongData(code: string, timeout = 15000): Promise<Record<string, any>> {
+  if (isViteDev()) {
+    // 开发环境：通过 Vite proxy 获取
+    const res = await fetch(`/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    // 用正则提取已知的全局变量赋值
+    const vars: Record<string, any> = {}
+    const extractVar = (name: string) => {
+      // 匹配 var name = [...] 或 var name = {...}
+      const re = new RegExp(`var ${name}\\s*=\\s*(\\[.+?\\]|\\{.+?\\});`, 's')
+      const m = text.match(re)
+      if (m) {
+        try { vars[name] = JSON.parse(m[1]) } catch { /* skip */ }
+      }
+    }
+    ;[
+      'Data_netWorthTrend', 'Data_ACWorthTrend', 'Data_assetAllocation',
+      'Data_fundSharesPositions', 'Data_fluctuationScale', 'Data_holderStructure',
+      'Data_currentFundManager', 'Data_buySedemption', 'Data_performanceEvaluation',
+      'fS_name', 'fS_code', 'stockCodes', 'stockCodesNew',
+    ].forEach(extractVar)
+    return vars
+  }
+
+  // 生产环境：用 <script> 标签加载
+  const vars: Record<string, any> = await new Promise((resolve, reject) => {
+    const el = document.createElement('script')
+    el.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
     el.onload = () => {
-      const vars: Record<string, any> = {}
-      // 尝试读取已知的全局变量
-      const knownVars = [
+      const result: Record<string, any> = {}
+      const known = [
         'Data_netWorthTrend', 'Data_ACWorthTrend', 'Data_assetAllocation',
         'Data_fundSharesPositions', 'Data_fluctuationScale',
         'Data_holderStructure', 'Data_rateInSimilarPersent',
@@ -96,37 +119,21 @@ export function fetchFundPingZhongData(code: string, timeout = 15000): Promise<R
         'fS_name', 'fS_code', 'stockCodes', 'stockCodesNew',
         'fund_Rate', 'fund_minsg', 'syl_', 'zqCodes',
       ]
-      for (const v of knownVars) {
-        if ((window as any)[v] !== undefined) {
-          vars[v] = (window as any)[v]
-        }
+      for (const v of known) {
+        if ((window as any)[v] !== undefined) result[v] = (window as any)[v]
       }
-      // 清理全局变量（var 声明的属性不可 delete，设为 undefined）
-      knownVars.forEach((v) => { (window as any)[v] = undefined })
-      // 移除 script 元素
+      known.forEach((v) => { (window as any)[v] = undefined })
       el.remove()
-      resolve(vars)
+      resolve(result)
     }
-
-    el.onerror = () => {
-      el.remove()
-      reject(new Error(`pingzhongdata 加载失败: ${url}`))
-    }
-
+    el.onerror = () => { el.remove(); reject(new Error('pingzhongdata 加载失败')) }
     document.head.appendChild(el)
-
     setTimeout(() => {
-      // 超时清理
       if (document.head.contains(el)) {
         el.remove()
-        const knownVars = [
-          'Data_netWorthTrend', 'Data_ACWorthTrend', 'Data_assetAllocation',
-          'Data_fundSharesPositions', 'Data_fluctuationScale',
-          'Data_holderStructure', 'fS_name',
-        ]
-        knownVars.forEach((v) => { (window as any)[v] = undefined })
-        reject(new Error(`pingzhongdata 超时: ${code}`))
+        reject(new Error('pingzhongdata 超时'))
       }
     }, timeout)
   })
+  return vars
 }

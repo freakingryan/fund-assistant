@@ -8,7 +8,19 @@ export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : '/fund-assistant/',
   server: {
     proxy: {
-      // 开发环境下将 /aktools 请求代理到本地 AKTools 服务，避免 CORS
+      // 开发模式下代理基金实时估算 API（fundgz.1234567.com.cn 无 CORS）
+      '/fundgz': {
+        target: 'https://fundgz.1234567.com.cn',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/fundgz/, ''),
+      },
+      // 开发模式下代理基金数据 JS（pingzhongdata 无 CORS）
+      '/pingzhongdata': {
+        target: 'https://fund.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/pingzhongdata/, ''),
+      },
+      // 保留 AKTools 代理（兼容旧配置，不启用也不会报错）
       '/aktools': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
