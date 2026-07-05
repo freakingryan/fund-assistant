@@ -75,6 +75,7 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
   const [exchangeName, setExchangeName] = useState('')
   const [etfSearchLoading, setEtfSearchLoading] = useState(false)
   const [etfSearchResults, setEtfSearchResults] = useState<{ exchangeCode: string; exchangeName: string }[]>([])
+  const [etfKeyword, setEtfKeyword] = useState('')
 
   // 当前基金的映射索引
   const currentMappingIndex = fund ? etfMappings.findIndex((m) => m.otcCode === fund.code) : -1
@@ -164,12 +165,29 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
 
   // AI 搜索替补 ETF
   const handleSearchEtf = async () => {
-    const searchKeyword = name || code
+    const searchKeyword = etfKeyword || name || code
     if (!searchKeyword.trim()) { toast({ type: 'warning', message: '请输入基金名称或代码' }); return }
     setEtfSearchLoading(true)
     setEtfSearchResults([])
     try {
-      // 先尝试 stock-api 的 ETF 数据源匹配
+      // 1) 通过 stock-api 关键词搜索 ETF
+      try {
+        const results = await dataSourceService.searchStocks(searchKeyword.trim())
+        const etfs = results.filter((r: any) => {
+          const c = r.code.replace(/^(SZ|SH)/, '')
+          return c && (c.startsWith('159') || c.startsWith('51') || c.startsWith('56'))
+        })
+        if (etfs.length > 0) {
+          setEtfSearchResults(etfs.map((r: any) => ({
+            exchangeCode: r.code.replace(/^(SZ|SH)/, ''),
+            exchangeName: r.name,
+          })))
+          setEtfSearchLoading(false)
+          return
+        }
+      } catch { /* fallback */ }
+
+      // 2) 通过 OTC 代码自动匹配
       try {
         const result = await dataSourceService.queryEtfMapping(code.trim())
         if (result?.exchangeCode) {
@@ -179,7 +197,7 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
         }
       } catch { /* fallback */ }
 
-      // 通过 AI 搜索相近 ETF
+      // 3) AI 搜索替补 ETF
       try {
         const aiResult = await fetchEtfMapping(code.trim())
         if (aiResult?.exchangeCode) {
@@ -189,8 +207,7 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
         }
       } catch { /* fallback */ }
 
-      // 提示用户手动输入
-      toast({ type: 'info', message: '未自动匹配到 ETF，请手动搜索或输入场内代码' })
+      toast({ type: 'info', message: '未自动匹配到 ETF，请手动输入场内代码' })
     } catch (err) {
       toast({ type: 'error', message: String(err) })
     }
@@ -397,31 +414,49 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
                   </div>
                 )}
 
-                {/* AI 搜索替补 ETF */}
-                <div className="flex gap-1.5">
-                  <Input
-                    value={exchangeCode}
-                    onChange={(e) => setExchangeCode(e.target.value)}
-                    placeholder="场内 ETF 代码（如 159558）"
-                    className="h-7 text-xs font-mono flex-1"
-                  />
-                  <Input
-                    value={exchangeName}
-                    onChange={(e) => setExchangeName(e.target.value)}
-                    placeholder="ETF 名称（选填）"
-                    className="h-7 text-xs flex-1"
-                  />
-                  <Button
-                    variant="secondary" size="sm" className="h-7 text-xs shrink-0"
-                    onClick={handleSearchEtf}
-                    disabled={etfSearchLoading || !code.trim()}
-                  >
-                    {etfSearchLoading ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Search className="h-3 w-3" />
-                    )}
-                  </Button>
+                {/* 搜索替补 ETF */}
+                <div className="space-y-1.5">
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={etfKeyword}
+                      onChange={(e) => setEtfKeyword(e.target.value)}
+                      placeholder="搜索 ETF 名称（如 半导体设备）"
+                      className="h-7 text-xs flex-1"
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSearchEtf() }}
+                    />
+                    <Button
+                      variant="secondary" size="sm" className="h-7 text-xs shrink-0"
+                      onClick={handleSearchEtf}
+                      disabled={etfSearchLoading}
+                    >
+                      {etfSearchLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Search className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={exchangeCode}
+                      onChange={(e) => setExchangeCode(e.target.value)}
+                      placeholder="场内 ETF 代码（如 159558）"
+                      className="h-7 text-xs font-mono flex-1"
+                    />
+                    <Input
+                      value={exchangeName}
+                      onChange={(e) => setExchangeName(e.target.value)}
+                      placeholder="ETF 名称（选填）"
+                      className="h-7 text-xs flex-1"
+                    />
+                    <Button
+                      variant="secondary" size="sm" className="h-7 text-xs shrink-0"
+                      onClick={handleSaveMapping}
+                      disabled={!exchangeCode.trim()}
+                    >
+                      保存
+                    </Button>
+                  </div>
                 </div>
 
                 {/* AI 搜索结果 */}

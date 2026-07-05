@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   WalletCards,
@@ -9,13 +9,16 @@ import {
   X,
   LineChart,
   SunMoon,
+  Search,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
+import { dataSourceService } from '@/adapters/datasource/service'
 import InstallPrompt from './InstallPrompt'
 
 const navItems = [
@@ -31,6 +34,46 @@ export default function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const theme = useSettingsStore((s) => s.settings.theme)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const navigate = useNavigate()
+
+  // 全局搜索
+  const [globalSearch, setGlobalSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!globalSearch.trim() || globalSearch.trim().length < 2) {
+      setSearchResults([])
+      return
+    }
+    const t = setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        const results = await dataSourceService.searchStocks(globalSearch.trim())
+        setSearchResults(results.slice(0, 15))
+      } catch { setSearchResults([]) }
+      setSearchLoading(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [globalSearch])
+
+  // 点击外部关闭搜索结果
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchResults([])
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleSearchSelect = (code: string) => {
+    setGlobalSearch('')
+    setSearchResults([])
+    navigate(`/holdings`)
+  }
 
   const cycleTheme = () => {
     const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'
@@ -110,6 +153,36 @@ export default function AppLayout() {
             >
               {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
+            {/* 全局搜索 */}
+            <div ref={searchRef} className="relative w-full max-w-xs">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                placeholder="搜索基金/ETF..."
+                className="pl-8 h-8 text-xs"
+              />
+              {searchLoading && (
+                <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+              )}
+              {searchResults.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-72 overflow-auto">
+                  <div className="px-3 py-1.5 text-[10px] text-muted-foreground border-b">
+                    找到 {searchResults.length} 个结果，点击跳转到持仓管理
+                  </div>
+                  {searchResults.map((r) => (
+                    <button
+                      key={r.code}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-xs hover:bg-accent text-left cursor-pointer"
+                      onClick={() => handleSearchSelect(r.code)}
+                    >
+                      <span className="font-mono text-[10px] text-muted-foreground w-20">{r.code.replace(/^(SZ|SH)/, '')}</span>
+                      <span className="truncate">{r.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <div className="flex-1" />
             <button
               onClick={cycleTheme}
