@@ -5,7 +5,9 @@
  * 安装：npm install stock-api
  * 文档：https://github.com/zhangxiangliang/stock-api
  *
- * 数据源优先级：腾讯 → 新浪 → 东方财富（stocks.auto 自动兜底）
+ * 数据源优先级：
+ * - ETF/股票 → stock-api（腾讯 → 新浪 → 东方财富 自动兜底）
+ * - 场外基金 → fundgz.1234567.com.cn（天天基金实时估算净值）
  *
  * 代码格式：SH510500（沪市）、SZ159558（深市）、HK02020（港股）、USDJI（美股）
  */
@@ -34,6 +36,11 @@ function toApiCode(code: string): string {
   return code
 }
 
+/** 判断是否为场内 ETF/LOF 代码 */
+function isExchangeCode(code: string): boolean {
+  return code.startsWith('159') || code.startsWith('51') || code.startsWith('56') || code.startsWith('16')
+}
+
 /**
  * 计算 period 对应的 K 线条数
  */
@@ -45,6 +52,39 @@ function periodToCount(period: string): number {
     case '1y': return 250
     default: return 66
   }
+}
+
+/**
+ * 从 fundgz.1234567.com.cn 获取场外基金实时估算净值
+ * 返回格式：jsonpgz({ fundcode, name, jzrq, dwjz, gsz, gszzl, gztime })
+ * 文档：天天基金开放接口
+ */
+async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
+  try {
+    const url = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
+    const res = await fetch(url)
+    if (!res.ok) return null
+    const text = await res.text()
+    // 解析 JSONP: jsonpgz({...})
+    const match = text.trim().match(/^jsonpgz\((.+)\);?\s*$/)
+    if (!match) return null
+    const data = JSON.parse(match[1])
+    if (!data || data.fundcode !== code) return null
+
+    // gsz: 估算净值, gszzl: 估算涨跌幅(%), dwjz: 昨日单位净值, jzrq: 净值日期
+    const gsz = Number(data.gsz) || 0
+    const gszzl = Number(data.gszzl) || 0
+    const dwjz = Number(data.dwjz) || 0
+
+    return {
+      code,
+      name: String(data.name || code),
+      nav: gsz > 0 ? gsz : dwjz,     // 优先估算净值，其次昨日净值
+      accNav: 0,
+      dailyChange: gszzl,
+      navDate: String(data.gztime || data.jzrq || '').slice(0, 10),
+    }
+  } catch { return null }
 }
 
 export class StockApiAdapter implements FundDataSource {
@@ -73,32 +113,50 @@ export class StockApiAdapter implements FundDataSource {
 
   /**
    * 获取实时行情
-   * 适用于场内 ETF：通过 stocks.auto.getStocks 实时行情
-   * 返回 FundQuote 格式（兼容基金净值）
+   * - 场内 ETF/股票 → stock-api（腾讯接口实时行情）
+   * - 场外基金 → fundgz.1234567.com.cn（天天基金实时估算净值）
    */
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
-    try {
-      const s = await ensureStocks()
-      const apiCodes = codes.map(toApiCode)
-      const stocksList = await s.auto.getStocks(apiCodes)
 
-      return codes.map((code, i) => {
-        const stock = stocksList[i]
-        if (stock && stock.now > 0 && stock.name) {
-          return {
-            code,
-            name: stock.name,
-            // stock-api 的 percent 是小数格式（0.01 = 1%），转为百分比
-            nav: stock.now,
-            accNav: 0,
-            dailyChange: stock.percent * 100,
-            navDate: new Date().toISOString().slice(0, 10),
+    const etfCodes = codes.filter(isExchangeCode)
+    const fundCodes = codes.filter((c) => !isExchangeCode(c))
+    const results: FundQuote[] = []
+
+    // 1) 场内 ETF：通过 stock-api 获取实时行情
+    if (etfCodes.length > 0) {
+      try {
+        const s = await ensureStocks()
+        const apiCodes = etfCodes.map(toApiCode)
+        const stocksList = await s.auto.getStocks(apiCodes)
+        for (let i = 0; i < etfCodes.length; i++) {
+          const stock = stocksList[i]
+          if (stock && stock.now > 0 && stock.name) {
+            results.push({
+              code: etfCodes[i],
+              name: stock.name,
+              nav: stock.now,
+              accNav: 0,
+              dailyChange: stock.percent * 100,
+              navDate: new Date().toISOString().slice(0, 10),
+            })
           }
         }
-        return { code, name: `ETF ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' }
-      })
-    } catch { return [] }
+      } catch { /* fallback to fundgz */ }
+    }
+
+    // 2) 场外基金：通过 fundgz.1234567.com.cn 获取实时估算净值
+    if (fundCodes.length > 0) {
+      const fundQuotes = await Promise.allSettled(fundCodes.map(fetchFundGzQuote))
+      for (let i = 0; i < fundCodes.length; i++) {
+        const q = fundQuotes[i]
+        if (q.status === 'fulfilled' && q.value) {
+          results.push(q.value)
+        }
+      }
+    }
+
+    return results
   }
 
   /**
