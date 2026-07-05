@@ -1,5 +1,6 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
+import { stockApiAdapter } from './stock-api'
 import { tushareAdapter } from './tushare'
 import { eastMoneyAdapter } from './eastmoney'
 import { akshareAdapter } from './akshare'
@@ -14,17 +15,20 @@ class DataSourceService implements FundDataSource {
     const akshareURL = useSettingsStore.getState().settings.dataSource.akshareURL
     const primary = useSettingsStore.getState().settings.dataSource.primarySource
 
-    // 1. AKShare（本地运行 AKTools，最可靠）— 始终优先尝试
-    if (akshareURL || akshareAdapter.baseURL) {
+    // 1. stock-api（纯前端，零后端依赖，腾讯/新浪/东方财富自动兜底）
+    adapters.push(stockApiAdapter)
+
+    // 2. AKShare（需要本地运行 AKTools 或 Railway 部署）
+    if (akshareURL || (akshareAdapter as any).baseURL) {
       adapters.push(akshareAdapter)
     }
 
-    // 2. Tushare
+    // 3. Tushare
     if (primary === 'tushare' && tushareAdapter.isConfigured()) {
       adapters.push(tushareAdapter)
     }
 
-    // 3. 东方财富 JSONP（免费，无需配置）
+    // 4. 东方财富 JSONP（免费，无需配置）
     adapters.push(eastMoneyAdapter)
 
     return adapters
