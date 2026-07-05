@@ -12,6 +12,7 @@
 - **数据导入** — CSV/Excel 文件导入（自动映射列名）+ AI 截图识别导入
 - **自动分类** — 根据基金代码和名称自动识别：市场（A股/港股/美股）、类型（股票型/混合型/债券型/指数型/QDII/货币型/ETF）、领域（科技/消费/医药/新能源/金融/制造/宽基/全球/债市/大宗商品/地产）
 - **快速查询** — 输入基金代码，自动补全名称、类型、投资领域、ETF 映射（带 IndexedDB 缓存）
+- **股票/ETF 搜索** — 添加基金时支持关键词搜索（如输入"半导体"搜索到半导体ETF），点击搜索结果自动添加
 
 ### 📈 数据看板
 - **摘要卡片** — 总市值、持仓盈亏、收益率、今日涨跌、基金数量
@@ -26,7 +27,7 @@
 - **综合评分** — 多指标融合信号评分（MA/MACD/RSI/Bollinger/形态/量能），权重公开可调
 - **重仓股穿透** — 前十大重仓股及占比
 - **Prompt 生成** — 三种模板：持仓诊断 / 调仓建议 / K 线增强，一键复制
-- **缓存智能过期** — K 线/行情/排行/基金信息按 A 股交易时段自动刷新，盘尾段手动刷新
+- **缓存智能过期** — K 线/行情/基金信息按 A 股交易时段自动刷新，盘尾段手动刷新
 - **更新时间显示** — 各卡片标题旁显示「更新于 HH:MM」
 
 ### ⚙️ 投资计划
@@ -60,7 +61,7 @@
 
 ### 💾 数据持久化
 - **IndexedDB 本地存储**（Dexie.js），清除浏览器数据会丢失
-- **多层缓存** — K 线/行情/排行/基金信息/ETF 映射，含 A 股交易时间智能过期策略
+- **多层缓存** — K 线/行情/基金信息/ETF 映射，含 A 股交易时间智能过期策略
 - **数据备份** — 导出/导入 JSON 文件
 - **云端同步** — GitHub Gist（推拉双向同步）
 
@@ -69,7 +70,6 @@
 - **PWA** — 可安装到桌面/手机主屏幕，离线可用
 - **响应式布局** — 桌面侧边栏 + 移动端抽屉导航，支持手机/平板/折叠屏
 - **触屏优化** — K 线图完全触屏支持（Tap 选中/高亮/关闭），底部信息栏零遮挡
-- **基金排行推荐** — 排行榜弹窗 + 一键添加
 - **通知** — 浏览器推送通知（Service Worker）
 
 ## 技术栈
@@ -191,7 +191,7 @@ fund-assistant/
 │   │   ├── ui/            # 17 个 shadcn/ui 组件
 │   │   ├── layout/        # AppLayout（侧边栏 + 顶部栏 + Outlet）+ InstallPrompt
 │   │   ├── dashboard/     # DashboardPage, CandlestickChart, FundDetailGateway
-│   │   ├── holdings/      # HoldingsPage/Table, Add/Edit/Import/FundDetail/QuickAdjust/FundRank Dialog
+│   │   ├── holdings/      # HoldingsPage/Table, Add/Edit/Import/FundDetail/QuickAdjust Dialog
 │   │   ├── plans/         # PlansPage（规则配置 + 提醒面板 + 操作日志）
 │   │   ├── prompts/       # PromptsPage（三种模板生成器）
 │   │   └── settings/      # SettingsPage（7 个 Tab）+ NotificationsPage

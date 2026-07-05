@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
 import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp, TrendingUp,
-  AlertCircle, X,
+  AlertCircle, X, Search,
 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
@@ -18,7 +18,6 @@ import { autoClassify } from '@/lib/classification'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { getFundInfoCache, setFundInfoCache, getEtfMappingCache, setEtfMappingCache } from '@/services/klineCache'
 import type { FundInfoCache } from '@/services/klineCache'
-import FundRankDialog from './FundRankDialog'
 import type { Market, FundType, FundSector } from '@/types'
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
@@ -78,9 +77,11 @@ export default function AddFundDialog() {
   const [rows, setRows] = useState<FundRow[]>([makeRow()])
   const [error, setError] = useState('')
   const [queryLoading, setQueryLoading] = useState(false)
-  const [rankOpen, setRankOpen] = useState(false)
   const [showAllDetails, setShowAllDetails] = useState(false)
   const [_selected, setSelected] = useState<Set<string>>(new Set())
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
 
   useEffect(() => {
     if (open) {
@@ -89,29 +90,47 @@ export default function AddFundDialog() {
         setError('')
         setSelected(new Set())
         setShowAllDetails(false)
+        setSearchQuery('')
+        setSearchResults([])
       }, 0)
     }
   }, [open])
 
   const codes = useMemo(() => rows.map((r) => r.code.trim()).filter(Boolean), [rows])
 
+  // 搜索防抖
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setSearchResults([])
+      return
+    }
+    const t = setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        const results = await dataSourceService.searchStocks(searchQuery.trim())
+        setSearchResults(results.slice(0, 20))
+      } catch { setSearchResults([]) }
+      setSearchLoading(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [searchQuery])
+
+  const handleSelectFromSearch = (fund: { code: string; name: string }) => {
+    // 添加到表格
+    setRows((prev) => {
+      const existing = new Set(prev.map((r) => r.code.trim()))
+      if (existing.has(fund.code)) return prev
+      const newRow = makeRow()
+      newRow.code = fund.code
+      newRow.name = fund.name
+      return [...prev, newRow]
+    })
+    setSearchQuery('')
+    setSearchResults([])
+  }
+
   // Add empty row
   const addRow = () => setRows((prev) => [...prev, makeRow()])
-
-  // Phase 6.3: 从排行推荐选择基金
-  const handleRankSelect = (funds: { code: string; name: string }[]) => {
-    setRows((prev) => {
-      const newRows = [...prev]
-      const existing = new Set(newRows.map((r) => r.code.trim()))
-      for (const f of funds) {
-        if (!existing.has(f.code)) {
-          newRows.push({ ...makeRow(), code: f.code, name: f.name })
-          existing.add(f.code)
-        }
-      }
-      return newRows
-    })
-  }
 
   // Remove row
   const removeRow = (key: string) => {
@@ -281,7 +300,6 @@ export default function AddFundDialog() {
   }
 
   return (
-    <>
       <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setError('') }}>
       <DialogTrigger asChild>
         <Button size="sm"><Plus className="h-4 w-4 mr-2" />添加基金</Button>
@@ -295,6 +313,36 @@ export default function AddFundDialog() {
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* 搜索框 */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="搜索基金/ETF 名称或代码（如：半导体、沪深300）"
+              className="pl-8 h-9 text-sm"
+            />
+            {searchLoading && (
+              <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+            {/* 搜索结果下拉 */}
+            {searchResults.length > 0 && (
+              <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-60 overflow-auto">
+                {searchResults.map((r) => (
+                  <button
+                    key={r.code}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-xs hover:bg-accent text-left cursor-pointer"
+                    onClick={() => handleSelectFromSearch(r)}
+                  >
+                    <span className="font-mono text-[10px] text-muted-foreground w-20">{r.code}</span>
+                    <span className="truncate">{r.name}</span>
+                    <Plus className="h-3 w-3 shrink-0 text-muted-foreground ml-auto" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* 快速查询 */}
           <Button
             variant="secondary"
@@ -475,7 +523,5 @@ export default function AddFundDialog() {
         </div>
       </DialogContent>
     </Dialog>
-      <FundRankDialog open={rankOpen} onOpenChange={setRankOpen} onSelect={handleRankSelect} />
-    </>
   )
 }

@@ -97,21 +97,6 @@ class DataSourceService implements FundDataSource {
     }
     return null
   }
-
-  /**
-   * 获取开放基金排行
-   */
-  async fetchFundRank(symbol = '全部', topN = 50): Promise<any[]> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof (adapter as any).fetchFundRank === 'function') {
-        try {
-          const data = await (adapter as any).fetchFundRank(symbol, topN)
-          if (data.length > 0) return data
-        } catch { /* try next */ }
-      }
-    }
-    return []
-  }
   /**
    * 查询场外基金对应的场内 ETF 代码
    */
@@ -130,6 +115,22 @@ class DataSourceService implements FundDataSource {
       }
     }
     return null
+  }
+
+  /**
+   * 搜索股票/基金
+   * 通过 stock-api 的 searchStocks 实现关键词搜索
+   */
+  async searchStocks(key: string): Promise<{ code: string; name: string }[]> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof (adapter as any).searchStocks === 'function') {
+        try {
+          const data = await (adapter as any).searchStocks(key)
+          if (data.length > 0) return data
+        } catch { /* try next */ }
+      }
+    }
+    return []
   }
 }
 
