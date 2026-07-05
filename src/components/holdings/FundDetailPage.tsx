@@ -375,54 +375,6 @@ export default function FundDetailPage() {
         </CardContent>
       </Card>
 
-      {/* ETF 实时行情卡片（有场内映射时显示） */}
-      {etfCode && (
-        <Card>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-1.5">
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400">实时</span>
-                场内映射行情
-              </CardTitle>
-              <button onClick={handleRefreshQuotes} disabled={refreshing.quotes}
-                className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                title="刷新行情">
-                {refreshing.quotes ? '⟳' : '⟳'}
-              </button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {(() => {
-              const etfVal = etfCode ? valuations[etfCode] : null
-              const etfQuote = etfVal?.quote
-              if (!etfQuote || !etfQuote.nav || etfQuote.nav <= 0.001) {
-                return <p className="text-xs text-muted-foreground">暂无实时数据</p>
-              }
-              const isUp = etfQuote.dailyChange >= 0
-              const color = isUp ? 'text-red-500' : 'text-green-500'
-              const prefix = isUp ? '+' : ''
-              return (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{etfQuote.name || `ETF ${etfCode}`}</span>
-                    <span className="text-xs text-muted-foreground">{etfCode}</span>
-                  </div>
-                  <div className="flex items-end gap-3">
-                    <span className={`text-2xl font-mono font-bold ${color}`}>¥{etfQuote.nav.toFixed(4)}</span>
-                    <span className={`text-sm font-mono font-medium ${color} mb-0.5`}>
-                      {prefix}{etfQuote.dailyChange.toFixed(2)}%
-                    </span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    开盘 ¥{etfQuote.nav.toFixed(4) || '-'}
-                  </div>
-                </div>
-              )
-            })()}
-          </CardContent>
-        </Card>
-      )}
-
       <EditFundDialog fund={fund} open={editOpen} onOpenChange={setEditOpen} />
       <QuickAdjustDialog fund={fund} open={adjustOpen} onOpenChange={setAdjustOpen} />
 
@@ -431,7 +383,9 @@ export default function FundDetailPage() {
         <div className="lg:col-span-2 space-y-4">
           <KlineChartCard
             klineData={klineData} klineLoading={klineLoading} klineUpdateTime={klineUpdateTime}
-            etfCode={etfCode} useEtfKline={useEtfKline} setUseEtfKline={setUseEtfKline}
+            etfCode={etfCode} etfQuote={etfCode ? valuations[etfCode]?.quote || null : null}
+            onRefreshQuote={handleRefreshQuotes} quoteRefreshing={refreshing.quotes}
+            useEtfKline={useEtfKline} setUseEtfKline={setUseEtfKline}
             period={period} setPeriod={setPeriod}
             showMA={showMA} setShowMA={setShowMA} showBollinger={showBollinger} setShowBollinger={setShowBollinger}
             refreshing={refreshing} handleRefreshKline={handleRefreshKline}

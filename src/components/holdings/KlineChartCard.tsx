@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import type { KLineData } from '@/types'
+import type { KLineData, FundQuote } from '@/types'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Loader2, RefreshCw } from 'lucide-react'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
 
 interface Props {
@@ -13,6 +14,9 @@ interface Props {
   klineLoading: boolean
   klineUpdateTime: string | null
   etfCode: string | null
+  etfQuote?: FundQuote | null
+  onRefreshQuote?: () => void
+  quoteRefreshing?: boolean
   useEtfKline: boolean
   setUseEtfKline: (v: boolean) => void
   period: string
@@ -28,7 +32,8 @@ interface Props {
 }
 
 export default function KlineChartCard({
-  klineData, klineLoading, klineUpdateTime, etfCode,
+  klineData, klineLoading, klineUpdateTime, etfCode, etfQuote,
+  onRefreshQuote, quoteRefreshing,
   useEtfKline, setUseEtfKline, period, setPeriod,
   showMA, setShowMA, showBollinger, setShowBollinger,
   refreshing, handleRefreshKline,
@@ -36,15 +41,44 @@ export default function KlineChartCard({
 }: Props) {
   const [klineIndicatorInfoOpen, setKlineIndicatorInfoOpen] = useState(false)
 
+  const hasValidEtfQuote = etfQuote && etfQuote.nav && etfQuote.nav > 0.001
+  const etfQuoteChangeColor = hasValidEtfQuote && etfQuote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'
+
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CardTitle className="text-sm">{useEtfKline && etfCode && klineData[0]?.volume ? 'K 线走势' : '净值走势'}</CardTitle>
-            {klineUpdateTime && <span className="text-[10px] text-muted-foreground">更新于 {klineUpdateTime}</span>}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <CardTitle className="text-sm">K 线走势</CardTitle>
+              {etfCode && (
+                <Badge className="text-[10px] bg-red-100 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-400">
+                  实时
+                </Badge>
+              )}
+            </div>
+            {etfCode && (
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-muted-foreground">场内映射行情</span>
+                {hasValidEtfQuote ? (
+                  <>
+                    <span className="font-medium">{etfQuote.name || `ETF ${etfCode}`}</span>
+                    <span className="text-muted-foreground">{etfCode}</span>
+                    <span className="font-mono font-medium">¥{etfQuote.nav.toFixed(4)}</span>
+                    <span className={`font-mono font-medium ${etfQuoteChangeColor}`}>
+                      {etfQuote.dailyChange >= 0 ? '+' : ''}{etfQuote.dailyChange.toFixed(2)}%
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">暂无实时数据</span>
+                )}
+              </div>
+            )}
+            {klineUpdateTime && (
+              <span className="text-[10px] text-muted-foreground">K 线更新于 {klineUpdateTime}</span>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {useEtfKline && etfCode && klineData[0]?.volume && (
               <>
                 <button
@@ -61,10 +95,17 @@ export default function KlineChartCard({
                 >BOLL</button>
               </>
             )}
+            {onRefreshQuote && etfCode && (
+              <button onClick={onRefreshQuote} disabled={quoteRefreshing}
+                className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                title="刷新行情">
+                {quoteRefreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              </button>
+            )}
             <button onClick={handleRefreshKline} disabled={refreshing.kline}
               className="inline-flex items-center justify-center text-xs w-7 h-7 rounded-md hover:bg-muted/60 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               title={useEtfKline ? '刷新K线' : '刷新净值'}>
-              {refreshing.kline ? '⟳' : '⟳'}
+              {refreshing.kline ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </button>
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger className="h-7 text-xs w-[62px]"><SelectValue /></SelectTrigger>
@@ -91,7 +132,10 @@ export default function KlineChartCard({
           <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
         ) : useEtfKline && etfCode && klineData[0]?.volume ? (
           <>
-            <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={onHover} showMA={showMA} showBollinger={showBollinger} />
+            {/* 可滚动容器：防止 SVG 在窄屏下撑破父容器 */}
+            <div className="overflow-x-auto pb-1 -mx-1 px-1">
+              <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={onHover} showMA={showMA} showBollinger={showBollinger} />
+            </div>
             {(showMA || showBollinger) && klineData.length > 1 && (
               <div className="mt-1">
                 <button
@@ -155,13 +199,6 @@ export default function KlineChartCard({
             ) : (
               <p className="text-xs text-muted-foreground">暂无数据</p>
             )}
-          </div>
-        )}
-        {/* 技术指标说明 - 固定在右下角 */}
-        {(showMA || showBollinger) && (
-          <div className="absolute bottom-1 right-2 text-[9px] text-muted-foreground/60 leading-tight text-right pointer-events-none max-w-[240px]">
-            {showMA && <p className="mb-0.5"><span className="font-medium text-amber-600/70 dark:text-amber-400/70">MA</span> 移动平均线</p>}
-            {showBollinger && <p><span className="font-medium text-blue-600/70 dark:text-blue-400/70">BOLL</span> 布林带 (20,2)</p>}
           </div>
         )}
       </CardContent>
