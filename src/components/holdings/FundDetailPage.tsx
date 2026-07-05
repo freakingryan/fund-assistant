@@ -408,6 +408,7 @@ export default function FundDetailPage() {
             refreshing={refreshing} handleRefreshKline={handleRefreshKline}
             klineDetectedPatterns={klineDetectedPatterns} onHover={setHoveredKlineIndex}
             externalHighlightIndex={effectiveKlineHighlight}
+            onCandleClick={handlePatternClick}
           />
           <KlinePatternCard
             klineData={klineData} klineDetectedPatterns={klineDetectedPatterns} klinePatterns={klinePatterns}

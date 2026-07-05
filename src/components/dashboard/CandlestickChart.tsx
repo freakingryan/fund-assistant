@@ -11,6 +11,8 @@ interface Props {
   patterns?: DetectedPattern[]
   /** 外部联动：鼠标悬停时通知父组件当前 K 线索引 (hoverIndex, 无悬停时为 null) */
   onHover?: (index: number | null) => void
+  /** 外部选中回调：点击 K 线时同步父组件的持久化选中状态 */
+  onCandleClick?: (index: number | null) => void
   /** 外部高亮索引（来自 K 线形态分析等组件），非 chart 自身交互 */
   externalHighlightIndex?: number | null
   /** 显示 MA5/MA10/MA20/MA60 均线 */
@@ -45,7 +47,7 @@ const PATTERN_STYLES: Partial<Record<KlinePattern, { bg: string; text: string; b
 
 /** 蜡烛图组件 — SVG 内嵌 + 底部信息栏（不遮挡图表 + 深色模式适配 + 触屏支持 + 技术指标叠加） */
 export default function CandlestickChart({
-  data, width = 480, height = 320, patterns = [], onHover, showMA = false, showBollinger = false,
+  data, width = 480, height = 320, patterns = [], onHover, onCandleClick, showMA = false, showBollinger = false,
   technicals: externalTechnicals, externalHighlightIndex = null,
 }: Props) {
   // 悬停（临时）和选中（持久）分开管理
@@ -284,8 +286,8 @@ export default function CandlestickChart({
                   className="cursor-crosshair"
                   onMouseEnter={() => handleHover(i)}
                   onMouseLeave={() => handleHover(null)}
-                  onClick={() => toggleSelect(i)}
-                  onTouchEnd={(e) => { e.preventDefault(); toggleSelect(i) }}
+                  onClick={() => { toggleSelect(i); onCandleClick?.(selectedIndex === i ? null : i) }}
+                  onTouchEnd={(e) => { e.preventDefault(); toggleSelect(i); onCandleClick?.(selectedIndex === i ? null : i) }}
                 />
                 <line x1={c.cx} y1={c.hi} x2={c.cx} y2={c.lo}
                   className={c.isUp ? 'stroke-red-500 dark:stroke-red-400' : 'stroke-green-500 dark:stroke-green-400'}
