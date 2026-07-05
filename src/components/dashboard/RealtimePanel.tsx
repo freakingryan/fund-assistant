@@ -28,6 +28,18 @@ export default function RealtimePanel({ holdings }: Props) {
   const codes = useMemo(() => holdings.map((h) => h.code), [holdings])
   const { valuations, refresh, loading, lastUpdated } = useRealtimeQuotes(codes, 0)
   const [sortBy, setSortBy] = useState<'pnl' | 'change' | 'value'>('value')
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+
+  const handleSort = (key: 'pnl' | 'change' | 'value') => {
+    if (sortBy === key) {
+      // 同一列：切换排序方向
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+    } else {
+      // 不同列：设为降序
+      setSortBy(key)
+      setSortDir('desc')
+    }
+  }
 
   const sorted = useMemo(() => {
     const list = holdings.map((h) => {
@@ -41,17 +53,20 @@ export default function RealtimePanel({ holdings }: Props) {
     })
 
     list.sort((a, b) => {
-      if (sortBy === 'pnl') return b.pnl - a.pnl
-      if (sortBy === 'change') {
-        const ca = a.quote?.dailyChange ?? 0
-        const cb = b.quote?.dailyChange ?? 0
-        return cb - ca
+      const dir = sortDir === 'desc' ? -1 : 1
+      let cmp: number
+      if (sortBy === 'pnl') {
+        cmp = a.pnl - b.pnl
+      } else if (sortBy === 'change') {
+        cmp = (a.quote?.dailyChange ?? 0) - (b.quote?.dailyChange ?? 0)
+      } else {
+        cmp = a.mv - b.mv
       }
-      return b.mv - a.mv
+      return cmp * dir
     })
 
     return list
-  }, [holdings, valuations, sortBy])
+  }, [holdings, valuations, sortBy, sortDir])
 
   const totalMV = sorted.reduce((s, i) => s + i.mv, 0)
   const totalCost = sorted.reduce((s, i) => s + calcCost(i.holding), 0)
@@ -82,9 +97,9 @@ export default function RealtimePanel({ holdings }: Props) {
         <div className="hidden sm:flex items-center gap-3 px-4 py-1.5 text-[10px] text-muted-foreground border-b">
           <div className="flex-1" />
           <div className="w-[96px] text-right shrink-0">最新价</div>
-          <SortHeader label="涨跌幅" width="w-[80px]" active={sortBy === 'change'} onClick={() => setSortBy('change')} />
-          <SortHeader label="盈亏" width="w-[140px]" active={sortBy === 'pnl'} onClick={() => setSortBy('pnl')} />
-          <SortHeader label="持仓市值" width="w-[96px]" active={sortBy === 'value'} onClick={() => setSortBy('value')} />
+          <SortHeader label="涨跌幅" width="w-[80px]" active={sortBy === 'change'} dir={sortDir} onClick={() => handleSort('change')} />
+          <SortHeader label="盈亏" width="w-[140px]" active={sortBy === 'pnl'} dir={sortDir} onClick={() => handleSort('pnl')} />
+          <SortHeader label="持仓市值" width="w-[96px]" active={sortBy === 'value'} dir={sortDir} onClick={() => handleSort('value')} />
         </div>
         <div className="divide-y overflow-x-auto">
           {sorted.map(({ holding, quote, mv, pnl, pnlRate, loading: itemLoading }) => {
@@ -169,19 +184,21 @@ export default function RealtimePanel({ holdings }: Props) {
 }
 
 /** 可点击的排序列标题 */
-function SortHeader({ label, width, active, onClick }: { label: string; width: string; active: boolean; onClick: () => void }) {
+function SortHeader({ label, width, active, dir, onClick }: { label: string; width: string; active: boolean; dir: 'desc' | 'asc'; onClick: () => void }) {
   return (
     <div
       role="button" tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
-      className={`${width} text-right shrink-0 cursor-pointer select-none transition-colors ${
+      className={`${width} text-right shrink-0 cursor-pointer select-none transition-colors inline-flex items-center justify-end gap-0.5 ${
         active ? 'text-foreground font-medium' : 'hover:text-foreground'
       }`}
-      title={`按${label}从高到低排序`}
+      title={`按${label}${dir === 'desc' ? '从高到低' : '从低到高'}排序`}
     >
-      {label}
-      {active && <span className="ml-0.5">▾</span>}
+      <span className="truncate">{label}</span>
+      {active && (
+        <span className="text-[10px] opacity-70 leading-none">{dir === 'desc' ? '▼' : '▲'}</span>
+      )}
     </div>
   )
 }
