@@ -189,21 +189,22 @@ export interface PortfolioCache {
 }
 
 const PORTFOLIO_TTL = 7 * 24 * 60 * 60 * 1000 // 7 天（基金持仓季度更新，缓存一周足够）
+const PORTFOLIO_CACHE_VERSION = 'v2'
 
 export async function getPortfolioCache(fundCode: string): Promise<PortfolioCache | null> {
-  return getCache<PortfolioCache>(`pf_${fundCode}`, PORTFOLIO_TTL)
+  return getCache<PortfolioCache>(`pf_${PORTFOLIO_CACHE_VERSION}_${fundCode}`, PORTFOLIO_TTL)
 }
 
 export async function setPortfolioCache(fundCode: string, data: PortfolioCache): Promise<void> {
-  return setCache(`pf_${fundCode}`, data)
+  return setCache(`pf_${PORTFOLIO_CACHE_VERSION}_${fundCode}`, data)
 }
 
 export async function deletePortfolioCache(fundCode: string): Promise<void> {
-  return deleteCache(`pf_${fundCode}`)
+  return deleteCache(`pf_${PORTFOLIO_CACHE_VERSION}_${fundCode}`)
 }
 
 export async function getPortfolioCacheTime(fundCode: string): Promise<number | null> {
-  return getCacheTime(`pf_${fundCode}`, PORTFOLIO_TTL)
+  return getCacheTime(`pf_${PORTFOLIO_CACHE_VERSION}_${fundCode}`, PORTFOLIO_TTL)
 }
 
 // ── 基金排行缓存 ────────────────────────────

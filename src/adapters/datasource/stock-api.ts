@@ -13,7 +13,7 @@
  */
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
-import { fetchFundGzJsonp, fetchFundPingZhongData } from './jsonp-utils'
+import { fetchFundGzJsonp, fetchFundPingZhongData, fetchFundHoldingsF10 } from './jsonp-utils'
 
 // stock-api 是 ESM-only 库，动态 import 以适应项目构建配置
 let stocks: any = null
@@ -274,13 +274,21 @@ export class StockApiAdapter implements FundDataSource {
     holdings: { code: string; name: string; ratio: number; value: number }[]
   } | null> {
     try {
+      // 优先从 F10 获取带比例的持仓明细（开发环境可用 Vite proxy）
+      const f10Result = await fetchFundHoldingsF10(fundCode)
+      if (f10Result && f10Result.holdings.length > 0) {
+        return {
+          date: f10Result.date || '',
+          holdings: f10Result.holdings.map((h) => ({ ...h, value: 0 })),
+        }
+      }
+
+      // 回退：从 pingzhongdata 获取代码，再用 stock-api 查名称（比例无法获取，默认 0）
       const vars = await fetchFundPingZhongData(fundCode)
-      console.warn('[fetchFundPortfolio] vars keys:', Object.keys(vars))
 
       // 从 stockCodesNew 获取前十大重仓股票代码（格式：["1.600519","0.000858","116.01179"]）
       // market: 1=SH, 0=SZ, 116=HK
       const rawStockCodesNew = vars['stockCodesNew']
-      console.warn('[fetchFundPortfolio] stockCodesNew:', rawStockCodesNew)
 
       const rawCodes: { market: string; code: string }[] = (rawStockCodesNew || []).map((c: string) => {
         const parts = String(c).split('.')
@@ -299,8 +307,7 @@ export class StockApiAdapter implements FundDataSource {
           })
         : (vars['stockCodes'] || []).map((c: string) => String(c).replace(/\d$/, ''))
 
-      console.warn('[fetchFundPortfolio] api codes:', codes)
-      if (codes.length === 0) { console.warn('[fetchFundPortfolio] empty codes'); return null }
+      if (codes.length === 0) { return null }
 
       // 并发获取股票名称（stock-api 的 getStock 按代码查询）
       const s = await ensureStocks()
@@ -329,8 +336,7 @@ export class StockApiAdapter implements FundDataSource {
         .filter((h: any) => h !== null)
         .slice(0, 10)
 
-      console.warn('[fetchFundPortfolio] holdings:', holdings)
-      if (holdings.length === 0) { console.warn('[fetchFundPortfolio] empty holdings'); return null }
+      if (holdings.length === 0) { return null }
       return { date: '', holdings }
     } catch (e) { console.error('[fetchFundPortfolio] error:', e); return null }
   }

@@ -138,3 +138,46 @@ export async function fetchFundPingZhongData(code: string, timeout = 15000): Pro
   })
   return vars
 }
+
+/** 解析 fundf10 持仓明细 HTML 内容，返回前十大重仓股（含占净值比例） */
+function parseFundHoldingsF10(text: string): { date: string; holdings: { code: string; name: string; ratio: number }[] } | null {
+  // 提取 apidata 的 content 字符串（处理 JS 字符串转义）
+  const contentMatch = text.match(/content:\s*"((?:\\.|[^"\\])*)"/s)
+  if (!contentMatch) return null
+  const content = contentMatch[1]
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\')
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
+  // 提取报告截止日期
+  let date = ''
+  const dateMatch = content.match(/截止至[：:]\s*(?:<[^>]*>)?(\d{4}-\d{2}-\d{2})/)
+  if (dateMatch) date = dateMatch[1]
+  const holdings: { code: string; name: string; ratio: number }[] = []
+  // 匹配 table 中的每一行：序号 + 代码 + 名称 + ...占净值比例%
+  const regex = /<tr>\s*<td>(\d+)<\/td><td><a[^>]*>(\d{5,6})<\/a><\/td><td class='tol'><a[^>]*>([^<]+)<\/a><\/td>[\s\S]*?<td class='tor'>(\d+\.\d+)%/g
+  let m: RegExpExecArray | null
+  while ((m = regex.exec(content)) !== null) {
+    if (holdings.length >= 10) break
+    const name = m[3].trim()
+    if (!name) continue
+    holdings.push({ code: m[2], name, ratio: parseFloat(m[4]) })
+  }
+  return holdings.length > 0 ? { date, holdings } : null
+}
+
+/**
+ * 从天天基金 F10 获取基金前十大重仓股明细（含占净值比例）。
+ * 开发环境走 Vite proxy，生产环境暂返回 null（由调用方回退）。
+ */
+export async function fetchFundHoldingsF10(code: string, _timeout = 15000): Promise<{ date: string; holdings: { code: string; name: string; ratio: number }[] } | null> {
+  if (isViteDev()) {
+    const res = await fetch(`/fundf10/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    return parseFundHoldingsF10(text)
+  }
+  // 生产环境：fundf10 暂不支持 CORS 且无 JSONP callback，返回 null 让调用方回退
+  return null
+}

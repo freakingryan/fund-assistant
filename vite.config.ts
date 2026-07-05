@@ -20,6 +20,12 @@ export default defineConfig(({ command }) => ({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/pingzhongdata/, ''),
       },
+      // 开发模式下代理基金 F10 持仓明细（fundf10.eastmoney.com 无 CORS）
+      '/fundf10': {
+        target: 'https://fundf10.eastmoney.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/fundf10/, ''),
+      },
     },
   },
   plugins: [

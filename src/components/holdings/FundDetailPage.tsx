@@ -194,7 +194,7 @@ export default function FundDetailPage() {
     }
     load()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [fund, period, etfCode, useEtfKline, klineRefreshKey])
+  }, [fund?.code, period, etfCode, useEtfKline, klineRefreshKey])
 
   // ─── 形态检测 + 评分 ──────────────────────────
   useEffect(() => {
@@ -228,9 +228,17 @@ export default function FundDetailPage() {
     setPortfolioLoading(true)
     const load = async () => {
       const cached = await getPortfolioCache(fund.code)
-      if (!cancelled && cached) { setPortfolio(cached); setPortfolioLoading(false); return }
+      const hasValidRatio = (cached?.holdings ?? []).some((h) => h.ratio > 0)
+      if (!cancelled && cached && hasValidRatio) {
+        setPortfolio(cached); setPortfolioLoading(false); return
+      }
+      // 缓存为空或全 0 比例时清理，避免旧脏缓存阻塞后续刷新
+      if (cached && !hasValidRatio) {
+        await deletePortfolioCache(fund.code)
+      }
       const data = await dataSourceService.fetchFundPortfolio(fund.code)
-      if (!cancelled && data) {
+      const dataHasValidRatio = (data?.holdings ?? []).some((h) => h.ratio > 0)
+      if (!cancelled && data && data.holdings.length > 0 && dataHasValidRatio) {
         await setPortfolioCache(fund.code, data)
         setPortfolio(data)
       }
@@ -238,7 +246,9 @@ export default function FundDetailPage() {
     }
     load()
     return () => { cancelled = true }
-  }, [fund, portfolioRefreshKey])
+  // 用 fund?.code 代替 fund（对象引用 → 字符串值比较），避免 holdings 数组引用变化
+  // 导致 fund 对象引用变化、effect 反复取消重跑
+  }, [fund?.code, portfolioRefreshKey])
 
   // ─── Prompt ───────────────────────────────────
   const handleGenerate = useCallback(() => {
