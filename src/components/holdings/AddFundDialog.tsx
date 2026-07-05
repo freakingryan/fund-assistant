@@ -113,16 +113,40 @@ export default function AddFundDialog() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  const handleSelectFromSearch = (fund: { code: string; name: string }) => {
-    // 添加到表格
+  const handleSelectFromSearch = async (fund: { code: string; name: string }) => {
+    // 如果已存在则跳过
     setRows((prev) => {
-      const existing = new Set(prev.map((r) => r.code.trim()))
-      if (existing.has(fund.code)) return prev
-      const newRow = makeRow()
-      newRow.code = fund.code
-      newRow.name = fund.name
-      return [...prev, newRow]
+      if (prev.some((r) => r.code.trim() === fund.code)) return prev
+      return prev
     })
+    
+    // 填充第一个空行，否则新增行
+    setRows((prev) => {
+      if (prev.some((r) => r.code.trim() === fund.code)) return prev
+      const firstEmpty = prev.findIndex((r) => !r.code.trim())
+      const auto = autoClassify(fund.code, fund.name)
+      const rowData = {
+        name: fund.name,
+        type: auto.type,
+        sector: auto.sector,
+      }
+      if (firstEmpty >= 0) {
+        return prev.map((r, i) => i === firstEmpty ? { ...r, ...rowData, code: fund.code } : r)
+      }
+      const newRow = makeRow()
+      return [...prev, { ...newRow, ...rowData, code: fund.code }]
+    })
+
+    // 异步查询 ETF 映射
+    try {
+      const cached = await getEtfMappingCache(fund.code)
+      if (cached?.exchangeCode) return
+      const mapping = await dataSourceService.queryEtfMapping(fund.code)
+      if (mapping?.exchangeCode) {
+        addEtfMapping(mapping.otcCode, mapping.otcName, mapping.exchangeCode, mapping.exchangeName)
+      }
+    } catch { /* ignore */ }
+
     setSearchQuery('')
     setSearchResults([])
   }
