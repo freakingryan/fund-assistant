@@ -71,20 +71,6 @@ export default function RealtimePanel({ holdings }: Props) {
             )}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-muted-foreground hidden sm:inline">排序:</span>
-            <div className="flex gap-1" title="按市值/盈亏/涨跌从高到低排序">
-              {(['value', 'pnl', 'change'] as const).map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setSortBy(key)}
-                  className={`text-[10px] px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
-                    sortBy === key ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
-                  }`}
-                >
-                  {key === 'value' ? '市值' : key === 'pnl' ? '盈亏' : '涨跌'}
-                </button>
-              ))}
-            </div>
             <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={refresh} disabled={loading}>
               <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
             </Button>
@@ -92,13 +78,13 @@ export default function RealtimePanel({ holdings }: Props) {
         </div>
       </CardHeader>
       <CardContent className="p-0">
-        {/* 列标题 */}
+        {/* 可排序列标题 */}
         <div className="hidden sm:flex items-center gap-3 px-4 py-1.5 text-[10px] text-muted-foreground border-b">
           <div className="flex-1" />
           <div className="w-[96px] text-right shrink-0">最新价</div>
-          <div className="w-[80px] text-right shrink-0">涨跌幅</div>
-          <div className="w-[140px] text-right shrink-0">盈亏</div>
-          <div className="w-[96px] text-right shrink-0">持仓市值</div>
+          <SortHeader label="涨跌幅" width="w-[80px]" active={sortBy === 'change'} onClick={() => setSortBy('change')} />
+          <SortHeader label="盈亏" width="w-[140px]" active={sortBy === 'pnl'} onClick={() => setSortBy('pnl')} />
+          <SortHeader label="持仓市值" width="w-[96px]" active={sortBy === 'value'} onClick={() => setSortBy('value')} />
         </div>
         <div className="divide-y overflow-x-auto">
           {sorted.map(({ holding, quote, mv, pnl, pnlRate, loading: itemLoading }) => {
@@ -179,5 +165,23 @@ export default function RealtimePanel({ holdings }: Props) {
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/** 可点击的排序列标题 */
+function SortHeader({ label, width, active, onClick }: { label: string; width: string; active: boolean; onClick: () => void }) {
+  return (
+    <div
+      role="button" tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      className={`${width} text-right shrink-0 cursor-pointer select-none transition-colors ${
+        active ? 'text-foreground font-medium' : 'hover:text-foreground'
+      }`}
+      title={`按${label}从高到低排序`}
+    >
+      {label}
+      {active && <span className="ml-0.5">▾</span>}
+    </div>
   )
 }
