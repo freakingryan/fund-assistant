@@ -101,8 +101,8 @@ export function fetchFundPingZhongData(code: string, timeout = 15000): Promise<R
           vars[v] = (window as any)[v]
         }
       }
-      // 清理全局变量
-      knownVars.forEach((v) => { delete (window as any)[v] })
+      // 清理全局变量（var 声明的属性不可 delete，设为 undefined）
+      knownVars.forEach((v) => { (window as any)[v] = undefined })
       // 移除 script 元素
       el.remove()
       resolve(vars)
@@ -124,7 +124,7 @@ export function fetchFundPingZhongData(code: string, timeout = 15000): Promise<R
           'Data_fundSharesPositions', 'Data_fluctuationScale',
           'Data_holderStructure', 'fS_name',
         ]
-        knownVars.forEach((v) => { delete (window as any)[v] })
+        knownVars.forEach((v) => { (window as any)[v] = undefined })
         reject(new Error(`pingzhongdata 超时: ${code}`))
       }
     }, timeout)
