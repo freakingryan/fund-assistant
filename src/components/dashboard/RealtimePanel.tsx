@@ -191,14 +191,14 @@ function SortHeader({ label, width, active, dir, onClick }: { label: string; wid
       onClick={onClick}
       onKeyDown={(e) => e.key === 'Enter' && onClick()}
       className={`${width} text-right shrink-0 cursor-pointer select-none transition-colors inline-flex items-center justify-end gap-0.5 ${
-        active ? 'text-foreground font-medium' : 'hover:text-foreground'
+        active ? 'text-foreground font-medium' : 'hover:text-foreground text-muted-foreground'
       }`}
-      title={`按${label}${dir === 'desc' ? '从高到低' : '从低到高'}排序`}
+      title={`按${label}${active ? (dir === 'desc' ? '从高到低' : '从低到高') : '排序'}`}
     >
       <span className="truncate">{label}</span>
-      {active && (
-        <span className="text-[10px] opacity-70 leading-none">{dir === 'desc' ? '▼' : '▲'}</span>
-      )}
+      <span className="text-[10px] leading-none shrink-0">
+        {active ? (dir === 'desc' ? '▼' : '▲') : '⇅'}
+      </span>
     </div>
   )
 }
