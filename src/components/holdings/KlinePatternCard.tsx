@@ -15,6 +15,8 @@ interface Props {
   klineAnalyzing: boolean
   klineAnalysisError: string | null
   hoveredKlineIndex: number | null
+  onPatternHover?: (index: number | null) => void
+  onPatternSelect?: (index: number | null) => void
   onAnalyzeKline: () => void
   onGenerateKlinePrompt: () => void
 }
@@ -22,7 +24,7 @@ interface Props {
 export default function KlinePatternCard({
   klineData, klineDetectedPatterns, klinePatterns,
   klineAnalysis, klineAnalyzing, klineAnalysisError,
-  hoveredKlineIndex, onAnalyzeKline, onGenerateKlinePrompt,
+  hoveredKlineIndex, onPatternHover, onPatternSelect, onAnalyzeKline, onGenerateKlinePrompt,
 }: Props) {
   const [glossaryOpen, setGlossaryOpen] = useState(false)
 
@@ -59,7 +61,10 @@ export default function KlinePatternCard({
                   const isHovered = hoveredKlineIndex === p.index
                   return (
                     <div key={`${p.type}-${p.index}-${i}`}
-                      className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors ${isHovered ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
+                      className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors cursor-pointer ${isHovered ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
+                      onMouseEnter={() => onPatternHover?.(p.index)}
+                      onMouseLeave={() => onPatternHover?.(null)}
+                      onClick={() => onPatternSelect?.(hoveredKlineIndex === p.index ? null : p.index)}
                     >
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] font-medium ${
                         p.direction === 'bullish'

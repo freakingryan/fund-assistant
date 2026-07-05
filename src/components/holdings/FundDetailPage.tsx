@@ -93,6 +93,18 @@ export default function FundDetailPage() {
   const [signalResult, setSignalResult] = useState<SignalResult | null>(null)
   const [showSignalDetail, setShowSignalDetail] = useState(false)
   const [hoveredKlineIndex, setHoveredKlineIndex] = useState<number | null>(null)
+  const [selectedKlineIndex, setSelectedKlineIndex] = useState<number | null>(null)
+
+  // 有效高亮：点击选中优先于悬停
+  const effectiveKlineHighlight = useMemo(() => selectedKlineIndex ?? hoveredKlineIndex, [selectedKlineIndex, hoveredKlineIndex])
+
+  // ─── 点击页面其他位置清除选中高亮 ────────────
+  useEffect(() => {
+    if (selectedKlineIndex === null) return
+    const handler = () => setSelectedKlineIndex(null)
+    const timer = setTimeout(() => document.addEventListener('click', handler, { once: true }), 100)
+    return () => { clearTimeout(timer); document.removeEventListener('click', handler) }
+  }, [selectedKlineIndex])
 
   const etfCode = useMemo(() => {
     if (!fund) return null
@@ -390,11 +402,14 @@ export default function FundDetailPage() {
             showMA={showMA} setShowMA={setShowMA} showBollinger={showBollinger} setShowBollinger={setShowBollinger}
             refreshing={refreshing} handleRefreshKline={handleRefreshKline}
             klineDetectedPatterns={klineDetectedPatterns} onHover={setHoveredKlineIndex}
+            externalHighlightIndex={effectiveKlineHighlight}
           />
           <KlinePatternCard
             klineData={klineData} klineDetectedPatterns={klineDetectedPatterns} klinePatterns={klinePatterns}
             klineAnalysis={klineAnalysis} klineAnalyzing={klineAnalyzing} klineAnalysisError={klineAnalysisError}
             hoveredKlineIndex={hoveredKlineIndex}
+            onPatternHover={setHoveredKlineIndex}
+            onPatternSelect={setSelectedKlineIndex}
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}
           />
           <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} />

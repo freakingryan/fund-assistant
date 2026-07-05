@@ -11,6 +11,8 @@ interface Props {
   patterns?: DetectedPattern[]
   /** 外部联动：鼠标悬停时通知父组件当前 K 线索引 (hoverIndex, 无悬停时为 null) */
   onHover?: (index: number | null) => void
+  /** 外部高亮索引（来自 K 线形态分析等组件），非 chart 自身交互 */
+  externalHighlightIndex?: number | null
   /** 显示 MA5/MA10/MA20/MA60 均线 */
   showMA?: boolean
   /** 显示布林带 (Bollinger Bands) */
@@ -43,8 +45,8 @@ const PATTERN_STYLES: Partial<Record<KlinePattern, { bg: string; text: string; b
 
 /** 蜡烛图组件 — SVG 内嵌 + 底部信息栏（不遮挡图表 + 深色模式适配 + 触屏支持 + 技术指标叠加） */
 export default function CandlestickChart({
-  data, width = 480, height = 320, patterns = [], onHover,
-  showMA = false, showBollinger = false, technicals: externalTechnicals,
+  data, width = 480, height = 320, patterns = [], onHover, showMA = false, showBollinger = false,
+  technicals: externalTechnicals, externalHighlightIndex = null,
 }: Props) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -100,9 +102,9 @@ export default function CandlestickChart({
   const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data])
   const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT
 
-  const selected = selectedIndex !== null ? data[selectedIndex] : null
-  const selectedCandle = selectedIndex !== null ? candles[selectedIndex] : null
-  const selectedPattern = selectedIndex !== null ? getPatternLabel(patterns, selectedIndex) : null
+  const selected = selectedIndex !== null ? data[selectedIndex] : (externalHighlightIndex !== null ? data[externalHighlightIndex] : null)
+  const selectedCandle = selectedIndex !== null ? candles[selectedIndex] : (externalHighlightIndex !== null ? candles[externalHighlightIndex] : null)
+  const selectedPattern = (selectedIndex !== null ? getPatternLabel(patterns, selectedIndex) : (externalHighlightIndex !== null ? getPatternLabel(patterns, externalHighlightIndex) : null))
 
   const toggleSelect = useCallback((i: number) => {
     setSelectedIndex((prev) => (prev === i ? null : i))
@@ -259,7 +261,7 @@ export default function CandlestickChart({
             const bodyBottom = Math.max(c.o, c.c)
             const label = patterns.length > 0 ? getPatternLabel(patterns, i) : null
             const style = label ? PATTERN_STYLES[label as KlinePattern] : null
-            const isSelected = selectedIndex === i
+            const isSelected = selectedIndex === i || externalHighlightIndex === i
             const hitW = Math.max(c.candleWidth, 12) * 2
             return (
               <g key={`c-${i}`}>

@@ -17,6 +17,7 @@ interface Props {
   etfQuote?: FundQuote | null
   onRefreshQuote?: () => void
   quoteRefreshing?: boolean
+  externalHighlightIndex?: number | null
   useEtfKline: boolean
   setUseEtfKline: (v: boolean) => void
   period: string
@@ -33,7 +34,7 @@ interface Props {
 
 export default function KlineChartCard({
   klineData, klineLoading, klineUpdateTime, etfCode, etfQuote,
-  onRefreshQuote, quoteRefreshing,
+  onRefreshQuote, quoteRefreshing, externalHighlightIndex,
   useEtfKline, setUseEtfKline, period, setPeriod,
   showMA, setShowMA, showBollinger, setShowBollinger,
   refreshing, handleRefreshKline,
@@ -134,7 +135,7 @@ export default function KlineChartCard({
           <>
             {/* 可滚动容器：防止 SVG 在窄屏下撑破父容器 */}
             <div className="overflow-x-auto pb-1 -mx-1 px-1">
-              <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={onHover} showMA={showMA} showBollinger={showBollinger} />
+              <CandlestickChart data={klineData} width={560} height={320} patterns={klineDetectedPatterns} onHover={onHover} showMA={showMA} showBollinger={showBollinger} externalHighlightIndex={externalHighlightIndex} />
             </div>
             {(showMA || showBollinger) && klineData.length > 1 && (
               <div className="mt-1">
