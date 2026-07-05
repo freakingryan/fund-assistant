@@ -13,7 +13,7 @@
  */
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
-import { fetchFundGzJsonp } from './jsonp-utils'
+import { fetchFundGzJsonp, fetchFundPingZhongData } from './jsonp-utils'
 
 // stock-api 是 ESM-only 库，动态 import 以适应项目构建配置
 let stocks: any = null
@@ -154,9 +154,36 @@ export class StockApiAdapter implements FundDataSource {
 
   /**
    * 净值走势 K 线
-   * 通过 stock-api 的 getKlines 获取
+   * - 场内 ETF → stock-api（腾讯/新浪/东方财富自动兜底）
+   * - 场外基金 → fund.eastmoney.com/pingzhongdata/{code}.js（历史净值）
    */
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
+    // 场外基金：从 pingzhongdata JS 获取净值走势
+    if (!isExchangeCode(code)) {
+      try {
+        const vars = await fetchFundPingZhongData(code)
+        const trend = vars['Data_netWorthTrend']
+        if (Array.isArray(trend) && trend.length > 0) {
+          return trend.map((item: any) => {
+            // JS 数据格式：{x: timestamp_ms, y: nav, equityReturn: change%}
+            const ts = item.x
+            const date = ts ? new Date(ts).toISOString().slice(0, 10) : ''
+            const nav = Number(item.y) || 0
+            return {
+              date,
+              open: nav,
+              close: nav,
+              high: nav,
+              low: nav,
+              volume: 0,
+            }
+          })
+        }
+      } catch { /* fallback */ }
+      return []
+    }
+
+    // 场内 ETF：通过 stock-api 获取
     try {
       const s = await ensureStocks()
       const apiCode = toApiCode(code)
@@ -221,6 +248,80 @@ export class StockApiAdapter implements FundDataSource {
       }
     } catch { /* fallback */ }
     return []
+  }
+
+  /**
+   * 获取基金持仓明细（前十大重仓股）
+   * 通过 fund.eastmoney.com/pingzhongdata/{code}.js 获取
+   * 数据来源：Data_fundSharesPositions, stockCodes
+   */
+  async fetchFundPortfolio(fundCode: string): Promise<{
+    date: string
+    holdings: { code: string; name: string; ratio: number; value: number }[]
+  } | null> {
+    try {
+      const vars = await fetchFundPingZhongData(fundCode)
+      const positions = vars['Data_fundSharesPositions']
+      const stockNames = vars['stockCodes'] || vars['stockCodesNew'] || []
+
+      if (!Array.isArray(positions) || positions.length === 0) return null
+      // stockCodes 格式：{ code: 'sz000651', name: '格力电器' }
+
+      const holdings = positions.map((item: any) => {
+        // Data_fundSharesPositions: [{code, name, position, marketValue, ...}]
+        const stCode = String(item.code || item.stockCode || '')
+        // 查找股票名称
+        const nameMap = Array.isArray(stockNames)
+          ? stockNames.find((s: any) => s.code === stCode || s.code === `sz${stCode}` || s.code === `sh${stCode}`)
+          : null
+        return {
+          code: stCode,
+          name: nameMap?.name || item.name || '',
+          ratio: Number(item.position || item.ratio || 0),
+          value: Number(item.marketValue || item.value || 0),
+        }
+      }).filter((h: any) => h.name || h.code).slice(0, 10)
+
+      return { date: '', holdings }
+    } catch { return null }
+  }
+
+  /**
+   * 查询场外基金对应的场内 ETF 代码
+   * 通过 stock-api 搜索匹配（根据基金名称关键词找到对应 ETF）
+   */
+  async queryEtfMapping(otcCode: string): Promise<{
+    otcCode: string
+    otcName: string
+    exchangeCode: string
+    exchangeName: string
+  } | null> {
+    try {
+      // 通过 fundgz 获取基金名称
+      const fundData = await fetchFundGzJsonp(otcCode)
+      if (!fundData?.name) return null
+      const otcName: string = fundData.name
+
+      // 从名称提取关键词（去掉 "联接" "ETF" "C" 等）
+      const keyword = otcName
+        .replace(/ETF/i, '').replace(/联接/i, '')
+        .replace(/C$/, '').replace(/A$/, '')
+        .replace(/\(QDII\)/i, '').replace(/指数/i, '')
+        .trim()
+
+      // 通过 stock-api 搜索匹配的 ETF
+      const s = await ensureStocks()
+      const results = await s.auto.searchStocks(keyword)
+      // 过滤出 ETF 代码（159xxx / 51xxx）
+      const etf = results.find((r: any) => {
+        const c = r.code?.replace(/^(SZ|SH)/, '')
+        return c && (c.startsWith('159') || c.startsWith('51'))
+      })
+      if (!etf) return null
+
+      const exCode = etf.code?.replace(/^(SZ|SH)/, '') || ''
+      return { otcCode, otcName, exchangeCode: exCode, exchangeName: etf.name || '' }
+    } catch { return null }
   }
 
   /**
