@@ -58,7 +58,14 @@ export default function HoldingsTable() {
 
   // 实时行情（有 ETF 映射的持仓自动获取实时估值）
   const holdingCodes = useMemo(() => holdings.map((h) => h.code), [holdings])
+  
+  console.log(`[HoldingsTable] holdingCodes:`, holdingCodes)
+  
   const { valuations, refresh: refreshQuotes, loading: quotesLoading, lastUpdated } = useRealtimeQuotes(holdingCodes, 0)
+  
+  console.log(`[HoldingsTable] valuations:`, valuations)
+  console.log(`[HoldingsTable] quotesLoading:`, quotesLoading)
+  console.log(`[HoldingsTable] lastUpdated:`, lastUpdated)
 
   // 根据类型筛选持仓
   const filteredHoldings = useMemo(() => {
@@ -143,7 +150,10 @@ export default function HoldingsTable() {
         </span>
       ),
       cell: ({ row }) => {
-        const val = valuations[row.original.code]
+        const code = row.original.code
+        const val = valuations[code]
+        console.log(`[HoldingsTable][实时净值] row.code=${code}, val=`, val, `valuations keys=`, Object.keys(valuations))
+        
         if (!val || val.loading) return <span className="text-xs text-muted-foreground">加载中...</span>
         if (!val.quote) return <span className="text-xs text-muted-foreground">-</span>
         const color = val.quote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'
@@ -167,7 +177,10 @@ export default function HoldingsTable() {
       header: '实时盈亏',
       cell: ({ row }) => {
         const { costNAV, shares, holdingAmount, holdingProfit } = row.original
-        const val = valuations[row.original.code]
+        const code = row.original.code
+        const val = valuations[code]
+        console.log(`[HoldingsTable][实时盈亏] row.code=${code}, val=`, val)
+        
         if (!val || val.loading) return <span className="text-xs text-muted-foreground">加载中...</span>
         if (!val.quote || val.quote.nav <= 0.001) return <span className="text-xs text-muted-foreground">-</span>
 
@@ -263,7 +276,7 @@ export default function HoldingsTable() {
       ),
       size: 100,
     }),
-  ], [selectedIds, toggleSelected, selectAll, clearSelection, removeHolding])
+  ], [selectedIds, toggleSelected, selectAll, clearSelection, removeHolding, valuations, quotesLoading])
 
   const table = useReactTable({
     data: filteredHoldings,

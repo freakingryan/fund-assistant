@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useHoldingsStore } from '@/stores/holdings'
 import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
+import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { generatePrompt, type PromptTemplateType } from '@/services/prompt'
-import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, deleteQuotesCache, getQuotesCache, setQuotesCache, formatCacheTime } from '@/services/klineCache'
+import { getKlineCache, setKlineCache, deleteKlineCache, getKlineCacheTime, getPortfolioCache, setPortfolioCache, deletePortfolioCache, deleteQuotesCache, formatCacheTime } from '@/services/klineCache'
 import type { KLineData } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -78,8 +79,6 @@ export default function FundDetailPage() {
   const [prompt, setPrompt] = useState('')
   const [copied, setCopied] = useState(false)
   const [templateType, setTemplateType] = useState<PromptTemplateType>('diagnostic')
-  const [quotes, setQuotes] = useState<any[]>([])
-  const [quotesLoading, setQuotesLoading] = useState(false)
   const [refreshing, setRefreshing] = useState({ kline: false, portfolio: false, quotes: false })
   const [editOpen, setEditOpen] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
@@ -104,23 +103,14 @@ export default function FundDetailPage() {
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
 
-  // ─── 行情加载 ─────────────────────────────────
-  const loadQuotes = useCallback(async (force = false) => {
-    if (!fund) return
-    setQuotesLoading(true)
-    const codes = etfCode ? [fund.code, etfCode] : [fund.code]
-    if (!force) {
-      const cached = await getQuotesCache(codes)
-      if (cached?.quotes?.length) { setQuotes(cached.quotes); setQuotesLoading(false); return }
-    }
-    try {
-      const data = await dataSourceService.fetchQuotes(codes)
-      setQuotes(data)
-      if (data.length > 0) setQuotesCache(codes, data)
-    } catch (e) { console.error('加载行情失败', e) }
-    setQuotesLoading(false)
-  }, [fund, etfCode])
-  useEffect(() => { setTimeout(() => { loadQuotes().catch(() => {}) }, 0) }, [loadQuotes])
+  // 实时行情：同时获取场外基金 + 场内 ETF 映射
+  const quoteCodes = useMemo(() => (fund ? [fund.code, ...(etfCode ? [etfCode] : [])] : []), [fund, etfCode])
+  const { valuations, refresh: refreshQuotes, loading: quotesLoading } = useRealtimeQuotes(quoteCodes, 0)
+  
+  useEffect(() => {
+    console.log(`[FundDetailPage] quoteCodes=`, quoteCodes)
+    console.log(`[FundDetailPage] valuations=`, valuations, `loading=${quotesLoading}`)
+  }, [quoteCodes, valuations, quotesLoading])
 
   // ─── K 线刷新 ─────────────────────────────────
   const handleRefreshKline = useCallback(async () => {
@@ -147,9 +137,9 @@ export default function FundDetailPage() {
     if (!fund) return
     setRefreshing((s) => ({ ...s, quotes: true }))
     await deleteQuotesCache()
-    await loadQuotes(true)
+    await refreshQuotes()
     setRefreshing((s) => ({ ...s, quotes: false }))
-  }, [fund, loadQuotes])
+  }, [fund, refreshQuotes])
 
   // ─── K 线数据加载 ─────────────────────────────
   useEffect(() => {
@@ -210,13 +200,13 @@ export default function FundDetailPage() {
     try {
       const { result, usedAI, error } = await analyzeKline({
         code: fund.code, name: fund.name || fund.code, klineData, period,
-        costNAV: fund.costNAV, currentNAV: quotes.find((q) => q.code === fund.code)?.nav, shares: fund.shares,
+        costNAV: fund.costNAV, currentNAV: valuations[fund.code]?.quote?.nav, shares: fund.shares,
       })
       setKlineAnalysis(result)
       if (!usedAI && error) setKlineAnalysisError(error)
     } catch (e) { setKlineAnalysisError(e instanceof Error ? e.message : '分析失败') }
     setKlineAnalyzing(false)
-  }, [fund, klineData, period, quotes])
+  }, [fund, klineData, period, valuations])
 
   // ─── 持仓穿透 ─────────────────────────────────
   useEffect(() => {
@@ -240,12 +230,13 @@ export default function FundDetailPage() {
     const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund.code)
     const klineDataMap: Record<string, KLineData[]> = {}
     for (const m of etfMappingsForFund) { if (klineData.length > 0) klineDataMap[m.exchangeCode] = klineData }
+    const quotes = Object.values(valuations).map((v) => v.quote).filter(Boolean) as any[]
     const result = generatePrompt({
       templateType, holdings: [fund], quotes, selectedIds: [fund.id], etfMappings, alerts,
       klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
     })
     setPrompt(result); setCopied(false)
-  }, [fund, templateType, quotes, etfMappings, alerts, klineData])
+  }, [fund, templateType, valuations, etfMappings, alerts, klineData])
 
   const handleGenerateKlinePrompt = useCallback(() => {
     setTemplateType('kline_enhanced')
@@ -253,6 +244,7 @@ export default function FundDetailPage() {
       const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund?.code)
       const klineDataMap: Record<string, KLineData[]> = {}
       for (const m of etfMappingsForFund) { if (klineData.length > 0) klineDataMap[m.exchangeCode] = klineData }
+      const quotes = Object.values(valuations).map((v) => v.quote).filter(Boolean) as any[]
       const result = generatePrompt({
         templateType: 'kline_enhanced', holdings: fund ? [fund] : [], quotes,
         selectedIds: fund ? [fund.id] : [], etfMappings, alerts,
@@ -260,7 +252,7 @@ export default function FundDetailPage() {
       })
       setPrompt(result); setCopied(false)
     }, 0)
-  }, [fund, quotes, etfMappings, alerts, klineData])
+  }, [fund, valuations, etfMappings, alerts, klineData])
 
   const handleCopy = useCallback(async () => {
     if (!prompt) return
@@ -284,6 +276,7 @@ export default function FundDetailPage() {
 
   return (
     <div className="space-y-6">
+      {(() => { console.log(`[FundDetailPage][顶层渲染] fund.code=${fund.code}, quoteCodes=`, quoteCodes, `valuations=`, valuations, `quotesLoading=${quotesLoading}`); return null })()}
       {/* 标题行：基金名称 + 标签（左侧），基金切换下拉（右侧） */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -332,7 +325,8 @@ export default function FundDetailPage() {
         </CardHeader>
         <CardContent>
           {(() => {
-            const q = quotes.find((q) => q.code === fund.code)
+            const val = valuations[fund.code]
+            const q = val?.quote
             // 有效净值必须 > 1 且不是默认值 1.0000
             const currentNAV = (q?.nav && q.nav > 0.001 && q.nav !== 1) ? q.nav : null
 
@@ -344,23 +338,28 @@ export default function FundDetailPage() {
             // 实际投入本金（优先方式一）
             const investment = costByShares || costByProfit || 0
 
-            // 持仓成本单价：优先用户录入，否则反算
-            const costNAV = fund.costNAV || (investment && fund.shares ? investment / fund.shares : 0) || 0
-
-            // 当前市值 = 份额 × 最新净值（优先），否则用持有金额，最后用成本
-            const currentMarketValue = (fund.shares && currentNAV)
-              ? fund.shares * currentNAV
-              : (fund.holdingAmount || investment || 0)
-
             // 如果通过方式二录入且无份额，从持有金额反算份额
             const derivedShares = fund.shares || (currentNAV && currentNAV > 0
               ? Math.round((fund.holdingAmount || 0) / currentNAV * 100) / 100
               : 0)
 
+            // 持仓成本单价：优先用户录入，否则反算（使用真实份额或反算份额）
+            const activeShares = fund.shares || derivedShares
+            const costNAV = fund.costNAV 
+              || (investment && fund.shares ? investment / fund.shares : 0) 
+              || (investment && derivedShares && derivedShares > 0 ? investment / derivedShares : 0) 
+              || 0
+
+            // 当前市值 = 份额 × 最新净值（优先），否则用持有金额，最后用成本
+            const currentMarketValue = (activeShares && currentNAV)
+              ? activeShares * currentNAV
+              : (fund.holdingAmount || investment || 0)
+
             const profit = currentMarketValue - investment
             const returnRate = investment > 0 ? (profit / investment) * 100 : 0
             const isProfit = profit >= 0
-            return (
+          
+          return (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                 <Item label="持有份额" value={fund.shares ? fund.shares.toLocaleString() : (derivedShares ? `≈${derivedShares.toLocaleString()}` : '-')} />
                 <Item label="持仓成本单价" value={costNAV > 0 ? `¥${costNAV.toFixed(4)}` : '-'} />
@@ -400,7 +399,8 @@ export default function FundDetailPage() {
           </CardHeader>
           <CardContent>
             {(() => {
-              const etfQuote = quotes.find((q) => q.code === etfCode)
+              const etfVal = etfCode ? valuations[etfCode] : null
+              const etfQuote = etfVal?.quote
               if (!etfQuote || !etfQuote.nav || etfQuote.nav <= 0.001) {
                 return <p className="text-xs text-muted-foreground">暂无实时数据</p>
               }
@@ -420,7 +420,7 @@ export default function FundDetailPage() {
                     </span>
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    开盘 ¥{quotes.find((q) => q.code === etfCode)?.nav.toFixed(4) || '-'}
+                    开盘 ¥{etfQuote.nav.toFixed(4) || '-'}
                   </div>
                 </div>
               )

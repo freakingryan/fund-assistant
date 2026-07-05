@@ -61,13 +61,19 @@ function periodToCount(period: string): number {
  * 使用 JSONP 方式（<script> 标签加载）规避 CORS 限制
  */
 async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
+  console.log(`[fetchFundGzQuote] 开始获取基金 ${code} 的实时估值`)
   try {
     const data = await fetchFundGzJsonp(code)
-    if (!data || data.fundcode !== code) return null
+    if (!data || data.fundcode !== code) {
+      console.warn(`[fetchFundGzQuote] 基金 ${code} 数据无效:`, data)
+      return null
+    }
 
     const gsz = Number(data.gsz) || 0
     const gszzl = Number(data.gszzl) || 0
     const dwjz = Number(data.dwjz) || 0
+
+    console.log(`[fetchFundGzQuote] ✅ 基金 ${code} 实时估值: gsz=${gsz}, gszzl=${gszzl}%, dwjz=${dwjz}`)
 
     return {
       code,
@@ -77,7 +83,10 @@ async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
       dailyChange: gszzl,
       navDate: String(data.gztime || data.jzrq || '').slice(0, 10),
     }
-  } catch { return null }
+  } catch (error) {
+    console.error(`[fetchFundGzQuote] ❌ 基金 ${code} 获取失败:`, error)
+    return null
+  }
 }
 
 export class StockApiAdapter implements FundDataSource {
@@ -110,18 +119,26 @@ export class StockApiAdapter implements FundDataSource {
    * - 场外基金 → fundgz.1234567.com.cn（天天基金实时估算净值）
    */
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
+    console.log(`[StockApiAdapter.fetchQuotes] 开始获取 ${codes.length} 个代码的行情:`, codes)
+    
     if (codes.length === 0) return []
 
     const etfCodes = codes.filter(isExchangeCode)
     const fundCodes = codes.filter((c) => !isExchangeCode(c))
     const results: FundQuote[] = []
 
+    console.log(`[StockApiAdapter.fetchQuotes] ETF代码(${etfCodes.length}个):`, etfCodes)
+    console.log(`[StockApiAdapter.fetchQuotes] 基金代码(${fundCodes.length}个):`, fundCodes)
+
     // 1) 场内 ETF：通过 stock-api 获取实时行情
     if (etfCodes.length > 0) {
       try {
+        console.log(`[StockApiAdapter.fetchQuotes] 正在获取ETF实时行情...`)
         const s = await ensureStocks()
         const apiCodes = etfCodes.map(toApiCode)
         const stocksList = await s.auto.getStocks(apiCodes)
+        console.log(`[StockApiAdapter.fetchQuotes] ETF行情结果:`, stocksList)
+        
         for (let i = 0; i < etfCodes.length; i++) {
           const stock = stocksList[i]
           if (stock && stock.now > 0 && stock.name) {
@@ -135,20 +152,32 @@ export class StockApiAdapter implements FundDataSource {
             })
           }
         }
-      } catch { /* fallback to fundgz */ }
+        console.log(`[StockApiAdapter.fetchQuotes] ✅ 成功获取 ${results.length} 个ETF行情`)
+      } catch (error) {
+        console.error(`[StockApiAdapter.fetchQuotes] ❌ ETF行情获取失败:`, error)
+        /* fallback to fundgz */
+      }
     }
 
     // 2) 场外基金：通过 fundgz.1234567.com.cn 获取实时估算净值
     if (fundCodes.length > 0) {
+      console.log(`[StockApiAdapter.fetchQuotes] 正在获取场外基金实时估值...`)
       const fundQuotes = await Promise.allSettled(fundCodes.map(fetchFundGzQuote))
+      
+      console.log(`[StockApiAdapter.fetchQuotes] 场外基金估值结果:`, fundQuotes)
+      
       for (let i = 0; i < fundCodes.length; i++) {
         const q = fundQuotes[i]
         if (q.status === 'fulfilled' && q.value) {
           results.push(q.value)
+        } else {
+          console.warn(`[StockApiAdapter.fetchQuotes] 基金 ${fundCodes[i]} 获取失败:`, q)
         }
       }
+      console.log(`[StockApiAdapter.fetchQuotes] ✅ 成功获取 ${fundCodes.length} 个基金中的 ${results.length - etfCodes.length} 个`)
     }
 
+    console.log(`[StockApiAdapter.fetchQuotes] 最终结果: ${results.length} 条行情数据`)
     return results
   }
 
