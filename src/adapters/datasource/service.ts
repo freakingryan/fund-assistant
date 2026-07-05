@@ -3,6 +3,7 @@ import type { FundDataSource } from './base'
 import { stockApiAdapter } from './stock-api'
 import { tushareAdapter } from './tushare'
 import { eastMoneyAdapter } from './eastmoney'
+import { fetchFundGzJsonp } from './jsonp-utils'
 import { useSettingsStore } from '@/stores/settings'
 
 class DataSourceService implements FundDataSource {
@@ -147,11 +148,21 @@ class DataSourceService implements FundDataSource {
     if (/^\d{6}$/.test(key)) {
       try {
         const info = await this.fetchFundInfo(key)
-        if (info && info.name !== key) {
+        if (info && info.name !== key && info.name !== '---') {
           results.push({ code: key, name: info.name })
           seen.add(key)
         }
       } catch { /* ignore */ }
+      // 如果适配器链没有返回有效名称，尝试直接通过 fundgz 查询
+      if (!seen.has(key)) {
+        try {
+          const fundData = await fetchFundGzJsonp(key)
+          if (fundData?.name && fundData.name !== key) {
+            results.push({ code: key, name: fundData.name })
+            seen.add(key)
+          }
+        } catch { /* ignore */ }
+      }
     }
 
     // 2) 通过 stock-api 搜索场内基金/ETF
