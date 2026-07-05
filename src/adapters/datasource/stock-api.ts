@@ -275,10 +275,14 @@ export class StockApiAdapter implements FundDataSource {
   } | null> {
     try {
       const vars = await fetchFundPingZhongData(fundCode)
+      console.warn('[fetchFundPortfolio] vars keys:', Object.keys(vars))
 
       // 从 stockCodesNew 获取前十大重仓股票代码（格式：["1.600519","0.000858","116.01179"]）
       // market: 1=SH, 0=SZ, 116=HK
-      const rawCodes: { market: string; code: string }[] = (vars['stockCodesNew'] || []).map((c: string) => {
+      const rawStockCodesNew = vars['stockCodesNew']
+      console.warn('[fetchFundPortfolio] stockCodesNew:', rawStockCodesNew)
+
+      const rawCodes: { market: string; code: string }[] = (rawStockCodesNew || []).map((c: string) => {
         const parts = String(c).split('.')
         if (parts.length !== 2) return null
         return { market: parts[0], code: parts[1] }
@@ -295,7 +299,8 @@ export class StockApiAdapter implements FundDataSource {
           })
         : (vars['stockCodes'] || []).map((c: string) => String(c).replace(/\d$/, ''))
 
-      if (codes.length === 0) return null
+      console.warn('[fetchFundPortfolio] api codes:', codes)
+      if (codes.length === 0) { console.warn('[fetchFundPortfolio] empty codes'); return null }
 
       // 并发获取股票名称（stock-api 的 getStock 按代码查询）
       const s = await ensureStocks()
@@ -324,9 +329,10 @@ export class StockApiAdapter implements FundDataSource {
         .filter((h: any) => h !== null)
         .slice(0, 10)
 
-      if (holdings.length === 0) return null
+      console.warn('[fetchFundPortfolio] holdings:', holdings)
+      if (holdings.length === 0) { console.warn('[fetchFundPortfolio] empty holdings'); return null }
       return { date: '', holdings }
-    } catch { return null }
+    } catch (e) { console.error('[fetchFundPortfolio] error:', e); return null }
   }
 
   /**
