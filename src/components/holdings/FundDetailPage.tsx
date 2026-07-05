@@ -106,11 +106,6 @@ export default function FundDetailPage() {
   // 实时行情：同时获取场外基金 + 场内 ETF 映射
   const quoteCodes = useMemo(() => (fund ? [fund.code, ...(etfCode ? [etfCode] : [])] : []), [fund, etfCode])
   const { valuations, refresh: refreshQuotes, loading: quotesLoading } = useRealtimeQuotes(quoteCodes, 0)
-  
-  useEffect(() => {
-    console.log(`[FundDetailPage] quoteCodes=`, quoteCodes)
-    console.log(`[FundDetailPage] valuations=`, valuations, `loading=${quotesLoading}`)
-  }, [quoteCodes, valuations, quotesLoading])
 
   // ─── K 线刷新 ─────────────────────────────────
   const handleRefreshKline = useCallback(async () => {
@@ -276,7 +271,6 @@ export default function FundDetailPage() {
 
   return (
     <div className="space-y-6">
-      {(() => { console.log(`[FundDetailPage][顶层渲染] fund.code=${fund.code}, quoteCodes=`, quoteCodes, `valuations=`, valuations, `quotesLoading=${quotesLoading}`); return null })()}
       {/* 标题行：基金名称 + 标签（左侧），基金切换下拉（右侧） */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2 flex-1 min-w-0">

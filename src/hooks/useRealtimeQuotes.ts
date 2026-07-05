@@ -44,8 +44,6 @@ export function useRealtimeQuotes(
   codes: string[],
   pollInterval = 0
 ): RealtimeQuotesResult {
-  console.log(`[useRealtimeQuotes] 被调用, codes=`, codes, `pollInterval=${pollInterval}`)
-  
   const [valuations, setValuations] = useState<Record<string, RealtimeValuation>>({})
   const [loading, setLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
@@ -66,46 +64,31 @@ export function useRealtimeQuotes(
 
   // 使用稳定的回调引用，避免因依赖变化导致 useEffect 重复触发
   const fetchQuotesInner = useCallback(async (codeList: string[], currentEtfMappings: { otcCode: string; exchangeCode: string }[], force = false) => {
-    console.log(`[useRealtimeQuotes.fetchQuotesInner] 开始获取行情, force=${force}, codes=`, codeList)
-    
-    if (codeList.length === 0) {
-      console.log(`[useRealtimeQuotes.fetchQuotesInner] 代码列表为空，直接返回`)
-      return
-    }
+    if (codeList.length === 0) return
 
     // 非强制刷新时，优先走缓存
     if (!force) {
-      console.log(`[useRealtimeQuotes.fetchQuotesInner] 尝试从缓存获取...`)
       const cached = await getQuotesCache(codeList)
       if (cached?.quotes?.length) {
-        console.log(`[useRealtimeQuotes.fetchQuotesInner] ✅ 从缓存获取到 ${cached.quotes.length} 条行情`)
         const result = buildValuations(cached.quotes, codeList, currentEtfMappings)
-        
-        // 同时更新 state 和 ref
         setValuations(result)
         valuationsRef.current = result
         setLastUpdated(new Date())
         return
-      } else {
-        console.log(`[useRealtimeQuotes.fetchQuotesInner] 缓存未命中，准备从网络获取`)
       }
     }
 
     setLoading(true)
 
     try {
-      console.log(`[useRealtimeQuotes.fetchQuotesInner] 正在调用 dataSourceService.fetchQuotes...`)
       const quotes = await dataSourceService.fetchQuotes(codeList)
-      console.log(`[useRealtimeQuotes.fetchQuotesInner] 获取到 ${quotes.length} 条行情:`, quotes)
       
       // 缓存结果（klineCache 已有智能 TTL）
       if (quotes.length > 0) {
-        console.log(`[useRealtimeQuotes.fetchQuotesInner] 缓存行情数据...`)
         setQuotesCache(codeList, quotes)
       }
 
       const result = buildValuations(quotes, codeList, currentEtfMappings)
-      console.log(`[useRealtimeQuotes.fetchQuotesInner] 构建的 valuations:`, result)
       
       // 同时更新 state 和 ref（确保一致性）
       setValuations(result)
@@ -124,16 +107,10 @@ export function useRealtimeQuotes(
 
   // 初始加载 + codes 变化时重新获取（使用 ref 避免闭包问题）
   useEffect(() => {
-    // 立即使用最新的 ref 数据，不依赖 useCallback 的变化
     const codeList = codesKey ? codesKey.split(',') : []
-    
-    console.log(`[useRealtimeQuotes] useEffect 触发, codes=`, codeList, `codesKey=`, codesKey)
-    
     if (codeList.length === 0) return
-    
-    // 直接调用 inner 函数，传入当前 ref 值
     fetchQuotesInner(codeList, etfMappingsRef.current, false)
-  }, [codesKey, fetchQuotesInner]) // 只依赖 codesKey 变化
+  }, [codesKey, fetchQuotesInner])
 
   // 轮询（使用 ref 获取最新数据）
   useEffect(() => {
@@ -147,7 +124,7 @@ export function useRealtimeQuotes(
   }, [pollInterval, fetchQuotesInner])
 
   return {
-    valuations, // 使用 state（正常触发重渲染）
+    valuations,
     refresh,
     loading,
     lastUpdated,
@@ -160,17 +137,12 @@ function buildValuations(
   codes: string[],
   etfMappings: { otcCode: string; exchangeCode: string }[]
 ): Record<string, RealtimeValuation> {
-  console.log(`[buildValuations] 开始构建 valuations, quotes=`, quotes, `codes=`, codes, `etfMappings=`, etfMappings)
-  
   const result: Record<string, RealtimeValuation> = {}
   const today = new Date().toISOString().slice(0, 10)
-  console.log(`[buildValuations] 今天日期: ${today}`)
 
   for (const code of codes) {
     const quote = quotes.find((q) => q.code === code)
     const hasEtfMapping = etfMappings.some((m) => m.otcCode === code)
-
-    console.log(`[buildValuations] 处理基金 ${code}: quote=`, quote, `hasEtfMapping=${hasEtfMapping}`)
 
     if (quote && quote.nav > 0.001 && quote.navDate) {
       result[code] = {
@@ -179,7 +151,6 @@ function buildValuations(
         loading: false,
         error: null,
       }
-      console.log(`[buildValuations] ✅ 基金 ${code} 数据有效: nav=${quote.nav}, dailyChange=${quote.dailyChange}`)
     } else {
       result[code] = {
         quote: null,
@@ -187,9 +158,7 @@ function buildValuations(
         loading: false,
         error: '暂无数据',
       }
-      console.warn(`[buildValuations] ⚠️ 基金 ${code} 数据无效: quote=`, quote)
     }
   }
-  console.log(`[buildValuations] 最终结果:`, result)
   return result
 }
