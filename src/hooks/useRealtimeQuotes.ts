@@ -3,9 +3,13 @@
  *
  * 利用 ETF 映射查询实时行情，为持仓列表/详情页/Dashboard 提供实时估值数据。
  * 通过 stock-api（内置）或 AKShare（降级）获取数据，零后端依赖。
+ *
+ * 缓存策略：使用 klineCache 已有的 getQuotesCache/setQuotesCache
+ * TTL 策略：交易时段内自动过期（A 股 9:30-15:00），非交易时段长缓存
  */
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { dataSourceService } from '@/adapters/datasource/service'
+import { getQuotesCache, setQuotesCache } from '@/services/klineCache'
 import { useSettingsStore } from '@/stores/settings'
 import type { FundQuote } from '@/types'
 
@@ -23,7 +27,7 @@ export interface RealtimeValuation {
 export interface RealtimeQuotesResult {
   /** code → RealtimeValuation 映射 */
   valuations: Record<string, RealtimeValuation>
-  /** 刷新所有实时行情 */
+  /** 刷新所有实时行情（跳过缓存强制拉取） */
   refresh: () => Promise<void>
   /** 全局加载状态 */
   loading: boolean
@@ -45,74 +49,101 @@ export function useRealtimeQuotes(
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const mountedRef = useRef(true)
 
-  const fetchQuotes = useCallback(async () => {
-    if (codes.length === 0) return
+  // 稳定化 codes 引用，防止无限重渲染
+  const codesKey = useMemo(() => [...codes].sort().join(','), [codes])
+
+  const fetchQuotes = useCallback(async (force = false) => {
+    const codeList = codesKey ? codesKey.split(',') : []
+    if (codeList.length === 0) return
+
+    // 非强制刷新时，优先走缓存
+    if (!force) {
+      const cached = await getQuotesCache(codeList)
+      if (cached?.quotes?.length) {
+        const result = buildValuations(cached.quotes, codeList, etfMappings)
+        if (mountedRef.current) {
+          setValuations(result)
+          setLastUpdated(new Date())
+        }
+        return
+      }
+    }
+
+    if (!mountedRef.current) return
     setLoading(true)
 
     try {
-      // 批量获取所有基金的行情（适配器链优先使用 stock-api）
-      const quotes = await dataSourceService.fetchQuotes(codes)
+      const quotes = await dataSourceService.fetchQuotes(codeList)
+      // 缓存结果（klineCache 已有智能 TTL）
+      if (quotes.length > 0) setQuotesCache(codeList, quotes)
 
-      // 构建结果映射
-      const result: Record<string, RealtimeValuation> = {}
-
-      for (const code of codes) {
-        const quote = quotes.find((q) => q.code === code)
-        const mapping = etfMappings.find((m) => m.otcCode === code)
-        const hasEtfMapping = !!mapping
-
-        if (quote && quote.nav > 0.001 && quote.navDate) {
-          result[code] = {
-            quote,
-            // 有 ETF 映射且净值日期是今天 → 实时行情
-            // 有 ETF 映射但净值日期不是今天 → 盘后净值
-            // 无 ETF 映射 → 始终是盘后净值
-            isRealtime: hasEtfMapping && quote.navDate === new Date().toISOString().slice(0, 10),
-            loading: false,
-            error: null,
-          }
-        } else {
-          result[code] = {
-            quote: null,
-            isRealtime: false,
-            loading: false,
-            error: '暂无数据',
-          }
-        }
+      const result = buildValuations(quotes, codeList, etfMappings)
+      if (mountedRef.current) {
+        setValuations(result)
+        setLastUpdated(new Date())
       }
-
-      setValuations(result)
-      setLastUpdated(new Date())
     } catch (e) {
       console.error('[RealtimeQuotes] fetch failed:', e)
     } finally {
-      setLoading(false)
+      if (mountedRef.current) setLoading(false)
     }
-  }, [codes.join(','), etfMappings])
+  }, [codesKey, etfMappings])
 
   // 初始加载
   useEffect(() => {
-    fetchQuotes()
+    mountedRef.current = true
+    // 延迟 50ms 执行，让组件先完成初次渲染
+    const t = setTimeout(() => fetchQuotes(false), 50)
+    return () => { mountedRef.current = false; clearTimeout(t) }
   }, [fetchQuotes])
 
   // 轮询
   useEffect(() => {
     if (pollInterval <= 0) return
-    timerRef.current = setInterval(fetchQuotes, pollInterval)
+    timerRef.current = setInterval(() => fetchQuotes(false), pollInterval)
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
     }
   }, [fetchQuotes, pollInterval])
 
-  return { valuations, refresh: fetchQuotes, loading, lastUpdated }
+  return {
+    valuations,
+    refresh: () => fetchQuotes(true),
+    loading,
+    lastUpdated,
+  }
 }
 
-/**
- * 获取单只基金的实时估值。
- * 有 ETF 映射时使用实时行情估算，否则返回盘后净值。
- */
-export function useFundRealtimeQuote(code: string): RealtimeValuation {
-  const { valuations } = useRealtimeQuotes(code ? [code] : [], 0)
-  return valuations[code] || { quote: null, isRealtime: false, loading: true, error: null }
+/** 从行情数组构建 valuations 映射 */
+function buildValuations(
+  quotes: FundQuote[],
+  codes: string[],
+  etfMappings: { otcCode: string; exchangeCode: string }[]
+): Record<string, RealtimeValuation> {
+  const result: Record<string, RealtimeValuation> = {}
+  const today = new Date().toISOString().slice(0, 10)
+
+  for (const code of codes) {
+    const quote = quotes.find((q) => q.code === code)
+    const hasEtfMapping = etfMappings.some((m) => m.otcCode === code)
+
+    if (quote && quote.nav > 0.001 && quote.navDate) {
+      result[code] = {
+        quote,
+        isRealtime: hasEtfMapping && quote.navDate === today,
+        loading: false,
+        error: null,
+      }
+    } else {
+      result[code] = {
+        quote: null,
+        isRealtime: false,
+        loading: false,
+        error: '暂无数据',
+      }
+    }
+  }
+  return result
 }
