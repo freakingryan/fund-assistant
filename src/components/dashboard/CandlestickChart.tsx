@@ -72,6 +72,42 @@ export default function CandlestickChart({
     }
   }, [selectedIndex])
 
+  const toggleSelect = useCallback((i: number) => {
+    setSelectedIndex((prev) => (prev === i ? null : i))
+  }, [])
+
+  const chartWidth = width - MARGIN.left - MARGIN.right
+  const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - 8
+
+  const { yScale, candles } = useMemo(() => {
+    if (data.length === 0) return { yScale: { min: 0, max: 0 }, candles: [] }
+
+    const high = Math.max(...data.map((d) => d.high))
+    const low = Math.min(...data.map((d) => d.low))
+    const pad = (high - low) * 0.05 || 0.01
+    const yMin = low - pad
+    const yMax = high + pad
+
+    const stepX = chartWidth / Math.max(data.length - 1, 1)
+    const candleWidth = Math.max(3, stepX * 0.6)
+    const scaleY = (v: number) => MARGIN.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
+
+    const candles = data.map((d, i) => {
+      const cx = MARGIN.left + i * stepX
+      const o = scaleY(d.open)
+      const c = scaleY(d.close)
+      const hi = scaleY(d.high)
+      const lo = scaleY(d.low)
+      const isUp = d.close >= d.open
+      return { d, cx, o, c, hi, lo, isUp, candleWidth }
+    })
+
+    return { yScale: { min: yMin, max: yMax }, candles }
+  }, [data, chartWidth, chartHeight])
+
+  const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data])
+  const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT
+
   // 有效显示索引：点击选中 > 外部高亮 > 鼠标悬停
   const effectiveIndex = selectedIndex !== null ? selectedIndex : (externalHighlightIndex !== null ? externalHighlightIndex : hoverIndex)
   const selected = effectiveIndex !== null ? data[effectiveIndex] : null
@@ -82,10 +118,6 @@ export default function CandlestickChart({
     setHoverIndex(i)
     onHover?.(i)
   }, [onHover])
-
-  const toggleSelect = useCallback((i: number) => {
-    setSelectedIndex((prev) => (prev === i ? null : i))
-  }, [])
 
   // 技术指标计算（外部传入优先，否则内部自动计算）
   const technicals = useMemo(() => {
