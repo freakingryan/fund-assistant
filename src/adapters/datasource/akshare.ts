@@ -240,33 +240,10 @@ export class AKShareAdapter implements FundDataSource {
   }
 
   /**
-   * fund_etf_hist_em — 场内 ETF 日频真实行情（OHLC + 成交量）
-   * 参数示例：symbol=512880, period=daily, start_date=20250601, end_date=20250620
+   * ETF K 线 — 已由 StockApiAdapter 优先处理，此方法作为兜底降级
+   * （fund_etf_hist_em 依赖东方财富 push2his，本地网络常被屏蔽）
    */
-  async fetchEtfKLine(code: string, period = '3m'): Promise<KLineData[]> {
-    const days = period === '1m' ? 30 : period === '6m' ? 130 : period === '1y' ? 250 : 66
-    const end = new Date()
-    const start = new Date(end.getTime() - days * 86400000)
-    const fmt = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
-
-    try {
-      const data = await this.call<Record<string, any>>('fund_etf_hist_em', {
-        symbol: code,
-        period: 'daily',
-        start_date: fmt(start),
-        end_date: fmt(end),
-      })
-      if (data.length > 0) {
-        return data.map((item: any) => ({
-          date: item['日期'] || item['date'] || '',
-          open: Number(item['开盘'] || item['open'] || 0),
-          close: Number(item['收盘'] || item['close'] || 0),
-          high: Number(item['最高'] || item['high'] || 0),
-          low: Number(item['最低'] || item['low'] || 0),
-          volume: Number(item['成交量'] || item['volume'] || 0),
-        })) // AKShare 返回旧→新，无需反转
-      }
-    } catch { /* fallback */ }
+  async fetchEtfKLine(_code: string, _period = '3m'): Promise<KLineData[]> {
     return []
   }
 

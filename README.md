@@ -44,12 +44,12 @@
 ### 🔌 多数据源（自动降级）
 | 数据源 | 配置要求 | 支持功能 |
 |--------|---------|---------|
-| **AKShare (AKTools)** | `pip install aktools && python -m aktools` | 基金基本信息、实时净值、历史净值、**场内 ETF 真实 K 线**（OHLC+成交量）、**重仓股穿透**、**基金排行**、**ETF 映射查询** |
+| **stock-api** 🆕 | 内置（npm 依赖），零配置 | 股票/ETF **实时行情**、**场内 ETF K 线**（OHLC+成交量）、股票搜索、自动腾讯/新浪/东方财富三级兜底 |
+| **AKShare (AKTools)** | `pip install aktools && python -m aktools` | 基金基本信息、实时净值、历史净值、**重仓股穿透**、**基金排行**、**ETF 映射查询** |
 | **Tushare Pro** | 注册 tushare.pro 获取 Token | 基金基本信息、实时净值、历史净值 |
-| **东方财富 (JSONP)** | 无需配置 | 实时净值（免 CORS） |
-| **模拟数据** | 无需配置 | 所有功能可用但数据不真实 |
+| **东方财富 (JSONP)** | 无需配置 | 实时净值（免 CORS 兜底） |
 
-> AKTools 是最推荐的数据源：免费、无需 Token、功能最全（ETF 真实 K 线 + 持仓穿透 + 排行榜），只需本地运行一个命令。
+> **stock-api 是首选的股票/ETF 数据源**：纯前端、零后端依赖、浏览器中直接 fetch 腾讯/新浪接口。基金净值数据仍由 AKTools 或 Tushare 提供。
 
 ### 🤖 AI 功能
 - **6 种 AI 平台** — DeepSeek / Google AI Studio / OpenAI / Groq / OpenRouter / 自定义 API
@@ -85,6 +85,7 @@
 | 图表 | Recharts + 纯 SVG | v3 |
 | 表格 | TanStack Table | v8 |
 | CSV/Excel | PapaParse / xlsx | — |
+| **数据源** | **stock-api**（股票/ETF 实时行情，零后端） | v2.7 |
 | 代码质量 | ESLint + TypeScript | v10 + v6 |
 | CI/CD | GitHub Actions (quality + deploy) | — |
 
@@ -117,22 +118,18 @@ npm run preview      # 本地预览构建结果
 npm run lint         # ESLint 代码检查
 ```
 
-### 配置 AKTools（推荐）
-
-```bash
-pip install aktools
-python -m aktools     # 默认监听 http://127.0.0.1:8080
-```
-
-然后在应用 **设置 → 数据源** 中选择「AKShare（本地 AKTools）」。
-
 ### 配置数据源（可选）
+
+应用会自动使用 **stock-api**（内置）获取股票/ETF 行情和 K 线数据，无需任何配置。
+
+如需获取基金净值、持仓穿透等附加功能：
 
 | 数据源 | 设置步骤 |
 |--------|---------|
-| Tushare | 设置 → 数据源 → 选择 Tushare → 填写 Token（[注册](https://tushare.pro)） |
-| AKTools | `pip install aktools && python -m aktools` → 设置 → 选择 AKShare |
-| 东方财富 | 无需配置，自动兜底 |
+| **stock-api** | 内置，零配置。自动优先使用腾讯接口，失败时降级到新浪/东方财富 |
+| **AKTools** | `pip install aktools && python -m aktools` → 设置 → 选择 AKShare（提供基金净值和持仓穿透） |
+| **Tushare** | 设置 → 数据源 → 选择 Tushare → 填写 Token（[注册](https://tushare.pro)） |
+| **东方财富** | 无需配置，自动作为兜底降级 |
 
 ### 配置 AI（可选）
 
@@ -203,7 +200,7 @@ fund-assistant/
 │   ├── stores/            # Zustand stores: holdings, plans, settings + Dexie db
 │   ├── services/          # ai.ts, backup.ts, klineCache.ts, klinePatterns.ts, klineAnalysis.ts
 │   │                      # technicalIndicators.ts, signalEngine.ts, notification.ts, prompt.ts
-│   ├── adapters/datasource/ # base.ts + akshare.ts + tushare.ts + eastmoney.ts + service.ts
+│   ├── adapters/datasource/ # base.ts + stock-api.ts + akshare.ts + tushare.ts + eastmoney.ts + service.ts
 │   ├── lib/               # classification.ts, utils.ts
 │   └── types/             # index.ts（全部 TS 类型定义）
 ```
@@ -216,9 +213,10 @@ fund-assistant/
 | `ERESOLVE` 依赖冲突 | 使用 `npm install --force` |
 | 端口被占用 | Vite 自动切换到下一个可用端口 |
 | 数据存在哪里？ | 浏览器 IndexedDB，清除浏览器数据会丢失 |
-| 需要数据库或后端？ | 不需要，纯前端应用 |
-| AKShare 查询失败？ | 确认 `python -m aktools` 正在运行 |
-| 我该选哪个数据源？ | AKTools 最推荐（免费、功能最全），其次 Tushare，东方财富自动兜底 |
+| 需要数据库或后端？ | 不需要，纯前端应用。ETF/股票数据使用 stock-api 直接在浏览器请求腾讯接口 |
+| AKShare 查询失败？ | ETF K 线由 stock-api 优先处理（无需后端）。基金净值需要 `python -m aktools` 在本地运行 |
+| 我该选哪个数据源？ | stock-api 始终可用（ETF/股票），AKTools 推荐用于基金净值数据 |
+| ETF K 线显示空白？ | 新版已集成 stock-api，直接通过腾讯接口获取，不再依赖本地 AKTools |
 
 ## 部署
 
