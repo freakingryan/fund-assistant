@@ -98,6 +98,11 @@ export default function FundDetailPage() {
   // 有效高亮：点击选中优先于悬停
   const effectiveKlineHighlight = useMemo(() => selectedKlineIndex ?? hoveredKlineIndex, [selectedKlineIndex, hoveredKlineIndex])
 
+  // K 线形态点击：切换持久化选中
+  const handlePatternClick = useCallback((index: number | null) => {
+    setSelectedKlineIndex((prev) => prev === index ? null : index)
+  }, [])
+
   // ─── 点击页面其他位置清除选中高亮 ────────────
   useEffect(() => {
     if (selectedKlineIndex === null) return
@@ -409,7 +414,7 @@ export default function FundDetailPage() {
             klineAnalysis={klineAnalysis} klineAnalyzing={klineAnalyzing} klineAnalysisError={klineAnalysisError}
             hoveredKlineIndex={hoveredKlineIndex}
             onPatternHover={setHoveredKlineIndex}
-            onPatternSelect={setSelectedKlineIndex}
+            onPatternSelect={handlePatternClick}
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}
           />
           <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} />

@@ -64,7 +64,7 @@ export default function KlinePatternCard({
                       className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors cursor-pointer ${isHovered ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
                       onMouseEnter={() => onPatternHover?.(p.index)}
                       onMouseLeave={() => onPatternHover?.(null)}
-                      onClick={() => onPatternSelect?.(hoveredKlineIndex === p.index ? null : p.index)}
+                      onClick={(e) => { e.stopPropagation(); onPatternSelect?.(p.index) }}
                     >
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] font-medium ${
                         p.direction === 'bullish'

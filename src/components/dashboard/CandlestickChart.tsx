@@ -48,6 +48,8 @@ export default function CandlestickChart({
   data, width = 480, height = 320, patterns = [], onHover, showMA = false, showBollinger = false,
   technicals: externalTechnicals, externalHighlightIndex = null,
 }: Props) {
+  // 悬停（临时）和选中（持久）分开管理
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -70,41 +72,16 @@ export default function CandlestickChart({
     }
   }, [selectedIndex])
 
-  const chartWidth = width - MARGIN.left - MARGIN.right
-  const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - 8
+  // 有效显示索引：点击选中 > 外部高亮 > 鼠标悬停
+  const effectiveIndex = selectedIndex !== null ? selectedIndex : (externalHighlightIndex !== null ? externalHighlightIndex : hoverIndex)
+  const selected = effectiveIndex !== null ? data[effectiveIndex] : null
+  const selectedCandle = effectiveIndex !== null ? candles[effectiveIndex] : null
+  const selectedPattern = effectiveIndex !== null ? getPatternLabel(patterns, effectiveIndex) : null
 
-  const { yScale, candles } = useMemo(() => {
-    if (data.length === 0) return { yScale: { min: 0, max: 0 }, candles: [] }
-
-    const high = Math.max(...data.map((d) => d.high))
-    const low = Math.min(...data.map((d) => d.low))
-    const pad = (high - low) * 0.05 || 0.01
-    const yMin = low - pad
-    const yMax = high + pad
-
-    const stepX = chartWidth / Math.max(data.length - 1, 1)
-    const candleWidth = Math.max(3, stepX * 0.6)
-    const scaleY = (v: number) => MARGIN.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
-
-    const candles = data.map((d, i) => {
-      const cx = MARGIN.left + i * stepX
-      const o = scaleY(d.open)
-      const c = scaleY(d.close)
-      const hi = scaleY(d.high)
-      const lo = scaleY(d.low)
-      const isUp = d.close >= d.open
-      return { d, cx, o, c, hi, lo, isUp, candleWidth }
-    })
-
-    return { yScale: { min: yMin, max: yMax }, candles }
-  }, [data, chartWidth, chartHeight])
-
-  const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data])
-  const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT
-
-  const selected = selectedIndex !== null ? data[selectedIndex] : (externalHighlightIndex !== null ? data[externalHighlightIndex] : null)
-  const selectedCandle = selectedIndex !== null ? candles[selectedIndex] : (externalHighlightIndex !== null ? candles[externalHighlightIndex] : null)
-  const selectedPattern = (selectedIndex !== null ? getPatternLabel(patterns, selectedIndex) : (externalHighlightIndex !== null ? getPatternLabel(patterns, externalHighlightIndex) : null))
+  const handleHover = useCallback((i: number | null) => {
+    setHoverIndex(i)
+    onHover?.(i)
+  }, [onHover])
 
   const toggleSelect = useCallback((i: number) => {
     setSelectedIndex((prev) => (prev === i ? null : i))
@@ -261,7 +238,7 @@ export default function CandlestickChart({
             const bodyBottom = Math.max(c.o, c.c)
             const label = patterns.length > 0 ? getPatternLabel(patterns, i) : null
             const style = label ? PATTERN_STYLES[label as KlinePattern] : null
-            const isSelected = selectedIndex === i || externalHighlightIndex === i
+            const isSelected = selectedIndex === i || externalHighlightIndex === i || hoverIndex === i
             const hitW = Math.max(c.candleWidth, 12) * 2
             return (
               <g key={`c-${i}`}>
@@ -273,8 +250,8 @@ export default function CandlestickChart({
                   height={chartHeight + VOL_HEIGHT}
                   fill="transparent"
                   className="cursor-crosshair"
-                  onMouseEnter={() => { setSelectedIndex(i); onHover?.(i) }}
-                  onMouseLeave={() => { setSelectedIndex(null); onHover?.(null) }}
+                  onMouseEnter={() => handleHover(i)}
+                  onMouseLeave={() => handleHover(null)}
                   onClick={() => toggleSelect(i)}
                   onTouchEnd={(e) => { e.preventDefault(); toggleSelect(i) }}
                 />
