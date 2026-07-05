@@ -414,6 +414,7 @@ export default function FundDetailPage() {
             klineData={klineData} klineDetectedPatterns={klineDetectedPatterns} klinePatterns={klinePatterns}
             klineAnalysis={klineAnalysis} klineAnalyzing={klineAnalyzing} klineAnalysisError={klineAnalysisError}
             hoveredKlineIndex={hoveredKlineIndex}
+            selectedKlineIndex={selectedKlineIndex}
             onPatternHover={setHoveredKlineIndex}
             onPatternSelect={handlePatternClick}
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}

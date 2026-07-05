@@ -15,6 +15,7 @@ interface Props {
   klineAnalyzing: boolean
   klineAnalysisError: string | null
   hoveredKlineIndex: number | null
+  selectedKlineIndex?: number | null
   onPatternHover?: (index: number | null) => void
   onPatternSelect?: (index: number | null) => void
   onAnalyzeKline: () => void
@@ -24,7 +25,7 @@ interface Props {
 export default function KlinePatternCard({
   klineData, klineDetectedPatterns, klinePatterns,
   klineAnalysis, klineAnalyzing, klineAnalysisError,
-  hoveredKlineIndex, onPatternHover, onPatternSelect, onAnalyzeKline, onGenerateKlinePrompt,
+  hoveredKlineIndex, selectedKlineIndex, onPatternHover, onPatternSelect, onAnalyzeKline, onGenerateKlinePrompt,
 }: Props) {
   const [glossaryOpen, setGlossaryOpen] = useState(false)
 
@@ -58,10 +59,10 @@ export default function KlinePatternCard({
               {[...klineDetectedPatterns]
                 .sort((a, b) => b.index - a.index)
                 .map((p, i) => {
-                  const isHovered = hoveredKlineIndex === p.index
+                  const isHighlighted = hoveredKlineIndex === p.index || selectedKlineIndex === p.index
                   return (
                     <div key={`${p.type}-${p.index}-${i}`}
-                      className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors cursor-pointer ${isHovered ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
+                      className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors cursor-pointer ${isHighlighted ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
                       onMouseEnter={() => onPatternHover?.(p.index)}
                       onMouseLeave={() => onPatternHover?.(null)}
                       onClick={(e) => { e.stopPropagation(); onPatternSelect?.(p.index) }}
