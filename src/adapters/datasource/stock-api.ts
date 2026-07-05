@@ -61,11 +61,9 @@ function periodToCount(period: string): number {
  * 使用 JSONP 方式（<script> 标签加载）规避 CORS 限制
  */
 async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
-  console.log(`[fetchFundGzQuote] 开始获取基金 ${code} 的实时估值`)
   try {
     const data = await fetchFundGzJsonp(code)
     if (!data || data.fundcode !== code) {
-      console.warn(`[fetchFundGzQuote] 基金 ${code} 数据无效:`, data)
       return null
     }
 
@@ -73,7 +71,6 @@ async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
     const gszzl = Number(data.gszzl) || 0
     const dwjz = Number(data.dwjz) || 0
 
-    console.log(`[fetchFundGzQuote] ✅ 基金 ${code} 实时估值: gsz=${gsz}, gszzl=${gszzl}%, dwjz=${dwjz}`)
 
     return {
       code,
@@ -119,7 +116,6 @@ export class StockApiAdapter implements FundDataSource {
    * - 场外基金 → fundgz.1234567.com.cn（天天基金实时估算净值）
    */
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
-    console.log(`[StockApiAdapter.fetchQuotes] 开始获取 ${codes.length} 个代码的行情:`, codes)
     
     if (codes.length === 0) return []
 
@@ -127,17 +123,13 @@ export class StockApiAdapter implements FundDataSource {
     const fundCodes = codes.filter((c) => !isExchangeCode(c))
     const results: FundQuote[] = []
 
-    console.log(`[StockApiAdapter.fetchQuotes] ETF代码(${etfCodes.length}个):`, etfCodes)
-    console.log(`[StockApiAdapter.fetchQuotes] 基金代码(${fundCodes.length}个):`, fundCodes)
 
     // 1) 场内 ETF：通过 stock-api 获取实时行情
     if (etfCodes.length > 0) {
       try {
-        console.log(`[StockApiAdapter.fetchQuotes] 正在获取ETF实时行情...`)
         const s = await ensureStocks()
         const apiCodes = etfCodes.map(toApiCode)
         const stocksList = await s.auto.getStocks(apiCodes)
-        console.log(`[StockApiAdapter.fetchQuotes] ETF行情结果:`, stocksList)
         
         for (let i = 0; i < etfCodes.length; i++) {
           const stock = stocksList[i]
@@ -152,7 +144,6 @@ export class StockApiAdapter implements FundDataSource {
             })
           }
         }
-        console.log(`[StockApiAdapter.fetchQuotes] ✅ 成功获取 ${results.length} 个ETF行情`)
       } catch (error) {
         console.error(`[StockApiAdapter.fetchQuotes] ❌ ETF行情获取失败:`, error)
         /* fallback to fundgz */
@@ -161,23 +152,17 @@ export class StockApiAdapter implements FundDataSource {
 
     // 2) 场外基金：通过 fundgz.1234567.com.cn 获取实时估算净值
     if (fundCodes.length > 0) {
-      console.log(`[StockApiAdapter.fetchQuotes] 正在获取场外基金实时估值...`)
       const fundQuotes = await Promise.allSettled(fundCodes.map(fetchFundGzQuote))
       
-      console.log(`[StockApiAdapter.fetchQuotes] 场外基金估值结果:`, fundQuotes)
       
       for (let i = 0; i < fundCodes.length; i++) {
         const q = fundQuotes[i]
         if (q.status === 'fulfilled' && q.value) {
           results.push(q.value)
-        } else {
-          console.warn(`[StockApiAdapter.fetchQuotes] 基金 ${fundCodes[i]} 获取失败:`, q)
         }
       }
-      console.log(`[StockApiAdapter.fetchQuotes] ✅ 成功获取 ${fundCodes.length} 个基金中的 ${results.length - etfCodes.length} 个`)
     }
 
-    console.log(`[StockApiAdapter.fetchQuotes] 最终结果: ${results.length} 条行情数据`)
     return results
   }
 
@@ -290,27 +275,56 @@ export class StockApiAdapter implements FundDataSource {
   } | null> {
     try {
       const vars = await fetchFundPingZhongData(fundCode)
-      const positions = vars['Data_fundSharesPositions']
-      const stockNames = vars['stockCodes'] || vars['stockCodesNew'] || []
 
-      if (!Array.isArray(positions) || positions.length === 0) return null
-      // stockCodes 格式：{ code: 'sz000651', name: '格力电器' }
+      // 从 stockCodesNew 获取前十大重仓股票代码（格式：["1.600519","0.000858","116.01179"]）
+      // market: 1=SH, 0=SZ, 116=HK
+      const rawCodes: { market: string; code: string }[] = (vars['stockCodesNew'] || []).map((c: string) => {
+        const parts = String(c).split('.')
+        if (parts.length !== 2) return null
+        return { market: parts[0], code: parts[1] }
+      }).filter(Boolean)
 
-      const holdings = positions.map((item: any) => {
-        // Data_fundSharesPositions: [{code, name, position, marketValue, ...}]
-        const stCode = String(item.code || item.stockCode || '')
-        // 查找股票名称
-        const nameMap = Array.isArray(stockNames)
-          ? stockNames.find((s: any) => s.code === stCode || s.code === `sz${stCode}` || s.code === `sh${stCode}`)
-          : null
-        return {
-          code: stCode,
-          name: nameMap?.name || item.name || '',
-          ratio: Number(item.position || item.ratio || 0),
-          value: Number(item.marketValue || item.value || 0),
-        }
-      }).filter((h: any) => h.name || h.code).slice(0, 10)
+      // 若新格式为空，回退旧格式（"6005191" → 去掉尾部市场标记）
+      const codes: string[] = rawCodes.length > 0
+        ? rawCodes.map((r: any) => {
+            // 转换为 stock-api 兼容格式
+            if (r.market === '1') return `SH${r.code}`
+            if (r.market === '0') return `SZ${r.code}`
+            if (r.market === '116') return `HK${r.code}`
+            return r.code
+          })
+        : (vars['stockCodes'] || []).map((c: string) => String(c).replace(/\d$/, ''))
 
+      if (codes.length === 0) return null
+
+      // 并发获取股票名称（stock-api 的 getStock 按代码查询）
+      const s = await ensureStocks()
+      const results = await Promise.allSettled(
+        codes.map((code: string) => s.auto.getStock(code))
+      )
+
+      const holdings = results
+        .map((result: PromiseSettledResult<any>, i: number) => {
+          const raw = result.status === 'fulfilled' && result.value?.name
+            ? { code: codes[i].replace(/^(SH|SZ|HK)/, ''), name: result.value.name, ratio: 0, value: 0 }
+            : null
+          if (raw && raw.name) return raw
+          // 尝试从旧格式 stockCodes 中解析名称
+          if (result.status !== 'fulfilled' || !result.value?.name) {
+            const codeClean = codes[i].replace(/^(SH|SZ|HK)/, '')
+            const nameFromVars = Array.isArray(vars['stockCodes'])
+              ? vars['stockCodes'].find((c: string) => c.startsWith(codeClean))
+              : null
+            if (nameFromVars) {
+              return { code: codeClean, name: nameFromVars.replace(/^\d+/, ''), ratio: 0, value: 0 }
+            }
+          }
+          return raw
+        })
+        .filter((h: any) => h !== null)
+        .slice(0, 10)
+
+      if (holdings.length === 0) return null
       return { date: '', holdings }
     } catch { return null }
   }
