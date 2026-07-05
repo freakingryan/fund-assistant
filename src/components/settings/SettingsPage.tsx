@@ -6,11 +6,12 @@ import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle } from 'lucide-react'
+import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
 import { testAIConnection } from '@/services/ai'
+import { dataSourceService } from '@/adapters/datasource/service'
 import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist, verifyGistToken } from '@/services/backup'
 import { toast } from '@/components/ui/toast'
 
@@ -25,6 +26,25 @@ export default function SettingsPage() {
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testingAi, setTestingAi] = useState<string | null>(null)
+  const [health, setHealth] = useState<{
+    stockApi?: { ok: boolean; latency: number; error?: string }
+    fundgz?: { ok: boolean; latency: number; error?: string }
+    pingzhongdata?: { ok: boolean; latency: number; error?: string }
+  } | null>(null)
+  const [healthChecking, setHealthChecking] = useState(false)
+
+  // 检查数据源健康状态
+  const handleCheckHealth = async () => {
+    setHealthChecking(true)
+    setHealth(null)
+    try {
+      const result = await dataSourceService.checkHealth()
+      setHealth(result)
+    } catch (e: any) {
+      setHealth({ stockApi: { ok: false, latency: 0, error: String(e) } })
+    }
+    setHealthChecking(false)
+  }
 
   // 导出备份
   const handleExport = async () => {
@@ -152,6 +172,60 @@ export default function SettingsPage() {
                   className="flex-1"
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 数据源状态 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">数据源状态</CardTitle>
+                <Button
+                  variant="outline" size="sm" className="h-7 text-xs"
+                  onClick={handleCheckHealth}
+                  disabled={healthChecking}
+                >
+                  {healthChecking ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Activity className="h-3 w-3 mr-1" />}
+                  检查连通性
+                </Button>
+              </div>
+              <CardDescription>stock-api / 东方财富 数据源可用性检查</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!health && !healthChecking && (
+                <p className="text-xs text-muted-foreground">点击「检查连通性」测试各数据源状态</p>
+              )}
+              {healthChecking && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />检测中...
+                </div>
+              )}
+              {health && !healthChecking && (
+                <div className="space-y-2">
+                  {Object.entries(health).map(([key, val]) => (
+                    <div key={key} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        {val.ok ? (
+                          <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                        ) : (
+                          <AlertCircle className="h-3.5 w-3.5 text-red-500" />
+                        )}
+                        <span className="font-medium">{{
+                          stockApi: 'stock-api（腾讯接口）',
+                          fundgz: 'fundgz（实时净值）',
+                          pingzhongdata: 'pingzhongdata（历史数据）',
+                        }[key] || key}</span>
+                      </div>
+                      <span className="text-muted-foreground">
+                        {val.ok
+                          ? `${val.latency}ms`
+                          : `❌ ${val.error || '无响应'}`
+                        }
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

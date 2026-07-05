@@ -132,6 +132,29 @@ class DataSourceService implements FundDataSource {
     }
     return []
   }
+
+  /**
+   * 检查所有适配器的数据源健康状态
+   */
+  async checkHealth(): Promise<{
+    stockApi: { ok: boolean; latency: number; error?: string }
+    fundgz: { ok: boolean; latency: number; error?: string }
+    pingzhongdata: { ok: boolean; latency: number; error?: string }
+  }> {
+    const adapters = this.getAdapters()
+    for (const adapter of adapters) {
+      if (typeof (adapter as any).checkHealth === 'function') {
+        try {
+          return await (adapter as any).checkHealth()
+        } catch { /* try next */ }
+      }
+    }
+    return {
+      stockApi: { ok: false, latency: 0, error: '无适配器支持' },
+      fundgz: { ok: false, latency: 0, error: '无适配器支持' },
+      pingzhongdata: { ok: false, latency: 0, error: '无适配器支持' },
+    }
+  }
 }
 
 export const dataSourceService = new DataSourceService()

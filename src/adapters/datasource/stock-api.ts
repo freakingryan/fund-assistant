@@ -367,6 +367,56 @@ export class StockApiAdapter implements FundDataSource {
       })).filter((r: any) => r.code && r.name)
     } catch { return [] }
   }
+
+  /**
+   * 检查各数据源健康状态
+   * 返回每个数据源的可用状态和延迟（毫秒）
+   */
+  async checkHealth(): Promise<{
+    stockApi: { ok: boolean; latency: number; error?: string }
+    fundgz: { ok: boolean; latency: number; error?: string }
+    pingzhongdata: { ok: boolean; latency: number; error?: string }
+  }> {
+    const result = {
+      stockApi: { ok: false, latency: 0 } as { ok: boolean; latency: number; error?: string },
+      fundgz: { ok: false, latency: 0 } as { ok: boolean; latency: number; error?: string },
+      pingzhongdata: { ok: false, latency: 0 } as { ok: boolean; latency: number; error?: string },
+    }
+
+    // 1) stock-api: 尝试获取一个已知 ETF 的行情
+    try {
+      const t0 = performance.now()
+      const s = await ensureStocks()
+      await s.auto.getStock('SZ159558')
+      result.stockApi.ok = true
+      result.stockApi.latency = Math.round(performance.now() - t0)
+    } catch (e: any) {
+      result.stockApi.error = e.message || String(e)
+    }
+
+    // 2) fundgz: 尝试获取一个已知基金的实时估值
+    try {
+      const t0 = performance.now()
+      await fetchFundGzJsonp('000001')
+      result.fundgz.ok = true
+      result.fundgz.latency = Math.round(performance.now() - t0)
+    } catch (e: any) {
+      result.fundgz.error = e.message || String(e)
+    }
+
+    // 3) pingzhongdata: 尝试获取一个已知基金的历史数据（只测连通性）
+    try {
+      const t0 = performance.now()
+      const vars = await fetchFundPingZhongData('000001')
+      result.pingzhongdata.ok = !!vars['Data_netWorthTrend']
+      result.pingzhongdata.latency = Math.round(performance.now() - t0)
+      if (!result.pingzhongdata.ok) result.pingzhongdata.error = '净值数据为空'
+    } catch (e: any) {
+      result.pingzhongdata.error = e.message || String(e)
+    }
+
+    return result
+  }
 }
 
 export const stockApiAdapter = new StockApiAdapter()
