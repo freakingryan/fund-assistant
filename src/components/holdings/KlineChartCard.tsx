@@ -98,13 +98,11 @@ export default function KlineChartCard({
                 >BOLL</button>
               </>
             )}
-            {onRefreshQuote && etfCode && (
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onRefreshQuote} disabled={quoteRefreshing} title="刷新行情">
-                {quoteRefreshing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              </Button>
-            )}
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={handleRefreshKline} disabled={refreshing.kline} title={useEtfKline ? '刷新K线' : '刷新净值'}>
-              {refreshing.kline ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+              onClick={() => { onRefreshQuote?.(); handleRefreshKline(); }}
+              disabled={refreshing.kline || !!quoteRefreshing}
+              title="刷新行情与K线">
+              {(refreshing.kline || quoteRefreshing) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </Button>
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger className="h-7 text-xs w-[62px]"><SelectValue /></SelectTrigger>
