@@ -346,7 +346,7 @@ export default function SettingsPage() {
                     {provider === 'agnes' && (
                       <div className="space-y-1">
                         <Input
-                          placeholder="Base URL（可选，默认 https://api.agnes.ai/v1/chat/completions）"
+                          placeholder="Base URL（可选，默认 https://apihub.agnes-ai.com/v1）"
                           value={cfg?.baseURL || ''}
                           onChange={(e) => {
                             const others = settings.aiConfigs.filter((c) => c.provider !== 'agnes')
