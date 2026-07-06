@@ -42,12 +42,8 @@ export class EastMoneyAdapter implements FundDataSource {
         }
       } catch { /* try next */ }
     }
-    if (results.length === 0) return []
-    for (const code of codes) {
-      if (!results.find((r) => r.code === code)) {
-        results.push({ code, name: `基金 ${code}`, nav: 1, accNav: 1, dailyChange: 0, navDate: '' })
-      }
-    }
+    // 仅返回真实取到数据的基金；缺失代码的基金交由上层标记「暂无数据」，
+    // 不再伪造 nav:1 的占位行（否则会被误判为有效行情）。
     return results
   }
 

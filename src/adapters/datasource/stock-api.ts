@@ -94,37 +94,64 @@ function toStockApiCode(code: string): string {
 }
 
 /**
- * 从 fundgz.1234567.com.cn 获取场外基金实时估算净值
- * 返回格式：jsonpgz({ fundcode, name, jzrq, dwjz, gsz, gszzl, gztime })
- * 使用 JSONP 方式（<script> 标签加载）规避 CORS 限制
+ * 获取场外基金实时估值 / 最新净值。
+ *
+ * 数据源：
+ * - 优先：fundgz.1234567.com.cn 盘中估算净值（实时，交易时段内有值）
+ * - 兜底：fund.eastmoney.com/pingzhongdata 最新单位净值（适用于无盘中估值的基金，
+ *   如货币基金、券商资管 98xxxx、部分 QDII / 定开基金）
+ *
+ * 说明：许多场外基金并未在天天基金发布盘中估值，fundgz 会稳定返回 404，
+ * 这是**预期场景**而非异常，因此任一来源失败均静默降级，不向控制台刷错误日志。
  */
 async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
-  // 空码或非法码（截图导入常缺代码）直接返回，避免对 fundegz.1234567.com.cn/js/.js 发请求 → 404
+  // 空码或非法码（截图导入常缺代码）直接返回，避免发请求
   if (!code || !/^\d{6}$/.test(code)) return null
+
+  // 1) 优先：盘中估算净值（实时估值）
   try {
     const data = await fetchFundGzJsonp(code)
-    if (!data || data.fundcode !== code) {
-      return null
+    if (data && data.fundcode === code) {
+      const gsz = Number(data.gsz) || 0
+      const dwjz = Number(data.dwjz) || 0
+      return {
+        code,
+        name: String(data.name || code),
+        nav: gsz > 0 ? gsz : dwjz,
+        accNav: 0,
+        dailyChange: Number(data.gszzl) || 0,
+        navDate: String(data.gztime || data.jzrq || '').slice(0, 10),
+      }
     }
-
-    const gsz = Number(data.gsz) || 0
-    const gszzl = Number(data.gszzl) || 0
-    const dwjz = Number(data.dwjz) || 0
-
-
-    return {
-      code,
-      name: String(data.name || code),
-      nav: gsz > 0 ? gsz : dwjz,
-      accNav: 0,
-      dailyChange: gszzl,
-      navDate: String(data.gztime || data.jzrq || '').slice(0, 10),
-    }
-  } catch (error) {
-    console.error(`[fetchFundGzQuote] ❌ 基金 ${code} 获取失败:`, error)
-    return null
+  } catch {
+    // 盘中估值不可用（404 / 超时），降级到最新净值
   }
+
+  // 2) 兜底：最新单位净值（pingzhongdata 历史净值末值）
+  try {
+    const vars = await fetchFundPingZhongData(code)
+    const trend: any[] = vars['Data_netWorthTrend']
+    if (Array.isArray(trend) && trend.length > 0) {
+      const last = trend[trend.length - 1]
+      const prev = trend.length > 1 ? trend[trend.length - 2] : null
+      const nav = Number(last.y) || 0
+      const prevNav = prev ? Number(prev.y) || 0 : 0
+      const dailyChange = prevNav > 0 ? ((nav - prevNav) / prevNav) * 100 : 0
+      const navDate = last.x ? new Date(last.x).toISOString().slice(0, 10) : ''
+      const name = String(vars['fS_name'] || code)
+      if (nav > 0) {
+        return { code, name, nav, accNav: 0, dailyChange, navDate }
+      }
+    }
+  } catch {
+    // 净值兜底也失败，静默返回 null
+  }
+
+  return null
 }
+
+/** 导出别名：带净值兜底，供导入时校验代码是否可正常获取行情 */
+export const fetchFundQuoteWithFallback = fetchFundGzQuote
 
 export class StockApiAdapter implements FundDataSource {
   name = 'stock-api'

@@ -18,6 +18,7 @@ import { autoClassify } from '@/lib/classification'
 import { extractFundInfoFromImage } from '@/services/ai'
 import { getDefaultAI } from '@/services/ai'
 import { fetchFundCodeByName } from '@/adapters/datasource/jsonp-utils'
+import { fetchFundQuoteWithFallback } from '@/adapters/datasource/stock-api'
 import type { Market, FundType, FundSector } from '@/types'
 import { TYPE_LABELS, MARKET_LABELS } from '@/lib/labels'
 
@@ -52,6 +53,8 @@ interface ParsedRow {
   purchaseDate: string
   tags: string
   notes: string
+  /** 导入校验时标记为「无法获取行情」（代码缺失/识别有误），需用户手动核对 */
+  needsCodeCheck?: boolean
 }
 
 function parseFile(file: File): Promise<ImportRow[]> {
@@ -118,6 +121,40 @@ export default function ImportDialog() {
     if (open) setAiConfigured(!!getDefaultAI())
   }, [open])
 
+  /**
+   * 并发校验每只基金代码能否取到行情（带净值兜底）。
+   * 取不到（代码缺失 / 识别有误 / 无数据源覆盖）的标记 needsCodeCheck。
+   */
+  const validateRows = useCallback(async (rows: ParsedRow[]): Promise<ParsedRow[]> => {
+    const results = await Promise.allSettled(
+      rows.map((r) =>
+        r.code
+          ? fetchFundQuoteWithFallback(r.code).then((q) => !!q)
+          : Promise.resolve(false)
+      )
+    )
+    return rows.map((r, i) => ({
+      ...r,
+      needsCodeCheck: !(results[i].status === 'fulfilled' && results[i].value),
+    }))
+  }, [])
+
+  /** 校验后写入预览，并对无法获取行情的基金给出提示 */
+  const validateAndPreview = useCallback(async (parsed: ParsedRow[], rowErrors: string[]) => {
+    const validated = await validateRows(parsed)
+    const failed = validated.filter((r) => r.needsCodeCheck)
+    setRows(validated)
+    if (failed.length > 0) {
+      const examples = failed.slice(0, 3).map((r) => r.code || r.name).join('、')
+      const msg = `有 ${failed.length} 只基金代码待核对（可能无法获取行情）：${examples}${failed.length > 3 ? ' 等' : ''}，导入后请补全代码`
+      setErrors([...rowErrors, msg])
+      toast({ type: 'warning', message: msg })
+    } else {
+      setErrors(rowErrors)
+    }
+    setStep('preview')
+  }, [validateRows, toast])
+
   // ---- CSV/Excel ----
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
@@ -129,9 +166,9 @@ export default function ImportDialog() {
         if (n) { parsed.push(n) } else { errs.push(`第 ${i + 1} 行缺少基金代码或名称`) }
       }
       if (parsed.length === 0) { setErrors(['没有解析到有效数据']); return }
-      setRows(parsed); setErrors(errs); setStep('preview')
+      await validateAndPreview(parsed, errs)
     } catch (err) { setErrors([String(err)]) }
-  }, [])
+  }, [validateAndPreview])
 
   // ---- Image + AI ----
   const handleImage = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -177,8 +214,7 @@ export default function ImportDialog() {
       if (resolvedCount > 0) {
         toast({ type: 'info', message: `已通过基金名称自动识别 ${resolvedCount} 只基金的代码` })
       }
-      setRows(parsed)
-      setStep('preview')
+      await validateAndPreview(parsed, [])
     } catch (err) {
       setErrors([String(err)])
     }
@@ -327,6 +363,7 @@ export default function ImportDialog() {
                     <TableHead className="w-[75px]">收益</TableHead>
                     <TableHead className="w-[65px]">成本</TableHead>
                     <TableHead className="w-[65px]">份额</TableHead>
+                    <TableHead className="w-[64px]">状态</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -352,6 +389,13 @@ export default function ImportDialog() {
                       </TableCell>
                       <TableCell className="text-xs">{row.costNAV || '-'}</TableCell>
                       <TableCell className="text-xs">{row.shares || '-'}</TableCell>
+                      <TableCell>
+                        {row.needsCodeCheck ? (
+                          <Badge variant="destructive" className="text-[10px]">待核对</Badge>
+                        ) : (
+                          <Badge variant="secondary" className="text-[10px] text-green-600">✓</Badge>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
