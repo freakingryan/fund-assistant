@@ -1,4 +1,4 @@
-import type { FundQuote, KLineData } from '@/types'
+import type { FundQuote } from '@/types'
 import type { FundDataSource } from './base'
 import { fetchFundGzJsonp } from './jsonp-utils'
 
@@ -49,11 +49,6 @@ export class EastMoneyAdapter implements FundDataSource {
       }
     }
     return results
-  }
-
-  async fetchKLine(code: string, _period = '3m'): Promise<KLineData[]> {
-    // 东财 JSONP 接口暂未实现，返回空数组
-    return []
   }
 
   private classifyType(name: string): string {

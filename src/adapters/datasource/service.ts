@@ -1,4 +1,4 @@
-import type { FundQuote, KLineData } from '@/types'
+import type { DatasourceHealth, EtfMapping, FundPortfolio, FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
 import { stockApiAdapter } from './stock-api'
 import { tushareAdapter } from './tushare'
@@ -57,6 +57,7 @@ class DataSourceService implements FundDataSource {
 
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
     for (const adapter of this.getAdapters()) {
+      if (typeof adapter.fetchKLine !== 'function') continue
       try {
         const data = await adapter.fetchKLine(code, period)
         if (data.length > 0) return data
@@ -116,36 +117,26 @@ class DataSourceService implements FundDataSource {
   /**
    * 获取基金持仓明细（前十大重仓股）
    */
-  async fetchFundPortfolio(fundCode: string): Promise<{
-    date: string
-    holdings: { code: string; name: string; ratio: number; value: number }[]
-  } | null> {
+  async fetchFundPortfolio(fundCode: string): Promise<FundPortfolio | null> {
     for (const adapter of this.getAdapters()) {
-      if (typeof (adapter as any).fetchFundPortfolio === 'function') {
-        try {
-          const result = await (adapter as any).fetchFundPortfolio(fundCode)
-          if (result) return result
-        } catch { /* try next */ }
-      }
+      if (typeof adapter.fetchFundPortfolio !== 'function') continue
+      try {
+        const result = await adapter.fetchFundPortfolio(fundCode)
+        if (result) return result
+      } catch { /* try next */ }
     }
     return null
   }
   /**
    * 查询场外基金对应的场内 ETF 代码
    */
-  async queryEtfMapping(otcCode: string): Promise<{
-    otcCode: string
-    otcName: string
-    exchangeCode: string
-    exchangeName: string
-  } | null> {
+  async queryEtfMapping(otcCode: string): Promise<EtfMapping | null> {
     for (const adapter of this.getAdapters()) {
-      if (typeof (adapter as any).queryEtfMapping === 'function') {
-        try {
-          const result = await (adapter as any).queryEtfMapping(otcCode)
-          if (result) return result
-        } catch { /* try next */ }
-      }
+      if (typeof adapter.queryEtfMapping !== 'function') continue
+      try {
+        const result = await adapter.queryEtfMapping(otcCode)
+        if (result) return result
+      } catch { /* try next */ }
     }
     return null
   }
@@ -156,12 +147,11 @@ class DataSourceService implements FundDataSource {
    */
   async searchStocks(key: string): Promise<{ code: string; name: string }[]> {
     for (const adapter of this.getAdapters()) {
-      if (typeof (adapter as any).searchStocks === 'function') {
-        try {
-          const data = await (adapter as any).searchStocks(key)
-          if (data.length > 0) return data
-        } catch { /* try next */ }
-      }
+      if (typeof adapter.searchStocks !== 'function') continue
+      try {
+        const data = await adapter.searchStocks(key)
+        if (data.length > 0) return data
+      } catch { /* try next */ }
     }
     return []
   }
@@ -215,18 +205,13 @@ class DataSourceService implements FundDataSource {
   /**
    * 检查所有适配器的数据源健康状态
    */
-  async checkHealth(): Promise<{
-    stockApi: { ok: boolean; latency: number; error?: string }
-    fundgz: { ok: boolean; latency: number; error?: string }
-    pingzhongdata: { ok: boolean; latency: number; error?: string }
-  }> {
+  async checkHealth(): Promise<DatasourceHealth> {
     const adapters = this.getAdapters()
     for (const adapter of adapters) {
-      if (typeof (adapter as any).checkHealth === 'function') {
-        try {
-          return await (adapter as any).checkHealth()
-        } catch { /* try next */ }
-      }
+      if (typeof adapter.checkHealth !== 'function') continue
+      try {
+        return await adapter.checkHealth()
+      } catch { /* try next */ }
     }
     return {
       stockApi: { ok: false, latency: 0, error: '无适配器支持' },

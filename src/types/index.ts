@@ -69,6 +69,19 @@ export interface EtfMapping {
   exchangeName: string
 }
 
+/** 基金前十大重仓股 */
+export interface FundPortfolio {
+  date: string
+  holdings: { code: string; name: string; ratio: number; value: number }[]
+}
+
+/** 数据源健康检查结果 */
+export interface DatasourceHealth {
+  stockApi: { ok: boolean; latency: number; error?: string }
+  fundgz: { ok: boolean; latency: number; error?: string }
+  pingzhongdata: { ok: boolean; latency: number; error?: string }
+}
+
 // ============= 投资计划 =============
 
 export type PlanRuleType =
@@ -149,7 +162,8 @@ export interface AIConfig {
 
 export interface DataSourceConfig {
   tushareToken: string
-  primarySource: 'tushare' | 'westock' | 'neodata'
+  /** 仅 'tushare' 实际受支持（其余为未实现的僵尸选项，已移除） */
+  primarySource: 'tushare'
 }
 
 export interface NotionConfig {

@@ -14,6 +14,7 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
 import { fetchFundGzJsonp, fetchFundPingZhongData, fetchFundHoldingsF10 } from './jsonp-utils'
+import { periodToCount } from './periodConfig'
 
 // stock-api 是 ESM-only 库，动态 import 以适应项目构建配置
 let stocks: any = null
@@ -59,19 +60,6 @@ function toStockApiCode(code: string): string {
     if (f === '5') return `SH${code}`
   }
   return code
-}
-
-/**
- * 计算 period 对应的 K 线条数
- */
-function periodToCount(period: string): number {
-  switch (period) {
-    case '1m': return 30
-    case '3m': return 66
-    case '6m': return 130
-    case '1y': return 250
-    default: return 66
-  }
 }
 
 /**

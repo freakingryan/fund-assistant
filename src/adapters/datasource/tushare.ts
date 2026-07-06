@@ -1,6 +1,7 @@
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
 import { useSettingsStore } from '@/stores/settings'
+import { periodToCount, MS_PER_DAY } from './periodConfig'
 
 /**
  * Tushare 通用响应结构
@@ -126,9 +127,9 @@ export class TushareAdapter implements FundDataSource {
   }
 
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
-    const days = period === '1m' ? 22 : period === '6m' ? 132 : period === '1y' ? 250 : 66
+    const days = periodToCount(period)
     const endDate = new Date()
-    const startDate = new Date(endDate.getTime() - (days + 10) * 86400000)
+    const startDate = new Date(endDate.getTime() - (days + 10) * MS_PER_DAY)
 
     const data = await this.call('fund_nav', {
       ts_code: code,

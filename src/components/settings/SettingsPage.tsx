@@ -149,13 +149,11 @@ export default function SettingsPage() {
                 <Label>默认数据源</Label>
                 <Select
                   value={settings.dataSource.primarySource}
-                  onValueChange={(v) => updateDataSource({ primarySource: v as any })}
+                  onValueChange={(v) => updateDataSource({ primarySource: v as 'tushare' })}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="tushare">Tushare</SelectItem>
-                    <SelectItem value="westock">西股数据</SelectItem>
-                    <SelectItem value="neodata">NeoData</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
