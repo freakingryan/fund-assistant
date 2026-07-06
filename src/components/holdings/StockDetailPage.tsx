@@ -8,7 +8,8 @@ import type { KLineData, FundQuote } from '@/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ArrowLeft, RefreshCw, CheckCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle } from 'lucide-react'
+import { RefreshButton } from '@/components/ui/refresh-button'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
@@ -214,9 +215,7 @@ export default function StockDetailPage() {
             ) : (
               <span className="text-sm text-muted-foreground">加载行情中…</span>
             )}
-            <Button variant="ghost" size="sm" className="h-7 text-xs ml-auto" onClick={handleRefreshQuote} disabled={refreshing.quote} title="刷新行情">
-              <RefreshCw className={`h-3 w-3 mr-1 ${refreshing.quote ? 'animate-spin' : ''}`} />刷新行情
-            </Button>
+            <RefreshButton onClick={handleRefreshQuote} loading={refreshing.quote} title="刷新行情" label="刷新行情" className="ml-auto" />
           </div>
         </CardContent>
       </Card>

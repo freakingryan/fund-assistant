@@ -14,6 +14,7 @@ import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import type { FundHolding } from '@/types'
 import { pnlColor, formatSigned } from '@/lib/format'
 import { TYPE_LABELS, MARKET_LABELS, SECTOR_LABELS } from '@/lib/labels'
+import { RefreshButton } from '@/components/ui/refresh-button'
 import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, RefreshCw } from 'lucide-react'
 import EditFundDialog from './EditFundDialog'
 import QuickAdjustDialog from './QuickAdjustDialog'
@@ -331,10 +332,7 @@ export default function HoldingsTable() {
         </div>
 
         <div className="ml-auto flex gap-2">
-          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={refreshQuotes} disabled={quotesLoading}>
-            <RefreshCw className={`h-3 w-3 mr-1 ${quotesLoading ? 'animate-spin' : ''}`} />
-            刷新估值
-          </Button>
+          <RefreshButton onClick={refreshQuotes} loading={quotesLoading} label="刷新估值" />
           {selectedIds.length > 0 && (
             <Button
               variant="destructive"

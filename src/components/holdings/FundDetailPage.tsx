@@ -13,7 +13,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import SearchableSelect from '@/components/ui/searchable-select'
-import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, Wallet, RefreshCw, ChevronRight } from 'lucide-react'
+import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, Wallet, ChevronRight } from 'lucide-react'
+import { RefreshButton } from '@/components/ui/refresh-button'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
@@ -327,9 +328,7 @@ export default function FundDetailPage() {
               <Wallet className="h-3.5 w-3.5" />持仓信息
             </CardTitle>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleRefreshQuotes} disabled={refreshing.quotes} title="刷新行情">
-                <RefreshCw className={`h-3 w-3 mr-1 ${refreshing.quotes ? 'animate-spin' : ''}`} />刷新行情
-              </Button>
+              <RefreshButton onClick={handleRefreshQuotes} loading={refreshing.quotes} title="刷新行情" label="刷新行情" />
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
                 <TrendingUp className="h-3 w-3 mr-1 text-green-500" />调仓
               </Button>
@@ -438,9 +437,7 @@ export default function FundDetailPage() {
                     <CardTitle className="text-sm">重仓股</CardTitle>
                     <span className="text-[10px] text-muted-foreground bg-muted/50 px-1.5 py-0.5 rounded">前 10 大</span>
                   </div>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleRefreshPortfolio} disabled={refreshing.portfolio} title="刷新重仓股">
-                    <RefreshCw className={`h-3 w-3 mr-1 ${refreshing.portfolio ? 'animate-spin' : ''}`} />刷新
-                  </Button>
+                  <RefreshButton onClick={handleRefreshPortfolio} loading={refreshing.portfolio} title="刷新重仓股" label="刷新" />
                 </div>
               </CardHeader>
               <CardContent>

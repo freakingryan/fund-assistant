@@ -9,14 +9,14 @@ import {
   PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import { Button } from '@/components/ui/button'
 import {
   TrendingUp, Wallet, BarChart3, PieChartIcon,
-  DollarSign, Percent, Loader2, AlertCircle, RefreshCw,
+  DollarSign, Percent, Loader2, AlertCircle,
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
 import { calcValue, calcCost, pnlColor, formatPercent } from '@/lib/format'
 import { TYPE_LABELS, SECTOR_LABELS } from '@/lib/labels'
+import { RefreshButton } from '@/components/ui/refresh-button'
 import { getKlineCache, setKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
 import RealtimePanel from './RealtimePanel'
 
@@ -227,10 +227,7 @@ export default function DashboardPage() {
             {quotesUpdateTime && <span className="text-[10px] text-muted-foreground ml-2">数据更新于 {quotesUpdateTime}</span>}
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleRefreshQuotes} disabled={quotesRefreshing}>
-          <RefreshCw className={`h-3 w-3 mr-1 ${quotesRefreshing ? 'animate-spin' : ''}`} />
-          刷新数据
-        </Button>
+        <RefreshButton onClick={handleRefreshQuotes} loading={quotesRefreshing} label="刷新数据" />
       </div>
 
       {/* Summary Cards */}

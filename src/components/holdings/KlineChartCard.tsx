@@ -4,12 +4,12 @@ import { pnlColor } from '@/lib/format'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
+import { RefreshButton } from '@/components/ui/refresh-button'
 
 // 净值折线图静态尺寸（基金非 ETF 模式下的回退展示）
 const NAV_CHART_WIDTH = 560
@@ -128,12 +128,14 @@ export default function KlineChartCard({
                 >BOLL</button>
               </>
             )}
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0"
+            <RefreshButton
               onClick={() => { onRefreshQuote?.(); handleRefreshKline(); }}
-              disabled={refreshing.kline || !!quoteRefreshing}
-              title="刷新行情与K线">
-              {(refreshing.kline || quoteRefreshing) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            </Button>
+              loading={refreshing.kline || !!quoteRefreshing}
+              title="刷新行情与K线"
+              swapIcon
+              iconClassName="h-3.5 w-3.5"
+              className="h-7 w-7 p-0"
+            />
             <Select value={period} onValueChange={setPeriod}>
               <SelectTrigger className="h-7 text-xs w-[62px]"><SelectValue /></SelectTrigger>
               <SelectContent>

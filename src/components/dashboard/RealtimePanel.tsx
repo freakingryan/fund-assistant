@@ -8,11 +8,11 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import type { FundHolding } from '@/types'
 import { calcCost, pnlColor, formatSigned } from '@/lib/format'
-import { TrendingUp, RefreshCw } from 'lucide-react'
+import { TrendingUp } from 'lucide-react'
+import { RefreshButton } from '@/components/ui/refresh-button'
 
 interface Props {
   holdings: FundHolding[]
@@ -81,9 +81,7 @@ export default function RealtimePanel({ holdings }: Props) {
             )}
           </CardTitle>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={refresh} disabled={loading}>
-              <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
-            </Button>
+            <RefreshButton onClick={refresh} loading={loading} className="h-6 text-[10px]" />
           </div>
         </div>
       </CardHeader>
