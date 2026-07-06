@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity } from 'lucide-react'
+import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity, Copy, Check } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
@@ -96,6 +96,7 @@ export default function SettingsPage() {
   // 推送到 Gist
   const [gistVerifyResult, setGistVerifyResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [verifyingToken, setVerifyingToken] = useState(false)
+  const [gistIdCopied, setGistIdCopied] = useState(false)
 
   const handleVerifyToken = async () => {
     if (!settings.sync.gistToken) return
@@ -529,10 +530,37 @@ export default function SettingsPage() {
               </div>
               <div>
                 <Label className="text-xs">Gist ID（首次推送后自动生成）</Label>
-                <Input placeholder="自动生成"
-                  value={settings.sync.gistId}
-                  onChange={(e) => updateSettings({ sync: { ...settings.sync, gistId: e.target.value } })}
-                  className="text-xs font-mono h-8 mt-1" />
+                <div className="flex gap-2 mt-1">
+                  <Input
+                    readOnly
+                    tabIndex={-1}
+                    placeholder="首次推送到 Gist 后自动生成"
+                    value={settings.sync.gistId}
+                    className="text-xs font-mono h-8 flex-1 bg-muted text-muted-foreground cursor-default focus-visible:ring-0"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs shrink-0"
+                    disabled={!settings.sync.gistId}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(settings.sync.gistId)
+                        setGistIdCopied(true)
+                        toast({ type: 'success', message: 'Gist ID 已复制' })
+                        setTimeout(() => setGistIdCopied(false), 1800)
+                      } catch {
+                        toast({ type: 'error', message: '复制失败，请手动选择文本复制' })
+                      }
+                    }}
+                  >
+                    {gistIdCopied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
+                    {gistIdCopied ? '已复制' : '复制'}
+                  </Button>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  由系统自动写入，请勿手动修改。换设备恢复备份时可直接粘贴此 ID。
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button size="sm" disabled={!settings.sync.gistToken || syncing} onClick={handleGistPush}>
