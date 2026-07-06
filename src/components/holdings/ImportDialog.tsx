@@ -244,8 +244,15 @@ export default function ImportDialog() {
         tags: r.tags ? r.tags.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean) : [],
         notes: r.notes,
       }))
-      await importHoldings(records)
-      toast({ type: 'success', message: `已导入 ${records.length} 条${dupCount > 0 ? `（已去重 ${dupCount} 条）` : ''}` })
+      const result = await importHoldings(records)
+      const parts: string[] = []
+      if (result.added) parts.push(`新增 ${result.added}`)
+      if (result.updated) parts.push(`更新 ${result.updated}`)
+      const dupNote = dupCount > 0 ? `（已去重 ${dupCount} 条）` : ''
+      const msg = parts.length
+        ? `导入完成：${parts.join('，')}${dupNote}`
+        : `导入完成${dupNote}`
+      toast({ type: 'success', message: msg })
       setStep('done')
     } catch (e) {
       toast({ type: 'error', message: `导入失败：${String(e)}` })
