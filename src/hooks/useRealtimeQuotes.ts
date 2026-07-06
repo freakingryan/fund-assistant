@@ -12,6 +12,7 @@ import { dataSourceService } from '@/adapters/datasource/service'
 import { getQuotesCache, setQuotesCache } from '@/services/klineCache'
 import { useSettingsStore } from '@/stores/settings'
 import type { FundQuote } from '@/types'
+import { toast } from '@/components/ui/toast'
 
 export interface RealtimeValuation {
   /** 基金代码对应的实时行情 */
@@ -55,9 +56,11 @@ export function useRealtimeQuotes(
   const codesRef = useRef<string[]>([])
   const etfMappingsRef = useRef(etfMappings)
 
-  // 保持 ref 同步（不触发重渲染）
-  codesRef.current = codes
-  etfMappingsRef.current = etfMappings
+  // 保持 ref 同步（不触发重渲染）：放到 effect 中，避免渲染期访问 ref
+  useEffect(() => {
+    codesRef.current = codes
+    etfMappingsRef.current = etfMappings
+  }, [codes, etfMappings])
 
   // 稳定化 codes 引用，防止无限重渲染
   const codesKey = useMemo(() => [...codes].sort().join(','), [codes])
@@ -94,8 +97,8 @@ export function useRealtimeQuotes(
       setValuations(result)
       valuationsRef.current = result
       setLastUpdated(new Date())
-    } catch (e) {
-      console.error('[RealtimeQuotes] fetch failed:', e)
+    } catch {
+      toast({ type: 'error', message: '行情更新失败，请检查网络' })
     } finally {
       setLoading(false)
     }

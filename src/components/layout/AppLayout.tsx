@@ -20,6 +20,7 @@ import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
+import { toast } from '@/components/ui/toast'
 import InstallPrompt from './InstallPrompt'
 
 const navItems = [
@@ -53,7 +54,7 @@ export default function AppLayout() {
       try {
         const results = await dataSourceService.searchFunds(globalSearch.trim())
         setSearchResults(results.slice(0, 15))
-      } catch { setSearchResults([]) }
+      } catch { toast({ type: 'error', message: '搜索失败，请稍后重试' }); setSearchResults([]) }
       setSearchLoading(false)
     }, 300)
     return () => clearTimeout(t)

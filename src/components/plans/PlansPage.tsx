@@ -3,6 +3,7 @@ import { usePlansStore } from '@/stores/plans'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { sendAlertBatch, requestNotificationPermission } from '@/services/notification'
+import { toast } from '@/components/ui/toast'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -167,6 +168,9 @@ export default function PlansPage() {
           reason: a.reason || '投资计划触发',
         })))
       }
+      toast({ type: 'success', message: `扫描命中 ${result.length} 条提醒` })
+    } else {
+      toast({ type: 'info', message: '扫描完成，本期无触发' })
     }
   }, [plan, holdings, scan, settings.notifications.browser])
 

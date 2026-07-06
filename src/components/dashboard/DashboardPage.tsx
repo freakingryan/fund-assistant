@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useHoldingsStore } from '@/stores/holdings'
 import { usePlansStore } from '@/stores/plans'
 import { useSettingsStore } from '@/stores/settings'
@@ -17,6 +18,7 @@ import type { FundQuote, FundHolding } from '@/types'
 import { calcValue, calcCost, pnlColor, formatPercent } from '@/lib/format'
 import { TYPE_LABELS, SECTOR_LABELS } from '@/lib/labels'
 import { RefreshButton } from '@/components/ui/refresh-button'
+import { toast } from '@/components/ui/toast'
 import { getKlineCache, setKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
 import RealtimePanel from './RealtimePanel'
 
@@ -36,10 +38,10 @@ export default function DashboardPage() {
   const loadAlerts = usePlansStore((s) => s.loadAlerts)
   const markAlertExecuted = usePlansStore((s) => s.markAlertExecuted)
   const dismissAlert = usePlansStore((s) => s.dismissAlert)
+  const navigate = useNavigate()
 
   const [quotes, setQuotes] = useState<FundQuote[]>([])
   const [quotesLoading, setQuotesLoading] = useState(false)
-  const [, setQuotesError] = useState('')
   const [quotesRefreshing, setQuotesRefreshing] = useState(false)
   const [selectedFund] = useState<FundHolding | null>(null)
   const [selectedPeriod] = useState('3m')
@@ -73,7 +75,7 @@ export default function DashboardPage() {
   const loadQuotes = useCallback(async (force = false) => {
     if (holdings.length === 0) return
     const codes = holdings.map((h) => h.code)
-    setQuotesLoading(true); setQuotesError('')
+    setQuotesLoading(true)
 
     if (!force) {
       const cached = await getQuotesCache(codes)
@@ -88,8 +90,8 @@ export default function DashboardPage() {
       const data = await dataSourceService.fetchQuotes(codes)
       setQuotes(data)
       if (data.length > 0) setQuotesCache(codes, data)
-    } catch (e) {
-      setQuotesError(String(e))
+    } catch {
+      toast({ type: 'error', message: '行情加载失败，已展示缓存数据' })
     }
     setQuotesLoading(false)
   }, [holdings])
@@ -348,7 +350,7 @@ export default function DashboardPage() {
             <div className="space-y-1">
               {holdings.slice(0, 5).map((h) => (
                 <div key={h.id}
-                  onClick={() => window.location.href = `/detail/${h.id}`}
+                  onClick={() => navigate('/detail/' + h.id)}
                   className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
