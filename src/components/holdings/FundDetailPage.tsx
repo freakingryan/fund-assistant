@@ -21,23 +21,12 @@ import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { pnlColor, formatSigned } from '@/lib/format'
+import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from '@/lib/labels'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
 import type { KlineAnalysisResult } from '@/services/klineAnalysis'
 import { evaluateSignal } from '@/services/signalEngine'
 import type { SignalResult } from '@/services/signalEngine'
-
-const TYPE_LABELS: Record<string, string> = {
-  stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
-  qdii: 'QDII', money: '货币型', etf: 'ETF', other: '其他',
-}
-const SECTOR_LABELS: Record<string, string> = {
-  tech: '科技', consumer: '消费', healthcare: '医药', new_energy: '新能源',
-  finance: '金融', manufacturing: '制造', broad_market: '宽基',
-  global: '全球', bond_market: '债市', commodity: '大宗商品',
-  real_estate: '地产', other: '其他',
-}
-const MARKET_LABELS: Record<string, string> = { A: 'A股', HK: '港股', US: '美股' }
 
 const TEMPLATE_HINTS: Record<string, string> = {
   diagnostic: '根据持仓明细（成本/市值/收益率/涨跌幅）生成投资诊断，分析集中度、风险收益、调仓建议',

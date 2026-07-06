@@ -17,6 +17,7 @@ import { autoClassify } from '@/lib/classification'
 import { extractFundInfoFromImage } from '@/services/ai'
 import { getDefaultAI } from '@/services/ai'
 import type { Market, FundType, FundSector } from '@/types'
+import { TYPE_LABELS, MARKET_LABELS } from '@/lib/labels'
 
 const COLUMN_ALIASES: Record<string, string> = {
   '基金代码': 'code', '代码': 'code', 'code': 'code', 'fund_code': 'code',
@@ -35,11 +36,6 @@ type ImportRow = Partial<Record<string, string | number>>
 
 const MARKET_OPTIONS: Market[] = ['A', 'HK', 'US']
 const TYPE_OPTIONS: FundType[] = ['stock', 'mixed', 'bond', 'index', 'qdii', 'money', 'etf', 'other']
-const TYPE_LABELS: Record<FundType, string> = {
-  stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
-  qdii: 'QDII', money: '货币型', etf: 'ETF', other: '其他',
-}
-const MARKET_LABELS: Record<Market, string> = { A: 'A股', HK: '港股', US: '美股' }
 
 interface ParsedRow {
   code: string

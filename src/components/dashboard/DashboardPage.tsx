@@ -16,22 +16,13 @@ import {
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
 import { calcValue, calcCost, pnlColor, formatPercent } from '@/lib/format'
+import { TYPE_LABELS, SECTOR_LABELS } from '@/lib/labels'
 import { getKlineCache, setKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
 import RealtimePanel from './RealtimePanel'
 
 const TYPE_COLORS: Record<string, string> = {
   stock: '#ef4444', mixed: '#f97316', bond: '#22c55e', index: '#3b82f6',
   qdii: '#a855f7', money: '#06b6d4', etf: '#eab308', other: '#6b7280',
-}
-const TYPE_LABELS: Record<string, string> = {
-  stock: '股票型', mixed: '混合型', bond: '债券型', index: '指数型',
-  qdii: 'QDII', money: '货币型', etf: 'ETF', other: '其他',
-}
-const SECTOR_LABELS: Record<string, string> = {
-  tech: '科技', consumer: '消费', healthcare: '医药', new_energy: '新能源',
-  finance: '金融', manufacturing: '制造', broad_market: '宽基',
-  global: '全球', bond_market: '债市', commodity: '大宗商品',
-  real_estate: '地产', other: '其他',
 }
 const SECTOR_COLORS = ['#3b82f6','#ef4444','#22c55e','#f97316','#a855f7','#06b6d4','#eab308','#ec4899','#8b5cf6','#10b981','#f43f5e','#6b7280']
 
