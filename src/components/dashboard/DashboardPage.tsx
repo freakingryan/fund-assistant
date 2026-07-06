@@ -204,7 +204,7 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight">数据看板</h1>
           <p className="text-sm text-muted-foreground mt-1">持仓总览与数据分析</p>
         </div>
-        <Card>
+        <Card className="card-hover">
           <CardContent className="text-center py-20 space-y-3">
             <Wallet className="h-12 w-12 mx-auto text-muted-foreground/30" />
             <p className="text-muted-foreground">暂无持仓数据，请先在「持仓管理」中添加基金</p>
@@ -232,7 +232,7 @@ export default function DashboardPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <Card>
+        <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <DollarSign className="h-3 w-3" />持仓市值
@@ -241,7 +241,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <TrendingUp className="h-3 w-3" />持仓盈亏
@@ -252,7 +252,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <Percent className="h-3 w-3" />持仓收益率
@@ -263,7 +263,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <BarChart3 className="h-3 w-3" />今日涨跌
@@ -274,7 +274,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <PieChartIcon className="h-3 w-3" />持仓基金
@@ -290,7 +290,7 @@ export default function DashboardPage() {
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* Type Distribution */}
-        <Card>
+        <Card className="card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">持仓类型分布</CardTitle>
           </CardHeader>
@@ -315,7 +315,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Sector Distribution */}
-        <Card>
+        <Card className="card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">投资领域分布</CardTitle>
           </CardHeader>
@@ -340,7 +340,7 @@ export default function DashboardPage() {
       {/* NAV Trend + Top Holdings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {/* NAV Trend → 快捷跳转到详情页 */}
-        <Card>
+        <Card className="card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">基金详情</CardTitle>
           </CardHeader>
@@ -366,7 +366,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Top Holdings */}
-        <Card>
+        <Card className="card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">持仓 TOP 10</CardTitle>
           </CardHeader>

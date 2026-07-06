@@ -403,7 +403,7 @@ export default function HoldingsTable() {
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="cursor-pointer"
+                  className="row-hover"
                   data-state={selectedIds.includes(row.original.id) ? 'selected' : undefined}
                   onClick={() => navigate(`/detail/${row.original.id}`)}
                 >

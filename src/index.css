@@ -115,3 +115,12 @@ body {
     color: hsl(var(--foreground));
   }
 }
+
+/* UI/UX 优化：可交互卡片 / 行的统一悬停动效（低成本·高感知） */
+@utility card-hover {
+  @apply transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+}
+
+@utility row-hover {
+  @apply transition-colors duration-150 hover:bg-muted/60 cursor-pointer;
+}

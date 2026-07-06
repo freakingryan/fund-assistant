@@ -78,7 +78,7 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
   const advice = buildAdvice(signalResult)
 
   return (
-    <Card>
+    <Card className="card-hover">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-1.5">
           <TrendingUp className="h-3.5 w-3.5 text-primary" />综合评分

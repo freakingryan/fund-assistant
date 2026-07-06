@@ -251,7 +251,7 @@ export default function PlansPage() {
             </Card>
           ) : (
             plan.rules.map((rule) => (
-              <Card key={rule.id}>
+              <Card key={rule.id} className="card-hover">
                 <CardContent className="p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3 flex-1 min-w-0">
