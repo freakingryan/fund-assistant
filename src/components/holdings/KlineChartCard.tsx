@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { KLineData, FundQuote } from '@/types'
 import { pnlColor } from '@/lib/format'
+import { MA_COLORS, MA_LABELS } from '@/lib/chart-colors'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -189,11 +190,14 @@ export default function KlineChartCard({
                           <p className="font-medium text-foreground mb-0.5">📈 MA（移动平均线）</p>
                           <p>过去 N 个交易日收盘价的算术平均值，用于识别趋势方向和支撑/阻力位。</p>
                           <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-                            <span className="text-[9px]"><span className="font-medium" style={{ color: '#f59e0b' }}>MA5</span> {ma5Start}～{lastDate}</span>
-                            <span className="text-[9px]"><span className="font-medium" style={{ color: '#3b82f6' }}>MA10</span> {ma10Start}～{lastDate}</span>
-                            <span className="text-[9px]"><span className="font-medium" style={{ color: '#8b5cf6' }}>MA20</span> {ma20Start}～{lastDate}</span>
+                            {MA_LABELS.slice(0, 3).map((label, i) => (
+                              <span key={label} className="text-2xs">
+                                <span className="font-medium" style={{ color: MA_COLORS[i] }}>{label}</span>{' '}
+                                {i === 0 ? ma5Start : i === 1 ? ma10Start : ma20Start}～{lastDate}
+                              </span>
+                            ))}
                           </div>
-                          <p className="text-[9px] text-muted-foreground/70 mt-0.5">用法：价格在均线上方→短期偏强，下方→短期偏弱。MA5/10 金叉=买入信号，死叉=卖出信号。</p>
+                          <p className="text-2xs text-muted-foreground/70 mt-0.5">用法：价格在均线上方→短期偏强，下方→短期偏弱。MA5/10 金叉=买入信号，死叉=卖出信号。</p>
                         </div>
                       )
                     })()}

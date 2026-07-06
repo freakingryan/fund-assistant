@@ -43,6 +43,9 @@
   /* 中国股市配色 */
   --color-up: #ef4444;
   --color-down: #22c55e;
+
+  /* 字号 token：统一极小字号，替代散落的 text-[9px]/[10px]（V5） */
+  --text-2xs: 0.6875rem; /* 11px */
 }
 
 * {

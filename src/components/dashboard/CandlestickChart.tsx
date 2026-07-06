@@ -1,5 +1,6 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import type { KLineData } from '@/types'
+import { MA_COLORS, MA_LABELS } from '@/lib/chart-colors'
 import type { DetectedPattern, KlinePattern } from '@/services/klinePatterns'
 import { getPatternLabel } from '@/services/klinePatterns'
 import { calculateAll, type TechnicalIndicators } from '@/services/technicalIndicators'
@@ -176,9 +177,7 @@ export default function CandlestickChart({
     return calculateAll(data)
   }, [data, showMA, showBollinger, externalTechnicals])
 
-  // 均线颜色
-  const MA_COLORS = ['#f59e0b', '#3b82f6', '#8b5cf6', '#14b8a6'] as const
-  const MA_LABELS = ['MA5', 'MA10', 'MA20', 'MA60'] as const
+  // 均线颜色 / 标签来自 src/lib/chart-colors（数据可视化专用，非主题色）
 
   // 均线 / 布林带 polyline 由模块级纯函数 buildLinePoints / buildLinePointsRev 生成
 
