@@ -151,7 +151,7 @@ export interface StorageAdapter {
   isConfigured(): boolean
 }
 
-export type AIProvider = 'deepseek' | 'google' | 'openai' | 'groq' | 'openrouter' | 'custom'
+export type AIProvider = 'deepseek' | 'google' | 'openai' | 'groq' | 'openrouter' | 'agnes' | 'custom'
 
 export interface AIConfig {
   provider: AIProvider

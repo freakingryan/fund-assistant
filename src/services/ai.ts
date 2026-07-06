@@ -16,6 +16,7 @@ async function callAI(
     openai: baseURL || 'https://api.openai.com/v1/chat/completions',
     groq: baseURL || 'https://api.groq.com/openai/v1/chat/completions',
     openrouter: baseURL || 'https://openrouter.ai/api/v1/chat/completions',
+    agnes: baseURL || 'https://api.agnes.ai/v1/chat/completions',
     google: baseURL || `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.0-flash'}:generateContent`,
     custom: baseURL || 'https://api.openai.com/v1/chat/completions',
   }
@@ -25,6 +26,7 @@ async function callAI(
     openai: model || 'gpt-4o',
     groq: model || 'llama-3.3-70b-versatile',
     openrouter: model || 'openai/gpt-4o',
+    agnes: model || 'gpt-4o',
     google: 'gemini-2.0-flash',
     custom: model || 'gpt-4o',
   }

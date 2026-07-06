@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity, Copy, Check } from 'lucide-react'
+import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity, Copy, Check, Trash2 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
@@ -19,6 +19,7 @@ import { testAIConnection } from '@/services/ai'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist, verifyGistToken } from '@/services/backup'
 import { toast } from '@/components/ui/toast'
+import type { AIProvider } from '@/types'
 
 export default function SettingsPage() {
   const settings = useSettingsStore((s) => s.settings)
@@ -33,6 +34,16 @@ export default function SettingsPage() {
   const [importing, setImporting] = useState(false)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testingAi, setTestingAi] = useState<string | null>(null)
+
+  // 删除已配置的 AI 平台（同时把被删的默认项重置为剩余第一项）
+  const handleDeleteAi = (provider: AIProvider) => {
+    const others = settings.aiConfigs.filter((c) => c.provider !== provider)
+    const patch: Partial<typeof settings> = { aiConfigs: others }
+    if (settings.defaultAIProvider === provider) {
+      patch.defaultAIProvider = (others[0]?.provider as AIProvider) || provider
+    }
+    updateSettings(patch)
+  }
   const [health, setHealth] = useState<{
     stockApi?: { ok: boolean; latency: number; error?: string }
     fundgz?: { ok: boolean; latency: number; error?: string }
@@ -254,6 +265,7 @@ export default function SettingsPage() {
                         {c.provider === 'google' ? 'Google AI Studio' :
                          c.provider === 'groq' ? 'Groq' :
                          c.provider === 'openrouter' ? 'OpenRouter' :
+                         c.provider === 'agnes' ? 'Agnes AI' :
                          c.provider.charAt(0).toUpperCase() + c.provider.slice(1)}
                       </SelectItem>
                     ))}
@@ -269,20 +281,32 @@ export default function SettingsPage() {
 
               <Separator />
 
-              {(['deepseek', 'google', 'openai', 'groq', 'openrouter'] as const).map((provider) => {
+              {(['deepseek', 'google', 'openai', 'groq', 'openrouter', 'agnes'] as const).map((provider) => {
                 const cfg = settings.aiConfigs.find((c) => c.provider === provider)
                 const key = cfg?.apiKey || ''
                 const testing = testingAi === provider
                 const providerLabel = provider === 'google' ? 'Google AI Studio' :
                   provider === 'groq' ? 'Groq' :
                   provider === 'openrouter' ? 'OpenRouter' :
+                  provider === 'agnes' ? 'Agnes AI' :
                   provider.charAt(0).toUpperCase() + provider.slice(1)
                 return (
                   <div key={provider} className="space-y-2">
-                    <Label className="text-xs flex items-center gap-1">
-                      {providerLabel} API Key
-                      {key && <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />}
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs flex items-center gap-1">
+                        {providerLabel} API Key
+                        {key && <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />}
+                      </Label>
+                      {key && (
+                        <Button
+                          variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeleteAi(provider)}
+                          title={`删除 ${providerLabel} 配置`}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" /> 删除
+                        </Button>
+                      )}
+                    </div>
                     <div className="flex gap-2">
                       <Input
                         type="password"
@@ -319,12 +343,41 @@ export default function SettingsPage() {
                         测试
                       </Button>
                     </div>
+                    {provider === 'agnes' && (
+                      <div className="space-y-1">
+                        <Input
+                          placeholder="Base URL（可选，默认 https://api.agnes.ai/v1/chat/completions）"
+                          value={cfg?.baseURL || ''}
+                          onChange={(e) => {
+                            const others = settings.aiConfigs.filter((c) => c.provider !== 'agnes')
+                            const existing = settings.aiConfigs.find((c) => c.provider === 'agnes')
+                            updateAIConfig([
+                              ...others,
+                              { provider: 'agnes', apiKey: existing?.apiKey || '', baseURL: e.target.value, model: existing?.model },
+                            ])
+                          }}
+                          className="text-xs"
+                        />
+                        <p className="text-[10px] text-muted-foreground">Agnes AI 接口与 OpenAI 兼容，如实际地址不同请填写 Base URL 覆盖默认。</p>
+                      </div>
+                    )}
                   </div>
                 )
               })}
               <Separator />
               <div className="space-y-2">
-                <Label className="text-xs">自定义 API</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs">自定义 API</Label>
+                  {settings.aiConfigs.some((c) => c.provider === 'custom') && (
+                    <Button
+                      variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      onClick={() => handleDeleteAi('custom')}
+                      title="删除自定义 API 配置"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" /> 删除
+                    </Button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     placeholder="Base URL"
