@@ -15,7 +15,8 @@ import {
   DollarSign, Percent, Loader2, AlertCircle, RefreshCw,
 } from 'lucide-react'
 import type { FundQuote, FundHolding } from '@/types'
-import { getKlineCache, setKlineCache, deleteKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
+import { calcValue, calcCost, pnlColor, formatPercent } from '@/lib/format'
+import { getKlineCache, setKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
 import RealtimePanel from './RealtimePanel'
 
 const TYPE_COLORS: Record<string, string> = {
@@ -34,19 +35,6 @@ const SECTOR_LABELS: Record<string, string> = {
 }
 const SECTOR_COLORS = ['#3b82f6','#ef4444','#22c55e','#f97316','#a855f7','#06b6d4','#eab308','#ec4899','#8b5cf6','#10b981','#f43f5e','#6b7280']
 
-function calcValue(h: FundHolding): number {
-  if (h.costNAV && h.shares) return h.costNAV * h.shares
-  if (h.holdingAmount) return h.holdingAmount  // 持有金额已包含收益
-  return 0
-}
-
-function calcCost(h: FundHolding): number {
-  if (h.costNAV && h.shares) return h.costNAV * h.shares
-  // 方式二：成本投入 = 持有金额 - 持有收益
-  if (h.holdingAmount && h.holdingProfit !== undefined) return h.holdingAmount - h.holdingProfit
-  return 0
-}
-
 export default function DashboardPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
@@ -60,16 +48,14 @@ export default function DashboardPage() {
 
   const [quotes, setQuotes] = useState<FundQuote[]>([])
   const [quotesLoading, setQuotesLoading] = useState(false)
-  const [_quotesError, setQuotesError] = useState('')
+  const [, setQuotesError] = useState('')
   const [quotesRefreshing, setQuotesRefreshing] = useState(false)
-  const [_klineRefreshing, setKlineRefreshing] = useState(false)
-  const [selectedFund, _setSelectedFund] = useState<FundHolding | null>(null)
-  const [selectedPeriod, _setSelectedPeriod] = useState('3m')
-  const [_klineData, setKlineData] = useState<any[]>([])
-  const [_klineLoading, setKlineLoading] = useState(false)
-  const [useEtfKline, _setUseEtfKline] = useState(true)
+  const [selectedFund] = useState<FundHolding | null>(null)
+  const [selectedPeriod] = useState('3m')
+  const [, setKlineData] = useState<any[]>([])
+  const [, setKlineLoading] = useState(false)
+  const [useEtfKline] = useState(true)
   const [quotesUpdateTime, setQuotesUpdateTime] = useState<string | null>(null)
-  const [klineRefreshKey, setKlineRefreshKey] = useState(0)
 
   // 当前选中基金的场内 ETF 映射代码
   const etfCode = useMemo(() => {
@@ -155,7 +141,7 @@ export default function DashboardPage() {
     }
     loadKline()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [selectedFund, selectedPeriod, etfCode, useEtfKline, klineRefreshKey])
+  }, [selectedFund, selectedPeriod, etfCode, useEtfKline])
 
   // 手动刷新行情
   const handleRefreshQuotes = async () => {
@@ -165,21 +151,6 @@ export default function DashboardPage() {
     setQuotesUpdateTime(null)
     await updateQuotesTime()
     setQuotesRefreshing(false)
-  }
-
-  // 手动刷新 K 线
-  const _handleRefreshKline = async () => {
-    if (!selectedFund) return
-    setKlineRefreshing(true)
-    const etfCacheKey = `etf_${etfCode}`
-    const navCacheKey = selectedFund.code
-    await Promise.all([
-      deleteKlineCache(etfCacheKey, selectedPeriod),
-      deleteKlineCache(navCacheKey, selectedPeriod),
-    ])
-    setKlineData([])
-    setKlineRefreshKey((k) => k + 1)  // 触发 useEffect 重新运行
-    setKlineRefreshing(false)
   }
 
   // Calc summary
@@ -229,7 +200,6 @@ export default function DashboardPage() {
   }, [holdings])
 
   const formatCurrency = (v: number) => `¥${Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  const formatPercent = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
   const dataSourceLabel = tushareToken ? 'Tushare' : '模拟数据'
 
   if (loading) {
@@ -288,7 +258,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <TrendingUp className="h-3 w-3" />持仓盈亏
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.totalProfit >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${pnlColor(summary.totalProfit)}`}>
               {summary.totalProfit >= 0 ? '+' : '-'}{formatCurrency(summary.totalProfit)}
             </p>
           </CardContent>
@@ -299,7 +269,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <Percent className="h-3 w-3" />持仓收益率
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.avgReturn >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${pnlColor(summary.avgReturn)}`}>
               {formatPercent(summary.avgReturn)}
             </p>
           </CardContent>
@@ -310,7 +280,7 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
               <BarChart3 className="h-3 w-3" />今日涨跌
             </div>
-            <p className={`text-xl font-bold tracking-tight ${summary.todayChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+            <p className={`text-xl font-bold tracking-tight ${pnlColor(summary.todayChange)}`}>
               {formatPercent(summary.todayChange)}
             </p>
           </CardContent>

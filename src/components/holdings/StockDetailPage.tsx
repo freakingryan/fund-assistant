@@ -18,6 +18,7 @@ import { analyzeKline } from '@/services/klineAnalysis'
 import type { KlineAnalysisResult } from '@/services/klineAnalysis'
 import { evaluateSignal } from '@/services/signalEngine'
 import type { SignalResult } from '@/services/signalEngine'
+import { pnlColor } from '@/lib/format'
 
 const PERIOD_LABELS: Record<string, string> = { '1m': '近1月', '3m': '近3月', '6m': '近6月', '1y': '近1年' }
 
@@ -180,7 +181,7 @@ export default function StockDetailPage() {
   }
 
   const quoteColor = quote?.dailyChange != null
-    ? (quote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500')
+    ? pnlColor(quote.dailyChange)
     : 'text-foreground'
 
   return (

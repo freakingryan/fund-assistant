@@ -20,6 +20,7 @@ import { CheckCircle, Eye, Trash2, Plus, Play, Loader2,
 import type { PlanRule, PlanRuleType, Comparator, PlanAlert } from '@/types'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import type { FundHolding } from '@/types'
+import { pnlColor, formatSigned } from '@/lib/format'
 
 const RULE_TYPE_LABELS: Record<PlanRuleType, string> = {
   return: '收益率',
@@ -394,11 +395,11 @@ function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings }: {
             <div className="flex gap-3 text-[10px] text-muted-foreground">
               <span>成本: ¥{alert.costNAV.toFixed(4)}</span>
               <span>现价: ¥{alert.currentNAV.toFixed(4)}</span>
-              <span className={isUp ? 'text-red-500' : 'text-green-500'}>
-                收益率: {isUp ? '+' : ''}{alert.returnRate.toFixed(2)}%
+              <span className={pnlColor(isUp)}>
+                收益率: {formatSigned(alert.returnRate)}{alert.returnRate.toFixed(2)}%
               </span>
-              <span className={alert.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'}>
-                今日: {alert.dailyChange >= 0 ? '+' : ''}{alert.dailyChange.toFixed(2)}%
+              <span className={pnlColor(alert.dailyChange)}>
+                今日: {formatSigned(alert.dailyChange)}{alert.dailyChange.toFixed(2)}%
               </span>
             </div>
           </div>

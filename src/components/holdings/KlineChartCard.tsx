@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { KLineData, FundQuote } from '@/types'
+import { pnlColor } from '@/lib/format'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -47,7 +48,7 @@ export default function KlineChartCard({
   const [klineIndicatorInfoOpen, setKlineIndicatorInfoOpen] = useState(false)
 
   const hasValidEtfQuote = etfQuote && etfQuote.nav && etfQuote.nav > 0.001
-  const etfQuoteChangeColor = hasValidEtfQuote && etfQuote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'
+  const etfQuoteChangeColor = hasValidEtfQuote ? pnlColor(etfQuote.dailyChange) : 'text-green-500'
 
   // 是否渲染蜡烛图：个股始终渲染（有成交量）；基金需开启 ETF K 线且存在 ETF 代码
   const showCandlestick = isStock

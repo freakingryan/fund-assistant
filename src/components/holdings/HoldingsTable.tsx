@@ -12,6 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import type { FundHolding } from '@/types'
+import { pnlColor, formatSigned } from '@/lib/format'
 import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, RefreshCw } from 'lucide-react'
 import EditFundDialog from './EditFundDialog'
 import QuickAdjustDialog from './QuickAdjustDialog'
@@ -171,16 +172,14 @@ export default function HoldingsTable() {
         
         if (!val || val.loading) return <span className="text-xs text-muted-foreground">加载中...</span>
         if (!val.quote) return <span className="text-xs text-muted-foreground">-</span>
-        const color = val.quote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'
-        const prefix = val.quote.dailyChange >= 0 ? '+' : ''
         return (
           <div className="flex flex-col">
-            <span className={`font-mono text-sm ${color}`}>
+            <span className={`font-mono text-sm ${pnlColor(val.quote.dailyChange)}`}>
               ¥{val.quote.nav.toFixed(4)}
               {val.isRealtime && <span className="text-[10px] text-muted-foreground ml-1">实时</span>}
             </span>
-            <span className={`font-mono text-[11px] ${color}`}>
-              {prefix}{val.quote.dailyChange.toFixed(2)}%
+            <span className={`font-mono text-[11px] ${pnlColor(val.quote.dailyChange)}`}>
+              {formatSigned(val.quote.dailyChange)}{val.quote.dailyChange.toFixed(2)}%
             </span>
           </div>
         )
@@ -207,13 +206,11 @@ export default function HoldingsTable() {
           : 0
         const pnl = currentMV - cost
         const pnlRate = cost > 0 ? (pnl / cost) * 100 : 0
-        const color = pnl >= 0 ? 'text-red-500' : 'text-green-500'
-        const prefix = pnl >= 0 ? '+' : ''
 
         return (
           <div className="flex flex-col">
-            <span className={`font-mono text-sm ${color}`}>{prefix}¥{pnl.toFixed(2)}</span>
-            <span className={`font-mono text-[11px] ${color}`}>{prefix}{pnlRate.toFixed(2)}%</span>
+            <span className={`font-mono text-sm ${pnlColor(pnl)}`}>{formatSigned(pnl)}¥{pnl.toFixed(2)}</span>
+            <span className={`font-mono text-[11px] ${pnlColor(pnl)}`}>{formatSigned(pnlRate)}{pnlRate.toFixed(2)}%</span>
           </div>
         )
       },
@@ -232,9 +229,7 @@ export default function HoldingsTable() {
       cell: ({ getValue }) => {
         const v = getValue()
         if (!v) return <span className="text-xs text-muted-foreground">-</span>
-        const color = v >= 0 ? 'text-red-500' : 'text-green-500'
-        const prefix = v >= 0 ? '+' : ''
-        return <span className={`font-mono text-sm ${color}`}>{prefix}¥{v.toFixed(2)}</span>
+        return <span className={`font-mono text-sm ${pnlColor(v)}`}>{formatSigned(v)}¥{v.toFixed(2)}</span>
       },
       size: 100,
     }),
@@ -242,7 +237,7 @@ export default function HoldingsTable() {
       id: 'marketValue',
       header: '参考市值',
       cell: ({ row }) => {
-        const { costNAV, shares, holdingAmount, holdingProfit: _holdingProfit } = row.original
+        const { costNAV, shares, holdingAmount } = row.original
         // 优先用方式一：成本×份额；否则用方式二：持有金额（已含收益）
         const mv = (costNAV && shares) ? costNAV * shares
           : (holdingAmount) ? holdingAmount

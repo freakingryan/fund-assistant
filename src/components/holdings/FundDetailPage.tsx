@@ -20,6 +20,7 @@ import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
+import { pnlColor, formatSigned } from '@/lib/format'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
 import type { KlineAnalysisResult } from '@/services/klineAnalysis'
@@ -391,15 +392,15 @@ export default function FundDetailPage() {
                 <Item label="持仓成本单价" value={costNAV > 0 ? `¥${costNAV.toFixed(4)}` : '-'} />
                 <Item label={`最新净值${q?.navDate ? `(${q.navDate.slice(5)})` : ''}`}
                   value={<>{currentNAV ? `¥${currentNAV.toFixed(4)}` : '-'}{q?.dailyChange != null && currentNAV && (
-                    <span className={`ml-1 text-[10px] ${q.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-                      {q.dailyChange >= 0 ? '+' : ''}{q.dailyChange.toFixed(2)}%
+                    <span className={`ml-1 text-[10px] ${pnlColor(q.dailyChange)}`}>
+                      {formatSigned(q.dailyChange)}{q.dailyChange.toFixed(2)}%
                     </span>)}</>} />
                 <Item label="投入本金" value={investment ? `¥${investment.toFixed(2)}` : '-'} />
                 <Item label="当前市值" value={currentMarketValue ? `¥${currentMarketValue.toFixed(2)}` : '-'} />
-                <Item label="浮动盈亏" value={profit ? `${isProfit ? '+' : ''}¥${profit.toFixed(2)}` : '-'}
-                  className={isProfit ? 'text-red-500' : 'text-green-500'} />
+                <Item label="浮动盈亏" value={profit ? `${formatSigned(profit)}¥${profit.toFixed(2)}` : '-'}
+                  className={pnlColor(isProfit)} />
                 <Item label="收益率" value={investment > 0 ? `${isProfit ? '+' : ''}${returnRate.toFixed(2)}%` : '-'}
-                  className={isProfit ? 'text-red-500' : 'text-green-500'} />
+                  className={pnlColor(isProfit)} />
                 <Item label="购买日期" value={fund.purchaseDate || '-'} />
               </div>
             )

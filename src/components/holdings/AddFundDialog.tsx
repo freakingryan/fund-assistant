@@ -66,7 +66,6 @@ function makeRow(code = ''): FundRow {
 
 export default function AddFundDialog() {
   const [open, setOpen] = useState(false)
-  const _addHolding = useHoldingsStore((s) => s.addHolding)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
 
@@ -74,7 +73,7 @@ export default function AddFundDialog() {
   const [error, setError] = useState('')
   const [queryLoading, setQueryLoading] = useState(false)
   const [showAllDetails, setShowAllDetails] = useState(false)
-  const [_selected, setSelected] = useState<Set<string>>(new Set())
+  const [, setSelected] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -171,19 +170,6 @@ export default function AddFundDialog() {
       return next
     })
   }
-
-  // Toggle selection
-  const _toggleSelect = (key: string) => {
-    setSelected((prev) => { const s = new Set(prev); if (s.has(key)) { s.delete(key) } else { s.add(key) }; return s })
-  }
-
-  // Select all
-  const _selectAll = () => {
-    setSelected(new Set(rows.filter((r) => r.code.trim()).map((r) => r.key)))
-  }
-
-  // Deselect all
-  const _deselectAll = () => setSelected(new Set())
 
   // 查询 ETF 映射（仅映射，不补全基金信息）
   const handleEtfMappingLookup = async () => {

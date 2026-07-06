@@ -11,16 +11,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import type { FundHolding } from '@/types'
+import { calcCost, pnlColor, formatSigned } from '@/lib/format'
 import { TrendingUp, RefreshCw } from 'lucide-react'
 
 interface Props {
   holdings: FundHolding[]
-}
-
-function calcCost(h: FundHolding): number {
-  if (h.costNAV && h.shares) return h.costNAV * h.shares
-  if (h.holdingAmount != null && h.holdingProfit != null) return h.holdingAmount - h.holdingProfit
-  return 0
 }
 
 export default function RealtimePanel({ holdings }: Props) {
@@ -124,7 +119,7 @@ export default function RealtimePanel({ holdings }: Props) {
                   {itemLoading ? (
                     <span className="text-muted-foreground">加载中...</span>
                   ) : quote ? (
-                    <span className={`font-mono font-medium ${isUp ? 'text-red-500' : 'text-green-500'}`}>
+                    <span className={`font-mono font-medium ${pnlColor(isUp)}`}>
                       ¥{quote.nav.toFixed(4)}
                     </span>
                   ) : (
@@ -135,19 +130,19 @@ export default function RealtimePanel({ holdings }: Props) {
                 {/* 涨跌幅 */}
                 <div className="w-[80px] text-right shrink-0">
                   {quote && (
-                    <span className={`font-mono ${isUp ? 'text-red-500' : 'text-green-500'}`}>
-                      {quote.dailyChange >= 0 ? '+' : ''}{quote.dailyChange.toFixed(2)}%
+                    <span className={`font-mono ${pnlColor(isUp)}`}>
+                      {formatSigned(quote.dailyChange)}{quote.dailyChange.toFixed(2)}%
                     </span>
                   )}
                 </div>
 
                 {/* 盈亏 */}
                 <div className="w-[140px] text-right shrink-0 whitespace-nowrap">
-                  <span className={`font-mono ${isProfit ? 'text-red-500' : 'text-green-500'}`}>
+                  <span className={`font-mono ${pnlColor(isProfit)}`}>
                     {pnl >= 0 ? '+' : '-'}¥{Math.abs(pnl).toFixed(2)}
                   </span>
-                  <span className={`font-mono text-[10px] ml-1 ${isProfit ? 'text-red-500' : 'text-green-500'}`}>
-                    ({pnlRate >= 0 ? '+' : ''}{pnlRate.toFixed(2)}%)
+                  <span className={`font-mono text-[10px] ml-1 ${pnlColor(isProfit)}`}>
+                    ({formatSigned(pnlRate)}{pnlRate.toFixed(2)}%)
                   </span>
                 </div>
 
@@ -171,9 +166,9 @@ export default function RealtimePanel({ holdings }: Props) {
             <span>
               总成本: <span className="font-mono">¥{totalCost.toFixed(2)}</span>
             </span>
-            <span className={totalPnl >= 0 ? 'text-red-500' : 'text-green-500'}>
+            <span className={pnlColor(totalPnl)}>
               总盈亏: <span className="font-mono font-medium">
-                {totalPnl >= 0 ? '+' : ''}¥{totalPnl.toFixed(2)}
+                {formatSigned(totalPnl)}¥{totalPnl.toFixed(2)}
               </span>
             </span>
           </div>
