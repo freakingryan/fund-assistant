@@ -406,7 +406,7 @@ export default function CandlestickChart({
             </span>
             <span className="shrink-0 flex items-center gap-1">
               <span className="text-muted-foreground">收</span>
-              <span className={`font-medium ${selected.close >= selected.open ? 'text-red-500 dark:text-red-400' : 'text-green-500 dark:text-green-400'}`}>
+              <span className={`font-medium ${selected.close >= selected.open ? 'text-up' : 'text-down'}`}>
                 {fmt(selected.close)}
               </span>
             </span>
@@ -425,8 +425,8 @@ export default function CandlestickChart({
             {selectedPattern && (
               <span className={`shrink-0 font-medium px-1.5 py-0.5 rounded text-[11px] ${
                 selected.close >= selected.open
-                  ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
-                  : 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+                  ? 'bg-up/10 text-up'
+                  : 'bg-down/10 text-down'
               }`}>
                 {selectedPattern}
               </span>

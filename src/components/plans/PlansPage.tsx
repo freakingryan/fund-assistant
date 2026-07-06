@@ -377,7 +377,7 @@ function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings }: {
     onQuickAdjust(matchedHolding)
   }
   return (
-    <Card className="border-l-4" style={{ borderLeftColor: isUp ? '#ef4444' : '#22c55e' }}>
+    <Card className={`border-l-4 ${isUp ? 'border-l-up' : 'border-l-down'}`}>
       <CardContent className="p-3">
         <div className="flex items-start justify-between">
           <div className="space-y-1 flex-1 min-w-0">

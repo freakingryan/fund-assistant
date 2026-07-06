@@ -304,7 +304,7 @@ export default function FundDetailPage() {
             <Badge variant="secondary" className="text-[10px]">{MARKET_LABELS[fund.market] || fund.market}</Badge>
             <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[fund.type] || fund.type}</Badge>
             <Badge variant="outline" className="text-[10px]">{SECTOR_LABELS[fund.sector] || fund.sector}</Badge>
-            {etfCode && <Badge className="text-[10px] bg-blue-100 text-blue-700 border-blue-200">ETF {etfCode}</Badge>}
+            {etfCode && <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">ETF {etfCode}</Badge>}
           </div>
         </div>
         <SearchableSelect

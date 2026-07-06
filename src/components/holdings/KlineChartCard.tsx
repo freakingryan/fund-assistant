@@ -70,7 +70,7 @@ export default function KlineChartCard({
   }, [klineData])
 
   const hasValidEtfQuote = etfQuote && etfQuote.nav && etfQuote.nav > 0.001
-  const etfQuoteChangeColor = hasValidEtfQuote ? pnlColor(etfQuote.dailyChange) : 'text-green-500'
+  const etfQuoteChangeColor = hasValidEtfQuote ? pnlColor(etfQuote.dailyChange) : 'text-muted-foreground'
 
   // 是否渲染蜡烛图：个股始终渲染（有成交量）；基金需开启 ETF K 线且存在 ETF 代码
   const showCandlestick = isStock
@@ -85,7 +85,7 @@ export default function KlineChartCard({
             <div className="flex items-center gap-2 flex-wrap">
               <CardTitle className="text-sm">K 线走势</CardTitle>
               {etfCode && (
-                <Badge className="text-[10px] bg-red-100 text-red-600 border-red-200 dark:bg-red-900/30 dark:text-red-400">
+                <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">
                   实时
                 </Badge>
               )}

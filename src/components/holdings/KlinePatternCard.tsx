@@ -69,9 +69,9 @@ export default function KlinePatternCard({
                     >
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] font-medium ${
                         p.direction === 'bullish'
-                          ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
+                          ? 'bg-up/10 text-up'
                           : p.direction === 'bearish'
-                            ? 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+                            ? 'bg-down/10 text-down'
                             : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
                       }`}>
                         {getPatternLabel([p], p.index) || p.type}
@@ -99,8 +99,8 @@ export default function KlinePatternCard({
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">趋势：</span>
               <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                klineAnalysis.trend === 'bullish' ? 'bg-red-50 text-red-600'
-                  : klineAnalysis.trend === 'bearish' ? 'bg-green-50 text-green-600'
+                klineAnalysis.trend === 'bullish' ? 'bg-up/10 text-up'
+                  : klineAnalysis.trend === 'bearish' ? 'bg-down/10 text-down'
                     : 'bg-gray-50 text-gray-600'
               }`}>
                 {klineAnalysis.trend === 'bullish' ? '多头 ↑' : klineAnalysis.trend === 'bearish' ? '空头 ↓' : '震荡 ↔'}
@@ -111,8 +111,8 @@ export default function KlinePatternCard({
             </div>
             {klineAnalysis.support !== undefined && klineAnalysis.resistance !== undefined && (
               <div className="flex gap-3 text-xs">
-                <span className="text-red-500">支撑: ¥{klineAnalysis.support.toFixed(4)}</span>
-                <span className="text-green-500">阻力: ¥{klineAnalysis.resistance.toFixed(4)}</span>
+                <span className="text-up">支撑: ¥{klineAnalysis.support.toFixed(4)}</span>
+                <span className="text-down">阻力: ¥{klineAnalysis.resistance.toFixed(4)}</span>
               </div>
             )}
             <div className="text-xs p-2 rounded bg-muted/30 leading-relaxed">{klineAnalysis.advice}</div>
@@ -143,11 +143,11 @@ export default function KlinePatternCard({
                 <p className="font-medium text-foreground mb-0.5">📌 2K 组合</p>
                 <p>两根连续 K 线，通过前后对比判断反转：</p>
                 <div className="mt-1 flex flex-wrap gap-1">
-                  <span className="px-1 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-medium">看涨吞没</span>
+                  <span className="px-1 py-0.5 rounded bg-up/10 text-up text-[9px] font-medium">看涨吞没</span>
                   <span className="text-[9px] text-muted-foreground self-center">后阳包前阴，强势反转看涨</span>
                 </div>
                 <div className="mt-0.5 flex flex-wrap gap-1">
-                  <span className="px-1 py-0.5 rounded bg-green-50 text-green-600 text-[9px] font-medium">看跌吞没</span>
+                  <span className="px-1 py-0.5 rounded bg-down/10 text-down text-[9px] font-medium">看跌吞没</span>
                   <span className="text-[9px] text-muted-foreground self-center">后阴包前阳，强势反转看跌</span>
                 </div>
               </div>
@@ -155,19 +155,19 @@ export default function KlinePatternCard({
                 <p className="font-medium text-foreground mb-0.5">📌 3K 组合</p>
                 <div className="mt-1 space-y-0.5">
                   <div className="flex flex-wrap gap-1 items-start">
-                    <span className="px-1 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-medium shrink-0">晨星</span>
+                    <span className="px-1 py-0.5 rounded bg-up/10 text-up text-[9px] font-medium shrink-0">晨星</span>
                     <span className="text-[9px] text-muted-foreground">大阴→小实体(星)→大阳，底部反转</span>
                   </div>
                   <div className="flex flex-wrap gap-1 items-start">
-                    <span className="px-1 py-0.5 rounded bg-green-50 text-green-600 text-[9px] font-medium shrink-0">暮星</span>
+                    <span className="px-1 py-0.5 rounded bg-down/10 text-down text-[9px] font-medium shrink-0">暮星</span>
                     <span className="text-[9px] text-muted-foreground">大阳→小实体(星)→大阴，顶部反转</span>
                   </div>
                   <div className="flex flex-wrap gap-1 items-start">
-                    <span className="px-1 py-0.5 rounded bg-red-50 text-red-600 text-[9px] font-medium shrink-0">三连阳</span>
+                    <span className="px-1 py-0.5 rounded bg-up/10 text-up text-[9px] font-medium shrink-0">三连阳</span>
                     <span className="text-[9px] text-muted-foreground">连续三阳线，多头推进</span>
                   </div>
                   <div className="flex flex-wrap gap-1 items-start">
-                    <span className="px-1 py-0.5 rounded bg-green-50 text-green-600 text-[9px] font-medium shrink-0">三连阴</span>
+                    <span className="px-1 py-0.5 rounded bg-down/10 text-down text-[9px] font-medium shrink-0">三连阴</span>
                     <span className="text-[9px] text-muted-foreground">连续三阴线，空头推进</span>
                   </div>
                 </div>
@@ -175,8 +175,8 @@ export default function KlinePatternCard({
               <div className="p-2 rounded bg-muted/20">
                 <p className="font-medium text-foreground mb-0.5">📌 其他术语</p>
                 <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px]">
-                  <span><span className="text-red-500 font-medium">红色</span>=涨 (阳线)</span>
-                  <span><span className="text-green-500 font-medium">绿色</span>=跌 (阴线)</span>
+                  <span><span className="text-up font-medium">红色</span>=涨 (阳线)</span>
+                  <span><span className="text-down font-medium">绿色</span>=跌 (阴线)</span>
                   <span>实体 = 开收盘价差</span>
                   <span>上/下影线 = 最高/低价与实体的差距</span>
                 </div>

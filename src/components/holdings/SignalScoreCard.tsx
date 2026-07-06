@@ -63,11 +63,11 @@ function buildAdvice(signalResult: SignalResult): { label: string; color: string
 
   let label: string
   let color: string
-  if (score >= 60) { label = '持有/分批止盈'; color = 'text-red-500' }
-  else if (score >= 20) { label = '适合补仓/定投'; color = 'text-red-500' }
+  if (score >= 60) { label = '持有/分批止盈'; color = 'text-up' }
+  else if (score >= 20) { label = '适合补仓/定投'; color = 'text-up' }
   else if (score > -20) { label = '观望等待'; color = 'text-muted-foreground' }
-  else if (score > -60) { label = '减仓/观望'; color = 'text-green-500' }
-  else { label = '减仓避险'; color = 'text-green-500' }
+  else if (score > -60) { label = '减仓/观望'; color = 'text-down' }
+  else { label = '减仓避险'; color = 'text-down' }
 
   return { label, color, details }
 }
@@ -89,17 +89,17 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
         <div className="flex items-center gap-2 mb-1">
           <div className={`text-base font-bold px-2 py-0.5 rounded ${
             signalResult.direction === 'strong_bullish' || signalResult.direction === 'bullish'
-              ? 'bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-400'
+              ? 'bg-up/10 text-up'
               : signalResult.direction === 'strong_bearish' || signalResult.direction === 'bearish'
-                ? 'bg-green-50 text-green-600 dark:bg-green-950 dark:text-green-400'
+                ? 'bg-down/10 text-down'
                 : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
           }`}>
             {signalResult.totalScore >= 0 ? '+' : ''}{signalResult.totalScore}
           </div>
           <span className={`text-sm font-bold ${
             signalResult.direction.startsWith('strong_bullish') || signalResult.direction === 'bullish'
-              ? 'text-red-500' : signalResult.direction.startsWith('strong_bearish') || signalResult.direction === 'bearish'
-                ? 'text-green-500' : 'text-muted-foreground'
+              ? 'text-up' : signalResult.direction.startsWith('strong_bearish') || signalResult.direction === 'bearish'
+                ? 'text-down' : 'text-muted-foreground'
           }`}>
             {signalResult.directionLabel}
           </span>

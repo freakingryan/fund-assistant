@@ -37,7 +37,7 @@ export default function InstallPrompt() {
   if (!show) return null
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 max-w-sm mx-auto bg-card border rounded-lg shadow-lg p-3 flex items-center gap-3 animate-in slide-in-from-bottom">
+    <div className="fixed bottom-4 left-4 right-4 z-[60] max-w-sm mx-auto bg-card border rounded-lg shadow-lg p-3 flex items-center gap-3 animate-in slide-in-from-bottom">
       <Download className="h-5 w-5 text-primary shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-xs font-medium">安装基金投资助手</p>

@@ -16,7 +16,7 @@ export function formatPercent(value: number): string {
  */
 export function pnlColor(value: number | boolean): string {
   const isUp = typeof value === 'boolean' ? value : value >= 0
-  return isUp ? 'text-red-500' : 'text-green-500'
+  return isUp ? 'text-up' : 'text-down'
 }
 
 /** ¥ 金额格式化，保留两位小数 */
