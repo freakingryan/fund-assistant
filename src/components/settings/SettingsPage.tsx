@@ -6,10 +6,15 @@ import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
+import { useHoldingsStore } from '@/stores/holdings'
+import { usePlansStore } from '@/stores/plans'
 import { testAIConnection } from '@/services/ai'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist, verifyGistToken } from '@/services/backup'
@@ -24,6 +29,9 @@ export default function SettingsPage() {
 
   const [syncing, setSyncing] = useState(false)
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  // F13: 备份导入前先确认（避免静默覆盖），成功后 SPA 状态刷新替代整页 reload
+  const [pendingRestore, setPendingRestore] = useState<{ holdings: number; plans: number; apply: () => Promise<void> } | null>(null)
+  const [importing, setImporting] = useState(false)
   const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [testingAi, setTestingAi] = useState<string | null>(null)
   const [health, setHealth] = useState<{
@@ -54,15 +62,35 @@ export default function SettingsPage() {
     setTimeout(() => setImportResult(null), 3000)
   }
 
-  // 导入备份
+  // 导入备份（F13: 仅读取并打开确认弹窗，不立即覆盖）
   const handleImport = async () => {
     try {
       const data = await readBackupFile()
-      await importAllData(data)
-      setImportResult({ ok: true, msg: `已恢复 ${data.holdings.length} 只持仓、${data.plans.length} 个计划` })
-      setTimeout(() => { setImportResult(null); window.location.reload() }, 1500)
+      setPendingRestore({ holdings: data.holdings.length, plans: data.plans.length, apply: () => importAllData(data) })
     } catch (e) {
       setImportResult({ ok: false, msg: String(e) })
+    }
+  }
+
+  // 确认恢复：覆盖写入 + SPA 状态刷新（替代整页 reload）
+  const confirmRestore = async () => {
+    if (!pendingRestore) return
+    setImporting(true)
+    try {
+      await pendingRestore.apply()
+      await Promise.all([
+        useHoldingsStore.getState().loadHoldings(),
+        usePlansStore.getState().loadPlan(),
+        usePlansStore.getState().loadAlerts(),
+        useSettingsStore.getState().loadSettings(),
+      ])
+      setImportResult({ ok: true, msg: `已恢复 ${pendingRestore.holdings} 只持仓、${pendingRestore.plans} 个计划` })
+      toast({ type: 'success', message: '备份导入成功' })
+      setPendingRestore(null)
+    } catch (e) {
+      setImportResult({ ok: false, msg: String(e) })
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -97,7 +125,7 @@ export default function SettingsPage() {
     setSyncing(false)
   }
 
-  // 从 Gist 拉取
+  // 从 Gist 拉取（F13: 先读取，打开确认弹窗，不立即覆盖）
   const handleGistPull = async () => {
     setSyncing(true); setSyncResult(null)
     try {
@@ -111,9 +139,7 @@ export default function SettingsPage() {
         updateSettings({ sync: { ...settings.sync, gistId } })
       }
       const data = await loadFromGist(settings.sync.gistToken, gistId!)
-      await importAllData(data)
-      setSyncResult({ ok: true, msg: `已从 Gist 恢复 ${data.holdings.length} 只持仓` })
-      setTimeout(() => { setSyncResult(null); window.location.reload() }, 1500)
+      setPendingRestore({ holdings: data.holdings.length, plans: data.plans.length, apply: () => importAllData(data) })
     } catch (e) {
       setSyncResult({ ok: false, msg: String(e) })
     }
@@ -551,6 +577,25 @@ export default function SettingsPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* F13: 备份恢复二次确认 */}
+      <Dialog open={!!pendingRestore} onOpenChange={(v) => { if (!v) setPendingRestore(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>恢复备份将覆盖现有数据</DialogTitle>
+            <DialogDescription>
+              即将用备份中的 <strong>{pendingRestore?.holdings ?? 0}</strong> 只持仓、<strong>{pendingRestore?.plans ?? 0}</strong> 个计划覆盖当前本地数据。此操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" size="sm" onClick={() => setPendingRestore(null)} disabled={importing}>取消</Button>
+            <Button variant="destructive" size="sm" onClick={confirmRestore} disabled={importing}>
+              {importing && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+              确认恢复
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
