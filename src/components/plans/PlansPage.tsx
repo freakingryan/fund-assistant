@@ -46,6 +46,7 @@ function RuleForm({ rule, onSave, onCancel }: {
   const [threshold, setThreshold] = useState(String(rule?.threshold ?? ''))
   const [action, setAction] = useState<'buy' | 'sell'>(rule?.action || 'buy')
   const [shares, setShares] = useState(String(rule?.shares ?? ''))
+  const [error, setError] = useState('')
 
   const thresholdHint = {
     return: '百分比（如 -10 = 收益率 ≤ -10%）',
@@ -85,10 +86,12 @@ function RuleForm({ rule, onSave, onCancel }: {
       <div className="space-y-1">
         <Label className="text-xs">阈值</Label>
         <Input type="number" step="0.01" value={threshold}
-          onChange={(e) => setThreshold(e.target.value)}
+          onChange={(e) => { setThreshold(e.target.value); if (error) setError('') }}
           placeholder={thresholdHint}
-          className="h-8 text-xs" />
+          aria-invalid={!!error}
+          className={`h-8 text-xs ${error ? 'border-destructive focus-visible:ring-destructive' : ''}`} />
         <p className="text-[10px] text-muted-foreground">{thresholdHint}</p>
+        {error && <p className="text-[10px] text-destructive">{error}</p>}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -111,9 +114,15 @@ function RuleForm({ rule, onSave, onCancel }: {
       <div className="flex gap-2 justify-end">
         <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
         <Button size="sm" onClick={() => {
+          const t = Number(threshold)
+          // F14: 阈值留空/非法时存为 0 会建出永不当/永当的规则，需校验
+          if (!(t > 0)) {
+            setError(type === 'dca' ? '间隔天数需大于 0' : '阈值需大于 0')
+            return
+          }
           onSave({
             type, comparator,
-            threshold: Number(threshold) || 0,
+            threshold: t,
             action, shares: Number(shares) || 0,
             enabled: rule?.enabled ?? true,
           })

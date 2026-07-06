@@ -14,9 +14,19 @@ import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { autoClassify } from '@/lib/classification'
+import { cn } from '@/lib/utils'
 import { getFundInfoCache, setFundInfoCache } from '@/services/klineCache'
 import { fetchEtfMapping } from '@/services/ai'
 import type { Market, FundType, FundSector, FundHolding } from '@/types'
+
+// F9: 表单实时校验 — 空值允许；填入后必须是数字，金额/份额/成本不可为负（持有收益可负）
+function numericError(v: string, allowNegative = false): string | null {
+  if (v.trim() === '') return null
+  const n = Number(v)
+  if (Number.isNaN(n)) return '需为数字'
+  if (!allowNegative && n < 0) return '不能为负'
+  return null
+}
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
   { value: 'A', label: 'A股' }, { value: 'HK', label: '港股' }, { value: 'US', label: '美股' },
@@ -299,14 +309,20 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
               <Label className="text-xs">持仓成本（方式一）</Label>
               <Input type="number" step="0.0001" value={costNAV}
                 onChange={(e) => setCostNAV(e.target.value)}
-                placeholder="留空不修改" className="h-7 text-xs" />
+                placeholder="留空不修改"
+                aria-invalid={!!numericError(costNAV)}
+                className={cn('h-7 text-xs', numericError(costNAV) && 'border-destructive focus-visible:ring-destructive')} />
+              {numericError(costNAV) && <p className="text-[9px] text-destructive leading-none">{numericError(costNAV)}</p>}
             </div>
             <span className="text-[10px] text-muted-foreground pb-1.5">×</span>
             <div className="flex-1 space-y-1">
               <Label className="text-xs">持有份额（方式一）</Label>
               <Input type="number" step="0.01" value={shares}
                 onChange={(e) => setShares(e.target.value)}
-                placeholder="留空不修改" className="h-7 text-xs" />
+                placeholder="留空不修改"
+                aria-invalid={!!numericError(shares)}
+                className={cn('h-7 text-xs', numericError(shares) && 'border-destructive focus-visible:ring-destructive')} />
+              {numericError(shares) && <p className="text-[9px] text-destructive leading-none">{numericError(shares)}</p>}
             </div>
           </div>
 
@@ -316,14 +332,20 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
               <Label className="text-xs">持有金额（方式二）</Label>
               <Input type="number" step="0.01" value={holdingAmount}
                 onChange={(e) => setHoldingAmount(e.target.value)}
-                placeholder="留空不修改" className="h-7 text-xs" />
+                placeholder="留空不修改"
+                aria-invalid={!!numericError(holdingAmount)}
+                className={cn('h-7 text-xs', numericError(holdingAmount) && 'border-destructive focus-visible:ring-destructive')} />
+              {numericError(holdingAmount) && <p className="text-[9px] text-destructive leading-none">{numericError(holdingAmount)}</p>}
             </div>
             <span className="text-[10px] text-muted-foreground pb-1.5">±</span>
             <div className="flex-1 space-y-1">
               <Label className="text-xs">持有收益（方式二）</Label>
               <Input type="number" step="0.01" value={holdingProfit}
                 onChange={(e) => setHoldingProfit(e.target.value)}
-                placeholder="盈+亏-" className="h-7 text-xs" />
+                placeholder="盈+亏-"
+                aria-invalid={!!numericError(holdingProfit, true)}
+                className={cn('h-7 text-xs', numericError(holdingProfit, true) && 'border-destructive focus-visible:ring-destructive')} />
+              {numericError(holdingProfit, true) && <p className="text-[9px] text-destructive leading-none">{numericError(holdingProfit, true)}</p>}
             </div>
           </div>
 
