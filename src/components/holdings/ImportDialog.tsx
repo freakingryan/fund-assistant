@@ -17,6 +17,7 @@ import { toast } from '@/components/ui/toast'
 import { autoClassify } from '@/lib/classification'
 import { extractFundInfoFromImage } from '@/services/ai'
 import { getDefaultAI } from '@/services/ai'
+import { fetchFundCodeByName } from '@/adapters/datasource/jsonp-utils'
 import type { Market, FundType, FundSector } from '@/types'
 import { TYPE_LABELS, MARKET_LABELS } from '@/lib/labels'
 
@@ -148,7 +149,19 @@ export default function ImportDialog() {
         setAiLoading(false)
         return
       }
-      const parsed: ParsedRow[] = result.holdings.map((h) => {
+      // 截图常缺基金代码（京东金融/支付宝等），按名称反查 6 位代码，使导入后可用行情
+      let resolvedCount = 0
+      const enriched = await Promise.all(result.holdings.map(async (h) => {
+        let code = h.code
+        if (!code && h.name) {
+          try {
+            const found = await fetchFundCodeByName(h.name)
+            if (found) { code = found.code; resolvedCount++ }
+          } catch { /* 解析失败则保留空码，导入后由用户手动补全 */ }
+        }
+        return { ...h, code }
+      }))
+      const parsed: ParsedRow[] = enriched.map((h) => {
         const auto = autoClassify(h.code, h.name)
         return {
           code: h.code, name: h.name,
@@ -161,6 +174,9 @@ export default function ImportDialog() {
           tags: '', notes: '',
         }
       })
+      if (resolvedCount > 0) {
+        toast({ type: 'info', message: `已通过基金名称自动识别 ${resolvedCount} 只基金的代码` })
+      }
       setRows(parsed)
       setStep('preview')
     } catch (err) {

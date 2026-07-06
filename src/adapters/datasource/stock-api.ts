@@ -99,6 +99,8 @@ function toStockApiCode(code: string): string {
  * 使用 JSONP 方式（<script> 标签加载）规避 CORS 限制
  */
 async function fetchFundGzQuote(code: string): Promise<FundQuote | null> {
+  // 空码或非法码（截图导入常缺代码）直接返回，避免对 fundegz.1234567.com.cn/js/.js 发请求 → 404
+  if (!code || !/^\d{6}$/.test(code)) return null
   try {
     const data = await fetchFundGzJsonp(code)
     if (!data || data.fundcode !== code) {
@@ -158,7 +160,7 @@ export class StockApiAdapter implements FundDataSource {
     if (codes.length === 0) return []
 
     const etfCodes = codes.filter(isExchangeCode)
-    const fundCodes = codes.filter((c) => !isExchangeCode(c))
+    const fundCodes = codes.filter((c) => !isExchangeCode(c) && /^\d{6}$/.test(c))
     const results: FundQuote[] = []
 
 
@@ -210,6 +212,9 @@ export class StockApiAdapter implements FundDataSource {
    * - 场外基金 → fund.eastmoney.com/pingzhongdata/{code}.js（历史净值）
    */
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
+    // 空码/非法码（截图导入常缺代码）无法获取走势，直接返回空
+    if (!code || !/^\d{6}$/.test(code)) return []
+
     // 场外基金：从 pingzhongdata JS 获取净值走势
     if (!isExchangeCode(code)) {
       try {
@@ -408,6 +413,8 @@ export class StockApiAdapter implements FundDataSource {
     exchangeCode: string
     exchangeName: string
   } | null> {
+    // 空码/非法码（截图导入常缺代码）无法映射，直接返回 null
+    if (!otcCode || !/^\d{6}$/.test(otcCode)) return null
     try {
       // 通过 fundgz 获取基金名称
       const fundData = await fetchFundGzJsonp(otcCode)

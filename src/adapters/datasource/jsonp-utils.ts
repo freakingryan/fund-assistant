@@ -181,3 +181,46 @@ export async function fetchFundHoldingsF10(code: string, _timeout = 15000): Prom
   // 生产环境：fundf10 暂不支持 CORS 且无 JSONP callback，返回 null 让调用方回退
   return null
 }
+
+/**
+ * 通过基金名称/关键词反查 6 位基金代码（东方财富基金搜索 JSONP）。
+ *
+ * 用途：截图导入（京东金融/支付宝等）识别出的持仓往往只有名称、没有代码，
+ * 导入后无法获取行情。此函数按名称反查真实代码，使持仓可用（行情/K线/收益）。
+ *
+ * 接口：fundsuggest.eastmoney.com（支持 callback 参数，JSONP 跨域可用）。
+ * 返回第一个匹配结果 { code, name }，无匹配或失败返回 null。
+ */
+export async function fetchFundCodeByName(name: string, timeout = 10000): Promise<{ code: string; name: string } | null> {
+  const keyword = (name || '').trim()
+  if (keyword.length < 2) return null
+  return new Promise((resolve) => {
+    const cbName = `__fundSuggestCb_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    const script = document.createElement('script')
+    const cleanup = () => {
+      try { delete (window as any)[cbName] } catch { /* ignore */ }
+      if (script.parentNode) script.parentNode.removeChild(script)
+    }
+    ;(window as any)[cbName] = (data: any) => {
+      cleanup()
+      try {
+        const datas: any[] = data?.Datas || []
+        if (datas.length > 0) {
+          // 优先取与关键词互相包含（最相似）的结果，否则取第一条
+          const hit = datas.find((d) =>
+            d.NAME && (d.NAME.includes(keyword) || keyword.includes(d.NAME)),
+          ) || datas[0]
+          if (hit?.CODE) {
+            resolve({ code: String(hit.CODE), name: String(hit.NAME || keyword) })
+            return
+          }
+        }
+      } catch { /* ignore */ }
+      resolve(null)
+    }
+    script.onerror = () => { cleanup(); resolve(null) }
+    script.src = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
+    document.head.appendChild(script)
+    setTimeout(() => { cleanup(); resolve(null) }, timeout)
+  })
+}
