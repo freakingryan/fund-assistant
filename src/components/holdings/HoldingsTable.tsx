@@ -42,6 +42,8 @@ export default function HoldingsTable() {
   // F8: 全局搜索选中后跳转 /holdings?highlight=CODE，自动筛选并高亮该行 3 秒
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightCode = searchParams.get('highlight')
+  // 必须在下方 F8 / F4 useEffect 之前声明，否则依赖数组读取 setGlobalFilter 会触发 TDZ
+  const [globalFilter, setGlobalFilter] = useState('')
   useEffect(() => {
     if (!highlightCode) return
     setGlobalFilter(highlightCode)
@@ -52,7 +54,6 @@ export default function HoldingsTable() {
   }, [highlightCode, setGlobalFilter, setSearchParams])
 
   const [sorting, setSorting] = useState<SortingState>([])
-  const [globalFilter, setGlobalFilter] = useState('')
   // F4: 搜索框防抖 300ms，与全局搜索/添加基金搜索保持一致，避免每键即触发 tanstack 重算
   const [searchInput, setSearchInput] = useState('')
   const debouncedSearch = useDebouncedValue(searchInput, 300)
