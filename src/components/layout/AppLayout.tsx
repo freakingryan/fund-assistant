@@ -42,11 +42,13 @@ export default function AppLayout() {
   const [globalSearch, setGlobalSearch] = useState('')
   const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchNoResults, setSearchNoResults] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!globalSearch.trim() || globalSearch.trim().length < 2) {
       if (searchResults.length > 0) setSearchResults([])
+      setSearchNoResults(false)
       return
     }
     const t = setTimeout(async () => {
@@ -54,7 +56,8 @@ export default function AppLayout() {
       try {
         const results = await dataSourceService.searchFunds(globalSearch.trim())
         setSearchResults(results.slice(0, 15))
-      } catch { toast({ type: 'error', message: '搜索失败，请稍后重试' }); setSearchResults([]) }
+        setSearchNoResults(globalSearch.trim().length >= 2 && results.length === 0)
+      } catch { toast({ type: 'error', message: '搜索失败，请稍后重试' }); setSearchResults([]); setSearchNoResults(false) }
       setSearchLoading(false)
     }, 300)
     return () => clearTimeout(t)
@@ -178,6 +181,11 @@ export default function AppLayout() {
                       <span className="truncate">{r.name}</span>
                     </button>
                   ))}
+                </div>
+              )}
+              {searchNoResults && (
+                <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md px-3 py-3 text-xs text-muted-foreground">
+                  未找到与「{globalSearch.trim()}」匹配的基金
                 </div>
               )}
             </div>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   createColumnHelper, flexRender, type SortingState, type VisibilityState,
@@ -16,8 +17,9 @@ import { pnlColor, formatSigned } from '@/lib/format'
 import { TYPE_LABELS, MARKET_LABELS, SECTOR_LABELS } from '@/lib/labels'
 import { RefreshButton } from '@/components/ui/refresh-button'
 import { ConfirmAction } from '@/components/ui/confirm-dialog'
+import { EmptyState } from '@/components/ui/empty-state'
 import { toast } from '@/components/ui/toast'
-import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, RefreshCw } from 'lucide-react'
+import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, RefreshCw, PieChart, SearchX } from 'lucide-react'
 import EditFundDialog from './EditFundDialog'
 import QuickAdjustDialog from './QuickAdjustDialog'
 import {
@@ -51,6 +53,13 @@ export default function HoldingsTable() {
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
+  // F4: 搜索框防抖 300ms，与全局搜索/添加基金搜索保持一致，避免每键即触发 tanstack 重算
+  const [searchInput, setSearchInput] = useState('')
+  const debouncedSearch = useDebouncedValue(searchInput, 300)
+  useEffect(() => {
+    if (highlightCode) return // 高亮跳转模式优先，不覆盖用户输入
+    setGlobalFilter(debouncedSearch)
+  }, [debouncedSearch, highlightCode, setGlobalFilter])
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     holdingAmount: false,
@@ -327,8 +336,8 @@ export default function HoldingsTable() {
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="搜索代码或名称..."
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-8 h-8 text-sm"
           />
         </div>
@@ -430,9 +439,18 @@ export default function HoldingsTable() {
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className={`row-hover ${highlightCode && row.original.code === highlightCode ? 'ring-2 ring-primary' : ''}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`查看 ${row.original.name || row.original.code} 详情`}
+                  className={`row-hover cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm ${highlightCode && row.original.code === highlightCode ? 'ring-2 ring-primary' : ''}`}
                   data-state={selectedIds.includes(row.original.id) ? 'selected' : undefined}
                   onClick={() => navigate(`/detail/${row.original.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      navigate(`/detail/${row.original.id}`)
+                    }
+                  }}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
@@ -443,10 +461,20 @@ export default function HoldingsTable() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="text-center py-12 text-muted-foreground">
-                  {holdings.length === 0
-                    ? '暂无持仓数据。点击上方"添加基金"或"导入"开始。'
-                    : '没有匹配的持仓记录'}
+                <TableCell colSpan={columns.length} className="p-0">
+                  {holdings.length === 0 ? (
+                    <EmptyState
+                      icon={PieChart}
+                      title="还没有持仓"
+                      desc="点击上方「添加基金」或「导入」开始记录你的基金"
+                    />
+                  ) : (
+                    <EmptyState
+                      icon={SearchX}
+                      title="没有匹配的持仓记录"
+                      desc="换个关键词或筛选条件试试"
+                    />
+                  )}
                 </TableCell>
               </TableRow>
             )}

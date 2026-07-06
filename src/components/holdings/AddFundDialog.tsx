@@ -16,6 +16,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { autoClassify } from '@/lib/classification'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { getEtfMappingCache, setEtfMappingCache } from '@/services/klineCache'
+import { cn } from '@/lib/utils'
 import type { Market, FundType, FundSector } from '@/types'
 
 const MARKET_OPTIONS: { value: Market; label: string }[] = [
@@ -64,6 +65,15 @@ function makeRow(code = ''): FundRow {
   }
 }
 
+// F9: 表单实时校验 — 空值允许；填入后必须是数字，金额/份额/成本不可为负（持有收益可负）
+function numericError(v: string, allowNegative = false): string | null {
+  if (v.trim() === '') return null
+  const n = Number(v)
+  if (Number.isNaN(n)) return '需为数字'
+  if (!allowNegative && n < 0) return '不能为负'
+  return null
+}
+
 export default function AddFundDialog() {
   const [open, setOpen] = useState(false)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
@@ -72,6 +82,7 @@ export default function AddFundDialog() {
   const [rows, setRows] = useState<FundRow[]>([makeRow()])
   const [error, setError] = useState('')
   const [queryLoading, setQueryLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [showAllDetails, setShowAllDetails] = useState(false)
   const [, setSelected] = useState<Set<string>>(new Set())
   const [searchQuery, setSearchQuery] = useState('')
@@ -258,8 +269,17 @@ export default function AddFundDialog() {
       tags: row.tags ? row.tags.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
       notes: row.notes || row.description,
     }))
-    await importHoldings(records)
-    setOpen(false)
+    setSubmitting(true)
+    try {
+      await importHoldings(records)
+      toast({ type: 'success', message: `已添加 ${records.length} 只基金` })
+      setOpen(false)
+    } catch (err) {
+      setError(String(err))
+      toast({ type: 'error', message: '添加失败，请重试' })
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -348,43 +368,59 @@ export default function AddFundDialog() {
                 </div>
 
                 {/* 方式一：成本 + 份额 */}
-                <div className="flex gap-2 items-center">
-                  <span className="text-[10px] text-muted-foreground shrink-0 w-12">方式一</span>
-                  <Input
-                    type="number" step="0.0001"
-                    value={row.costNAV}
-                    onChange={(e) => updateRow(row.key, 'costNAV', e.target.value)}
-                    placeholder="持仓成本"
-                    className="flex-1 h-7 text-xs"
-                  />
-                  <span className="text-[10px] text-muted-foreground shrink-0">×</span>
-                  <Input
-                    type="number" step="0.01"
-                    value={row.shares}
-                    onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
-                    placeholder="持有份额"
-                    className="flex-1 h-7 text-xs"
-                  />
+                <div className="flex gap-2 items-start">
+                  <span className="text-[10px] text-muted-foreground shrink-0 w-12 pt-1.5">方式一</span>
+                  <div className="flex-1 space-y-0.5">
+                    <Input
+                      type="number" step="0.0001"
+                      value={row.costNAV}
+                      onChange={(e) => updateRow(row.key, 'costNAV', e.target.value)}
+                      placeholder="持仓成本"
+                      aria-invalid={!!numericError(row.costNAV)}
+                      className={cn('h-7 text-xs', numericError(row.costNAV) && 'border-destructive focus-visible:ring-destructive')}
+                    />
+                    {numericError(row.costNAV) && <p className="text-[9px] text-destructive leading-none">{numericError(row.costNAV)}</p>}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0 pt-1.5">×</span>
+                  <div className="flex-1 space-y-0.5">
+                    <Input
+                      type="number" step="0.01"
+                      value={row.shares}
+                      onChange={(e) => updateRow(row.key, 'shares', e.target.value)}
+                      placeholder="持有份额"
+                      aria-invalid={!!numericError(row.shares)}
+                      className={cn('h-7 text-xs', numericError(row.shares) && 'border-destructive focus-visible:ring-destructive')}
+                    />
+                    {numericError(row.shares) && <p className="text-[9px] text-destructive leading-none">{numericError(row.shares)}</p>}
+                  </div>
                 </div>
 
                 {/* 方式二：持有金额 + 持有收益 */}
-                <div className="flex gap-2 items-center">
-                  <span className="text-[10px] text-muted-foreground shrink-0 w-12">方式二</span>
-                  <Input
-                    type="number" step="0.01"
-                    value={row.holdingAmount}
-                    onChange={(e) => updateRow(row.key, 'holdingAmount', e.target.value)}
-                    placeholder="持有金额（总市值）"
-                    className="flex-1 h-7 text-xs"
-                  />
-                  <span className="text-[10px] text-muted-foreground shrink-0">±</span>
-                  <Input
-                    type="number" step="0.01"
-                    value={row.holdingProfit}
-                    onChange={(e) => updateRow(row.key, 'holdingProfit', e.target.value)}
-                    placeholder="持有收益（盈+亏-）"
-                    className="flex-1 h-7 text-xs"
-                  />
+                <div className="flex gap-2 items-start">
+                  <span className="text-[10px] text-muted-foreground shrink-0 w-12 pt-1.5">方式二</span>
+                  <div className="flex-1 space-y-0.5">
+                    <Input
+                      type="number" step="0.01"
+                      value={row.holdingAmount}
+                      onChange={(e) => updateRow(row.key, 'holdingAmount', e.target.value)}
+                      placeholder="持有金额（总市值）"
+                      aria-invalid={!!numericError(row.holdingAmount)}
+                      className={cn('h-7 text-xs', numericError(row.holdingAmount) && 'border-destructive focus-visible:ring-destructive')}
+                    />
+                    {numericError(row.holdingAmount) && <p className="text-[9px] text-destructive leading-none">{numericError(row.holdingAmount)}</p>}
+                  </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0 pt-1.5">±</span>
+                  <div className="flex-1 space-y-0.5">
+                    <Input
+                      type="number" step="0.01"
+                      value={row.holdingProfit}
+                      onChange={(e) => updateRow(row.key, 'holdingProfit', e.target.value)}
+                      placeholder="持有收益（盈+亏-）"
+                      aria-invalid={!!numericError(row.holdingProfit, true)}
+                      className={cn('h-7 text-xs', numericError(row.holdingProfit, true) && 'border-destructive focus-visible:ring-destructive')}
+                    />
+                    {numericError(row.holdingProfit, true) && <p className="text-[9px] text-destructive leading-none">{numericError(row.holdingProfit, true)}</p>}
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -505,7 +541,8 @@ export default function AddFundDialog() {
             </p>
           )}
 
-          <Button className="w-full" onClick={handleSubmit} disabled={totalCodes.length === 0}>
+          <Button className="w-full" onClick={handleSubmit} disabled={totalCodes.length === 0 || submitting}>
+            {submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
             添加 {totalCodes.length || 0} 只基金
           </Button>
         </div>

@@ -13,6 +13,7 @@ import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader2, Camera } fr
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 import { useHoldingsStore } from '@/stores/holdings'
+import { toast } from '@/components/ui/toast'
 import { autoClassify } from '@/lib/classification'
 import { extractFundInfoFromImage } from '@/services/ai'
 import { getDefaultAI } from '@/services/ai'
@@ -109,6 +110,7 @@ export default function ImportDialog() {
   const [step, setStep] = useState<'upload' | 'preview' | 'done'>('upload')
   const [aiLoading, setAiLoading] = useState(false)
   const [aiConfigured, setAiConfigured] = useState(false)
+  const [importing, setImporting] = useState(false)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
 
   useEffect(() => {
@@ -171,16 +173,32 @@ export default function ImportDialog() {
   }
 
   const handleImport = useCallback(async () => {
-    const records = rows.map((r) => ({
-      code: r.code, name: r.name, market: r.market, type: r.type, sector: r.sector,
-      costNAV: r.costNAV, shares: r.shares,
-      holdingAmount: r.holdingAmount || 0, holdingProfit: r.holdingProfit || 0,
-      purchaseDate: r.purchaseDate,
-      tags: r.tags ? r.tags.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean) : [],
-      notes: r.notes,
-    }))
-    await importHoldings(records)
-    setStep('done')
+    setImporting(true)
+    try {
+      // 按 code 去重，避免同一 CSV 重复导入产生重复持仓
+      const seen = new Set<string>()
+      const deduped = rows.filter((r) => {
+        if (seen.has(r.code)) return false
+        seen.add(r.code)
+        return true
+      })
+      const dupCount = rows.length - deduped.length
+      const records = deduped.map((r) => ({
+        code: r.code, name: r.name, market: r.market, type: r.type, sector: r.sector,
+        costNAV: r.costNAV, shares: r.shares,
+        holdingAmount: r.holdingAmount || 0, holdingProfit: r.holdingProfit || 0,
+        purchaseDate: r.purchaseDate,
+        tags: r.tags ? r.tags.split(/[,，]/).map((s: string) => s.trim()).filter(Boolean) : [],
+        notes: r.notes,
+      }))
+      await importHoldings(records)
+      toast({ type: 'success', message: `已导入 ${records.length} 条${dupCount > 0 ? `（已去重 ${dupCount} 条）` : ''}` })
+      setStep('done')
+    } catch (e) {
+      toast({ type: 'error', message: `导入失败：${String(e)}` })
+    } finally {
+      setImporting(false)
+    }
   }, [rows, importHoldings])
 
   // #9: 弹窗关闭时重置状态，不用 setTimeout
@@ -317,9 +335,10 @@ export default function ImportDialog() {
               </Table>
             </div>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setStep('upload')}>返回</Button>
-              <Button size="sm" onClick={handleImport}>
-                <CheckCircle className="h-3 w-3 mr-2" />确认导入 {rows.length} 条
+              <Button variant="outline" size="sm" onClick={() => setStep('upload')} disabled={importing}>返回</Button>
+              <Button size="sm" onClick={handleImport} disabled={importing}>
+                {importing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <CheckCircle className="h-3 w-3 mr-2" />}
+                {importing ? '导入中...' : `确认导入 ${rows.length} 条`}
               </Button>
             </div>
           </div>
