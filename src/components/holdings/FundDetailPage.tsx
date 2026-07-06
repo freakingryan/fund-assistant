@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import SearchableSelect from '@/components/ui/searchable-select'
-import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, Wallet, RefreshCw } from 'lucide-react'
+import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, Wallet, RefreshCw, ChevronRight } from 'lucide-react'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
@@ -461,15 +461,23 @@ export default function FundDetailPage() {
                     <p className="text-[10px] text-muted-foreground">报告期：{portfolio.date}</p>
                     <div className="space-y-1">
                       {portfolio.holdings.map((h, i) => (
-                        <div key={h.code} className="flex items-center justify-between text-xs py-1 px-2 rounded hover:bg-muted/30">
+                        <div
+                          key={h.code}
+                          onClick={() => navigate(`/stock/${h.code}`)}
+                          className="group flex items-center justify-between text-xs py-1 px-2 rounded hover:bg-muted/40 cursor-pointer transition-colors"
+                          title="查看个股详情"
+                        >
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <span className="text-[10px] text-muted-foreground w-4 text-right">{i + 1}</span>
                             <span className="font-mono text-[10px] text-muted-foreground">{h.code}</span>
-                            <span className="truncate">{h.name}</span>
+                            <span className="truncate group-hover:text-foreground">{h.name}</span>
                           </div>
-                          <span className={`font-mono font-medium shrink-0 ${h.ratio >= 5 ? 'text-red-500' : ''}`}>
-                            {h.ratio.toFixed(1)}%
-                          </span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`font-mono font-medium ${h.ratio >= 5 ? 'text-red-500' : ''}`}>
+                              {h.ratio.toFixed(1)}%
+                            </span>
+                            <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
                         </div>
                       ))}
                     </div>

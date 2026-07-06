@@ -20,8 +20,10 @@ interface Props {
   quoteRefreshing?: boolean
   externalHighlightIndex?: number | null
   onCandleClick?: (index: number | null) => void
-  useEtfKline: boolean
-  setUseEtfKline: (v: boolean) => void
+  useEtfKline?: boolean
+  setUseEtfKline?: (v: boolean) => void
+  /** 个股模式：始终渲染蜡烛图，隐藏 ETF 映射面板与净值/ETF 切换开关 */
+  isStock?: boolean
   period: string
   setPeriod: (v: string) => void
   showMA: boolean
@@ -37,7 +39,7 @@ interface Props {
 export default function KlineChartCard({
   klineData, klineLoading, klineUpdateTime, etfCode, etfQuote,
   onRefreshQuote, quoteRefreshing, externalHighlightIndex, onCandleClick,
-  useEtfKline, setUseEtfKline, period, setPeriod,
+  useEtfKline = false, setUseEtfKline = () => {}, isStock = false, period, setPeriod,
   showMA, setShowMA, showBollinger, setShowBollinger,
   refreshing, handleRefreshKline,
   klineDetectedPatterns, onHover,
@@ -46,6 +48,11 @@ export default function KlineChartCard({
 
   const hasValidEtfQuote = etfQuote && etfQuote.nav && etfQuote.nav > 0.001
   const etfQuoteChangeColor = hasValidEtfQuote && etfQuote.dailyChange >= 0 ? 'text-red-500' : 'text-green-500'
+
+  // 是否渲染蜡烛图：个股始终渲染（有成交量）；基金需开启 ETF K 线且存在 ETF 代码
+  const showCandlestick = isStock
+    ? !!klineData[0]?.volume
+    : (useEtfKline && !!etfCode && !!klineData[0]?.volume)
 
   return (
     <Card>
@@ -82,7 +89,7 @@ export default function KlineChartCard({
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
-            {useEtfKline && etfCode && klineData[0]?.volume && (
+            {showCandlestick && (
               <>
                 <button
                   onClick={() => setShowMA(!showMA)}
@@ -127,7 +134,7 @@ export default function KlineChartCard({
         )}
         {klineLoading ? (
           <div className="flex items-center justify-center h-[200px]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-        ) : useEtfKline && etfCode && klineData[0]?.volume ? (
+        ) : showCandlestick ? (
           <>
             {/* 可滚动容器：防止 SVG 在窄屏下撑破父容器 */}
             <div className="overflow-x-auto pb-1 -mx-1 px-1">

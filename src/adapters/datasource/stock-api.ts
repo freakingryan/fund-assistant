@@ -43,6 +43,25 @@ function isExchangeCode(code: string): boolean {
 }
 
 /**
+ * 将普通 6 位股票代码转换为 stock-api 格式（带市场前缀）
+ * 6xxxxx/9xxxxx → SH（沪市主板/科创板）
+ * 0xxxxx/3xxxxx/2xxxxx → SZ（深市/创业板）
+ * 8xxxxx/4xxxxx → BJ（北交所）
+ * 已带 SH/SZ/BJ/HK/US 前缀的原样返回
+ */
+function toStockApiCode(code: string): string {
+  if (/^(SH|SZ|BJ|HK|US)/i.test(code)) return code
+  if (/^\d{4,6}$/.test(code)) {
+    const f = code[0]
+    if (f === '6' || f === '9') return `SH${code}`
+    if (f === '0' || f === '3' || f === '2') return `SZ${code}`
+    if (f === '8' || f === '4') return `BJ${code}`
+    if (f === '5') return `SH${code}`
+  }
+  return code
+}
+
+/**
  * 计算 period 对应的 K 线条数
  */
 function periodToCount(period: string): number {
@@ -262,6 +281,53 @@ export class StockApiAdapter implements FundDataSource {
       }
     } catch { /* fallback */ }
     return []
+  }
+
+  /**
+   * 个股真实 K 线（OHLC + 成交量）
+   * 通过 stock-api 获取，支持沪深/北交所/港股个股
+   */
+  async fetchStockKLine(code: string, period = '3m'): Promise<KLineData[]> {
+    try {
+      const s = await ensureStocks()
+      const apiCode = toStockApiCode(code)
+      const count = periodToCount(period)
+      const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
+      if (klines.length > 0) {
+        return klines.map((k: any) => ({
+          date: k.date || '',
+          open: k.open || 0,
+          close: k.close || 0,
+          high: k.high || 0,
+          low: k.low || 0,
+          volume: k.volume || 0,
+        }))
+      }
+    } catch { /* fallback */ }
+    return []
+  }
+
+  /**
+   * 个股实时行情
+   * 通过 stock-api 获取现价/涨跌幅，返回 FundQuote 兼容结构（nav=现价）
+   */
+  async fetchStockQuote(code: string): Promise<FundQuote | null> {
+    try {
+      const s = await ensureStocks()
+      const apiCode = toStockApiCode(code)
+      const stock = await s.auto.getStock(apiCode)
+      if (stock && stock.name && stock.now > 0) {
+        return {
+          code,
+          name: stock.name,
+          nav: stock.now,
+          accNav: 0,
+          dailyChange: (stock.percent ?? 0) * 100,
+          navDate: new Date().toISOString().slice(0, 10),
+        }
+      }
+    } catch { /* fallback */ }
+    return null
   }
 
   /**

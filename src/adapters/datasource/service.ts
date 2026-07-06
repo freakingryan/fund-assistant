@@ -82,6 +82,38 @@ class DataSourceService implements FundDataSource {
   }
 
   /**
+   * 获取个股真实 K 线（含 OHLC 和成交量）
+   * 从第一个支持 fetchStockKLine 的适配器获取
+   */
+  async fetchStockKLine(code: string, period = '3m'): Promise<KLineData[]> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof adapter.fetchStockKLine === 'function') {
+        try {
+          const data = await adapter.fetchStockKLine(code, period)
+          if (data.length > 0) return data
+        } catch { /* try next */ }
+      }
+    }
+    return []
+  }
+
+  /**
+   * 获取个股实时行情（现价/涨跌幅）
+   * 从第一个支持 fetchStockQuote 的适配器获取
+   */
+  async fetchStockQuote(code: string): Promise<FundQuote | null> {
+    for (const adapter of this.getAdapters()) {
+      if (typeof adapter.fetchStockQuote === 'function') {
+        try {
+          const data = await adapter.fetchStockQuote(code)
+          if (data) return data
+        } catch { /* try next */ }
+      }
+    }
+    return null
+  }
+
+  /**
    * 获取基金持仓明细（前十大重仓股）
    */
   async fetchFundPortfolio(fundCode: string): Promise<{
