@@ -14,7 +14,7 @@ import type { FundType, FundSector, Market } from '@/types'
  * 美股: 字母代码
  */
 
-export function classifyMarket(code: string): Market {
+function classifyMarket(code: string): Market {
   const c = code.trim().toUpperCase()
   // 美股：纯字母或含字母的短代码
   if (/^[A-Z]{1,5}$/.test(c) && !/^\d+$/.test(c)) return 'US'
@@ -24,7 +24,7 @@ export function classifyMarket(code: string): Market {
   return 'A'
 }
 
-export function classifyFundType(code: string, name: string): FundType {
+function classifyFundType(code: string, name: string): FundType {
   const n = name.toLowerCase()
 
   // ETF 场内基金
@@ -60,7 +60,7 @@ const SECTOR_KEYWORDS: Record<FundSector, RegExp[]> = {
   other: [],
 }
 
-export function classifySector(name: string): FundSector {
+function classifySector(name: string): FundSector {
   for (const [sector, patterns] of Object.entries(SECTOR_KEYWORDS)) {
     for (const p of patterns) {
       if (p.test(name)) return sector as FundSector

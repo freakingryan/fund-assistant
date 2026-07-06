@@ -32,38 +32,52 @@ class DataSourceService implements FundDataSource {
     return true
   }
 
-  async fetchFundInfo(code: string): Promise<{ name: string; type: string }> {
-    for (const adapter of this.getAdapters()) {
+  /**
+   * 依次尝试适配器链中的每个适配器，返回第一个通过校验的结果。
+   * 任一适配器抛错则自动跳过，尝试下一个（与原有的「循环 + try/catch」语义一致）。
+   * @param makeCall 从适配器取出一个已绑定参数的调用；若适配器不支持该方法则返回 null 跳过
+   * @param accept   判断结果是否可用的断言，默认「非空即接受」
+   */
+  private async tryFirst<R>(
+    makeCall: (a: FundDataSource) => (() => Promise<R>) | null,
+    accept: (r: R) => boolean = (r) => r !== null && r !== undefined
+  ): Promise<R | null> {
+    for (const a of this.getAdapters()) {
+      const call = makeCall(a)
+      if (!call) continue
       try {
-        const result = await adapter.fetchFundInfo(code)
-        if (result && result.name !== code) return result
-      } catch { /* try next */ }
+        const r = await call()
+        if (accept(r)) return r
+      } catch { /* try next adapter */ }
     }
-    return { name: code, type: 'stock' }
+    return null
+  }
+
+  async fetchFundInfo(code: string): Promise<{ name: string; type: string }> {
+    const result = await this.tryFirst(
+      (a) => () => a.fetchFundInfo(code),
+      (r) => !!r && r.name !== code
+    )
+    return result ?? { name: code, type: 'stock' }
   }
 
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
-    for (const adapter of this.getAdapters()) {
-      try {
-        const data = await adapter.fetchQuotes(codes)
-        if (data.length > 0 && data.some((q) => q.nav !== 1 || q.dailyChange !== 0)) {
-          return data
-        }
-      } catch { /* try next */ }
-    }
-    return []
+    return (await this.tryFirst(
+      (a) => () => a.fetchQuotes(codes),
+      (data) => data.length > 0 && data.some((q) => q.nav !== 1 || q.dailyChange !== 0)
+    )) ?? []
   }
 
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.fetchKLine !== 'function') continue
-      try {
-        const data = await adapter.fetchKLine(code, period)
-        if (data.length > 0) return data
-      } catch { /* try next */ }
-    }
-    return []
+    return (await this.tryFirst(
+      (a) => {
+        if (typeof a.fetchKLine !== 'function') return null
+        const fn = a.fetchKLine
+        return () => fn(code, period)
+      },
+      (data) => data.length > 0
+    )) ?? []
   }
 
   /**
@@ -71,15 +85,14 @@ class DataSourceService implements FundDataSource {
    * 从第一个支持 fetchEtfKLine 的适配器获取，若均不支持则返回空数组
    */
   async fetchEtfKLine(code: string, period = '3m'): Promise<KLineData[]> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.fetchEtfKLine === 'function') {
-        try {
-          const data = await adapter.fetchEtfKLine(code, period)
-          if (data.length > 0) return data
-        } catch { /* try next */ }
-      }
-    }
-    return []
+    return (await this.tryFirst(
+      (a) => {
+        if (typeof a.fetchEtfKLine !== 'function') return null
+        const fn = a.fetchEtfKLine
+        return () => fn(code, period)
+      },
+      (data) => data.length > 0
+    )) ?? []
   }
 
   /**
@@ -87,15 +100,14 @@ class DataSourceService implements FundDataSource {
    * 从第一个支持 fetchStockKLine 的适配器获取
    */
   async fetchStockKLine(code: string, period = '3m'): Promise<KLineData[]> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.fetchStockKLine === 'function') {
-        try {
-          const data = await adapter.fetchStockKLine(code, period)
-          if (data.length > 0) return data
-        } catch { /* try next */ }
-      }
-    }
-    return []
+    return (await this.tryFirst(
+      (a) => {
+        if (typeof a.fetchStockKLine !== 'function') return null
+        const fn = a.fetchStockKLine
+        return () => fn(code, period)
+      },
+      (data) => data.length > 0
+    )) ?? []
   }
 
   /**
@@ -103,42 +115,33 @@ class DataSourceService implements FundDataSource {
    * 从第一个支持 fetchStockQuote 的适配器获取
    */
   async fetchStockQuote(code: string): Promise<FundQuote | null> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.fetchStockQuote === 'function') {
-        try {
-          const data = await adapter.fetchStockQuote(code)
-          if (data) return data
-        } catch { /* try next */ }
-      }
-    }
-    return null
+    return this.tryFirst((a) => {
+      if (typeof a.fetchStockQuote !== 'function') return null
+      const fn = a.fetchStockQuote
+      return () => fn(code)
+    })
   }
 
   /**
    * 获取基金持仓明细（前十大重仓股）
    */
   async fetchFundPortfolio(fundCode: string): Promise<FundPortfolio | null> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.fetchFundPortfolio !== 'function') continue
-      try {
-        const result = await adapter.fetchFundPortfolio(fundCode)
-        if (result) return result
-      } catch { /* try next */ }
-    }
-    return null
+    return this.tryFirst((a) => {
+      if (typeof a.fetchFundPortfolio !== 'function') return null
+      const fn = a.fetchFundPortfolio
+      return () => fn(fundCode)
+    })
   }
+
   /**
    * 查询场外基金对应的场内 ETF 代码
    */
   async queryEtfMapping(otcCode: string): Promise<EtfMapping | null> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.queryEtfMapping !== 'function') continue
-      try {
-        const result = await adapter.queryEtfMapping(otcCode)
-        if (result) return result
-      } catch { /* try next */ }
-    }
-    return null
+    return this.tryFirst((a) => {
+      if (typeof a.queryEtfMapping !== 'function') return null
+      const fn = a.queryEtfMapping
+      return () => fn(otcCode)
+    })
   }
 
   /**
@@ -146,14 +149,14 @@ class DataSourceService implements FundDataSource {
    * 通过 stock-api 的 searchStocks 实现关键词搜索
    */
   async searchStocks(key: string): Promise<{ code: string; name: string }[]> {
-    for (const adapter of this.getAdapters()) {
-      if (typeof adapter.searchStocks !== 'function') continue
-      try {
-        const data = await adapter.searchStocks(key)
-        if (data.length > 0) return data
-      } catch { /* try next */ }
-    }
-    return []
+    return (await this.tryFirst(
+      (a) => {
+        if (typeof a.searchStocks !== 'function') return null
+        const fn = a.searchStocks
+        return () => fn(key)
+      },
+      (data) => data.length > 0
+    )) ?? []
   }
 
   /**
@@ -206,13 +209,12 @@ class DataSourceService implements FundDataSource {
    * 检查所有适配器的数据源健康状态
    */
   async checkHealth(): Promise<DatasourceHealth> {
-    const adapters = this.getAdapters()
-    for (const adapter of adapters) {
-      if (typeof adapter.checkHealth !== 'function') continue
-      try {
-        return await adapter.checkHealth()
-      } catch { /* try next */ }
-    }
+    const result = await this.tryFirst((a) => {
+      if (typeof a.checkHealth !== 'function') return null
+      const fn = a.checkHealth
+      return () => fn()
+    })
+    if (result) return result
     return {
       stockApi: { ok: false, latency: 0, error: '无适配器支持' },
       fundgz: { ok: false, latency: 0, error: '无适配器支持' },

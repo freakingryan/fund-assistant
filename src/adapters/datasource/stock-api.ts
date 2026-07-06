@@ -53,10 +53,15 @@ function mapStockApiKline(k: StockApiKline): KLineData {
 }
 
 /**
- * 将场内 ETF 代码转换为 stock-api 格式（带市场前缀）
+ * 将场内 ETF/LOF 代码转换为 stock-api 格式（带市场前缀）
  * 159xxx/16xxxx → SZ159xxx/SZ16xxxx（深交所）
  * 51xxxx/56xxxx/58xxxx → SH51xxxx/SH56xxxx/SH58xxxx（上交所）
  * 其他原样返回
+ *
+ * 注意：此函数与 toStockApiCode 刻意分开——两者覆盖不同的代码空间。
+ * toApiCode 仅处理 ETF/LOF 前缀（159/16/51/56/58），不识别个股代码（如 159915
+ * 必须加 SZ 前缀，而个股规则不会给 1 开头加前缀）；toStockApiCode 处理个股
+ * 6/9/0/3/2/8/4/5 并放行已带 SH/SZ/BJ/HK/US 前缀的代码。二者不可合并。
  */
 function toApiCode(code: string): string {
   if (code.startsWith('159') || code.startsWith('16')) return `SZ${code}`
