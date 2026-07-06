@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -115,6 +115,9 @@ export default function ImportDialog() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiConfigured, setAiConfigured] = useState(false)
   const [importing, setImporting] = useState(false)
+  const [revalidating, setRevalidating] = useState(false)
+  const [onlyValid, setOnlyValid] = useState(true)
+  const [importedOnce, setImportedOnce] = useState(false)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
 
   useEffect(() => {
@@ -228,14 +231,16 @@ export default function ImportDialog() {
   const handleImport = useCallback(async () => {
     setImporting(true)
     try {
-      // 按 code 去重，避免同一 CSV 重复导入产生重复持仓
+      // 「仅导入已核对」时跳过待核对（代码缺失/识别有误）的基金，分两批导入
+      const target = onlyValid ? rows.filter((r) => !r.needsCodeCheck) : rows
+      // 按 code 去重，避免同一文件重复导入产生重复持仓
       const seen = new Set<string>()
-      const deduped = rows.filter((r) => {
+      const deduped = target.filter((r) => {
         if (seen.has(r.code)) return false
         seen.add(r.code)
         return true
       })
-      const dupCount = rows.length - deduped.length
+      const dupCount = target.length - deduped.length
       const records = deduped.map((r) => ({
         code: r.code, name: r.name, market: r.market, type: r.type, sector: r.sector,
         costNAV: r.costNAV, shares: r.shares,
@@ -249,21 +254,54 @@ export default function ImportDialog() {
       if (result.added) parts.push(`新增 ${result.added}`)
       if (result.updated) parts.push(`更新 ${result.updated}`)
       const dupNote = dupCount > 0 ? `（已去重 ${dupCount} 条）` : ''
-      const msg = parts.length
-        ? `导入完成：${parts.join('，')}${dupNote}`
-        : `导入完成${dupNote}`
-      toast({ type: 'success', message: msg })
-      setStep('done')
+      const remaining = rows.filter((r) => r.needsCodeCheck).length
+      // 仅导入已核对且仍有待核对 → 留在预览，供用户补全代码后再次导入
+      const stayForFix = onlyValid && remaining > 0
+      const base = parts.length ? `${parts.join('，')}${dupNote}` : `（已去重 ${dupCount} 条）`
+      const msg = stayForFix
+        ? `已导入 ${result.added + result.updated} 条，仍有 ${remaining} 只待核对；修改代码后点「重新校验」再导入`
+        : `导入完成：${base}`
+      toast({ type: stayForFix ? 'info' : 'success', message: msg })
+      setImportedOnce(true)
+      if (!stayForFix) setStep('done')
     } catch (e) {
       toast({ type: 'error', message: `导入失败：${String(e)}` })
     } finally {
       setImporting(false)
     }
-  }, [rows, importHoldings])
+  }, [rows, onlyValid, importHoldings])
+
+  /** 待核对基金置顶展示，并保留原始索引供 updateRow 使用 */
+  const displayRows = useMemo(
+    () => rows.map((row, idx) => ({ row, idx }))
+      .sort((a, b) => Number(b.row.needsCodeCheck) - Number(a.row.needsCodeCheck)),
+    [rows]
+  )
+
+  /** 用当前（可能已手改）代码重新校验行情，刷新 needsCodeCheck 状态 */
+  const revalidate = useCallback(async () => {
+    setRevalidating(true)
+    try {
+      const validated = await validateRows(rows)
+      setRows(validated)
+      const failed = validated.filter((r) => r.needsCodeCheck).length
+      const checked = validated.length - failed
+      if (failed > 0) {
+        toast({ type: 'warning', message: `校验完成：${checked} 只通过，${failed} 只仍待核对` })
+      } else {
+        toast({ type: 'success', message: '全部基金已通过校验 ✓' })
+      }
+    } finally {
+      setRevalidating(false)
+    }
+  }, [rows, validateRows, toast])
 
   // #9: 弹窗关闭时重置状态，不用 setTimeout
   useEffect(() => {
-    if (!open) { setRows([]); setErrors([]); setStep('upload') }
+    if (!open) {
+      setRows([]); setErrors([]); setStep('upload')
+      setOnlyValid(true); setRevalidating(false); setImportedOnce(false)
+    }
   }, [open])
 
   const reset = () => {
@@ -353,16 +391,42 @@ export default function ImportDialog() {
 
         {step === 'preview' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <p className="text-sm">
                 解析到 <strong>{rows.length}</strong> 条记录
+                {rows.some((r) => r.needsCodeCheck) && (
+                  <span className="text-muted-foreground">（<span className="text-destructive">{rows.filter((r) => r.needsCodeCheck).length}</span> 只待核对已置顶）</span>
+                )}
               </p>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={onlyValid}
+                  onChange={(e) => setOnlyValid(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+                仅导入已核对（✓）
+              </label>
             </div>
-            <div className="border rounded-md max-h-60 overflow-auto">
+
+            {rows.some((r) => r.needsCodeCheck) && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-muted-foreground space-y-1">
+                <p className="flex items-start gap-1">
+                  <AlertCircle className="h-3 w-3 mt-0.5 shrink-0 text-destructive" />
+                  待核对基金（代码缺失或识别有误）已排在上方。可直接修改其「代码」列，再点「重新校验」刷新状态；通过后即可一并导入。
+                </p>
+                <p className="flex items-start gap-1">
+                  <AlertCircle className="h-3 w-3 mt-0.5 shrink-0 text-destructive" />
+                  建议先勾选「仅导入已核对」导入无误数据，补全代码并校验通过后再导入剩余基金。
+                </p>
+              </div>
+            )}
+
+            <div className="border rounded-md max-h-72 overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[80px]">代码</TableHead>
+                    <TableHead className="w-[92px]">代码（可改）</TableHead>
                     <TableHead>名称</TableHead>
                     <TableHead className="w-[70px]">市场</TableHead>
                     <TableHead className="w-[80px]">类型</TableHead>
@@ -374,18 +438,25 @@ export default function ImportDialog() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.slice(0, 20).map((row, i) => (
-                    <TableRow key={i}>
-                      <TableCell className="text-xs font-mono">{row.code || '-'}</TableCell>
+                  {displayRows.map(({ row, idx }) => (
+                    <TableRow key={idx} className={row.needsCodeCheck ? 'bg-destructive/5' : ''}>
+                      <TableCell>
+                        <Input
+                          value={row.code}
+                          onChange={(e) => updateRow(idx, 'code', e.target.value.trim())}
+                          placeholder="输入代码"
+                          className={`h-7 text-xs font-mono w-[92px] ${row.needsCodeCheck ? 'border-destructive/60' : ''}`}
+                        />
+                      </TableCell>
                       <TableCell className="text-xs">{row.name}</TableCell>
                       <TableCell>
-                        <Select value={row.market} onValueChange={(v) => updateRow(i, 'market', v)}>
+                        <Select value={row.market} onValueChange={(v) => updateRow(idx, 'market', v)}>
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>{MARKET_OPTIONS.map((m) => <SelectItem key={m} value={m}>{MARKET_LABELS[m]}</SelectItem>)}</SelectContent>
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Select value={row.type} onValueChange={(v) => updateRow(i, 'type', v)}>
+                        <Select value={row.type} onValueChange={(v) => updateRow(idx, 'type', v)}>
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>{TYPE_OPTIONS.map((t) => <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
                         </Select>
@@ -408,11 +479,18 @@ export default function ImportDialog() {
                 </TableBody>
               </Table>
             </div>
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setStep('upload')} disabled={importing}>返回</Button>
-              <Button size="sm" onClick={handleImport} disabled={importing}>
+            <div className="flex gap-2 justify-end flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => setStep('upload')} disabled={importing || revalidating}>返回</Button>
+              {importedOnce && (
+                <Button variant="outline" size="sm" onClick={reset} disabled={importing || revalidating}>完成</Button>
+              )}
+              <Button variant="outline" size="sm" onClick={revalidate} disabled={importing || revalidating}>
+                {revalidating ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <CheckCircle className="h-3 w-3 mr-2" />}
+                {revalidating ? '校验中...' : '重新校验'}
+              </Button>
+              <Button size="sm" onClick={handleImport} disabled={importing || revalidating}>
                 {importing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <CheckCircle className="h-3 w-3 mr-2" />}
-                {importing ? '导入中...' : `确认导入 ${rows.length} 条`}
+                {importing ? '导入中...' : `确认导入 ${onlyValid ? rows.filter((r) => !r.needsCodeCheck).length : rows.length} 条`}
               </Button>
             </div>
           </div>
