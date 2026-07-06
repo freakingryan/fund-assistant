@@ -28,6 +28,54 @@ const VOL_HEIGHT = 50
 const LABEL_OFFSET = 16
 const INFO_BAR_H = 42
 
+// 价格轴留白比例与最小留白（防止单一价格数据除零）
+const Y_PADDING_RATIO = 0.05
+const Y_PADDING_MIN = 0.01
+// 图表主区与技术指标区域之间的间距
+const CHART_BOTTOM_GAP = 8
+// Y 轴刻度段数（含两端共 Y_TICK_COUNT + 1 条）
+const Y_TICK_COUNT = 5
+
+/** 将指标数值序列转为 SVG polyline points（正向） */
+function buildLinePoints(
+  values: (number | null)[],
+  stepX: number,
+  chartHeight: number,
+  yMin: number,
+  yMax: number,
+): string | null {
+  const range = yMax - yMin || 1
+  const pts: string[] = []
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i]
+    if (v === null) continue
+    const x = MARGIN.left + i * stepX
+    const y = MARGIN.top + chartHeight - ((v - yMin) / range) * chartHeight
+    pts.push(`${x},${y}`)
+  }
+  return pts.length > 1 ? pts.join(' ') : null
+}
+
+/** 与 buildLinePoints 相同，但按索引逆序拼接（用于布林带填充闭合路径） */
+function buildLinePointsRev(
+  values: (number | null)[],
+  stepX: number,
+  chartHeight: number,
+  yMin: number,
+  yMax: number,
+): string {
+  const range = yMax - yMin || 1
+  const pts: string[] = []
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i]
+    if (v === null) continue
+    const x = MARGIN.left + i * stepX
+    const y = MARGIN.top + chartHeight - ((v - yMin) / range) * chartHeight
+    pts.push(`${x},${y}`)
+  }
+  return pts.join(' ')
+}
+
 const PATTERN_STYLES: Partial<Record<KlinePattern, { bg: string; text: string; border: string }>> = {
   hammer: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
   bullish_marubozu: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
@@ -79,14 +127,14 @@ export default function CandlestickChart({
   }, [])
 
   const chartWidth = width - MARGIN.left - MARGIN.right
-  const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - 8
+  const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - CHART_BOTTOM_GAP
 
   const { yScale, candles } = useMemo(() => {
     if (data.length === 0) return { yScale: { min: 0, max: 0 }, candles: [] }
 
     const high = Math.max(...data.map((d) => d.high))
     const low = Math.min(...data.map((d) => d.low))
-    const pad = (high - low) * 0.05 || 0.01
+    const pad = (high - low) * Y_PADDING_RATIO || Y_PADDING_MIN
     const yMin = low - pad
     const yMax = high + pad
 
@@ -132,37 +180,16 @@ export default function CandlestickChart({
   const MA_COLORS = ['#f59e0b', '#3b82f6', '#8b5cf6', '#14b8a6'] as const
   const MA_LABELS = ['MA5', 'MA10', 'MA20', 'MA60'] as const
 
-  // 将均线数值转为 SVG polyline points
-  const buildMAPolyline = (values: (number | null)[], stepX: number): string | null => {
-    const pts: string[] = []
-    for (let i = 0; i < values.length; i++) {
-      if (values[i] === null) continue
-      const x = MARGIN.left + i * stepX
-      const y = chartHeight - ((values[i]! - yScale.min) / (yScale.max - yScale.min)) * chartHeight + MARGIN.top
-      pts.push(`${x},${y}`)
-    }
-    return pts.length > 1 ? pts.join(' ') : null
-  }
-
-  const buildBollingerPolyline = (values: (number | null)[], stepX: number): string | null => {
-    const pts: string[] = []
-    for (let i = 0; i < values.length; i++) {
-      if (values[i] === null) continue
-      const x = MARGIN.left + i * stepX
-      const y = chartHeight - ((values[i]! - yScale.min) / (yScale.max - yScale.min)) * chartHeight + MARGIN.top
-      pts.push(`${x},${y}`)
-    }
-    return pts.length > 1 ? pts.join(' ') : null
-  }
+  // 均线 / 布林带 polyline 由模块级纯函数 buildLinePoints / buildLinePointsRev 生成
 
   if (data.length === 0) return null
 
   const ticks = (() => {
     const { min, max } = yScale
-    const step = (max - min) / 5
-    return Array.from({ length: 6 }, (_, i) => ({
+    const step = (max - min) / Y_TICK_COUNT
+    return Array.from({ length: Y_TICK_COUNT + 1 }, (_, i) => ({
       value: min + step * i,
-      y: chartHeight - (step * i / (max - min)) * chartHeight + MARGIN.top,
+      y: MARGIN.top + chartHeight - (step * i / (max - min)) * chartHeight,
     }))
   })()
 
@@ -189,17 +216,10 @@ export default function CandlestickChart({
           {/* Bollinger Bands 填充 */}
           {showBollinger && technicals && (() => {
             const stepX = chartWidth / Math.max(data.length - 1, 1)
-            const upperPts = buildBollingerPolyline(technicals.bollinger.upper, stepX)
-            const lowerPts = buildBollingerPolyline(technicals.bollinger.lower, stepX)
+            const upperPts = buildLinePoints(technicals.bollinger.upper, stepX, chartHeight, yScale.min, yScale.max)
+            const lowerPts = buildLinePoints(technicals.bollinger.lower, stepX, chartHeight, yScale.min, yScale.max)
             if (!upperPts || !lowerPts) return null
-            const lowerArr = technicals.bollinger.lower
-            let lowerRev = ''
-            for (let i = lowerArr.length - 1; i >= 0; i--) {
-              if (lowerArr[i] === null) continue
-              const x = MARGIN.left + i * stepX
-              const y = chartHeight - ((lowerArr[i]! - yScale.min) / (yScale.max - yScale.min)) * chartHeight + MARGIN.top
-              lowerRev += `${x},${y} `
-            }
+            const lowerRev = buildLinePointsRev(technicals.bollinger.lower, stepX, chartHeight, yScale.min, yScale.max)
             if (!lowerRev.trim()) return null
             return (
               <path
@@ -215,7 +235,7 @@ export default function CandlestickChart({
           {showBollinger && technicals && ['upper', 'middle', 'lower'].map((band) => {
             const values = technicals!.bollinger[band as keyof typeof technicals.bollinger]
             const stepX = chartWidth / Math.max(data.length - 1, 1)
-            const pts = buildBollingerPolyline(values as (number | null)[], stepX)
+            const pts = buildLinePoints(values as (number | null)[], stepX, chartHeight, yScale.min, yScale.max)
             if (!pts) return null
             return (
               <polyline
@@ -239,7 +259,7 @@ export default function CandlestickChart({
           ].map((maArr, mi) => {
             if (!maArr) return null
             const stepX = chartWidth / Math.max(data.length - 1, 1)
-            const pts = buildMAPolyline(maArr, stepX)
+            const pts = buildLinePoints(maArr, stepX, chartHeight, yScale.min, yScale.max)
             if (!pts) return null
             return (
               <polyline

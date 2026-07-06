@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { KLineData, FundQuote } from '@/types'
 import { pnlColor } from '@/lib/format'
 import type { DetectedPattern } from '@/services/klinePatterns'
@@ -10,6 +10,12 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Loader2, RefreshCw } from 'lucide-react'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
+
+// 净值折线图静态尺寸（基金非 ETF 模式下的回退展示）
+const NAV_CHART_WIDTH = 560
+const NAV_CHART_HEIGHT = 200
+const NAV_CHART_BASELINE = 180 // 价格最低点对应的 y 坐标
+const NAV_CHART_SCALE = 160 // [min, max] 价格区间映射的纵向像素高度
 
 interface Props {
   klineData: KLineData[]
@@ -46,6 +52,22 @@ export default function KlineChartCard({
   klineDetectedPatterns, onHover,
 }: Props) {
   const [klineIndicatorInfoOpen, setKlineIndicatorInfoOpen] = useState(false)
+
+  // 净值折线图坐标点：仅在 klineData 变化时计算一次，避免每次渲染重算 min/max（原 O(n²)）
+  const navLinePoints = useMemo(() => {
+    if (klineData.length === 0) return ''
+    let min = Infinity
+    let max = -Infinity
+    for (const d of klineData) {
+      if (d.close < min) min = d.close
+      if (d.close > max) max = d.close
+    }
+    const range = max - min || 1
+    const xStep = NAV_CHART_WIDTH / Math.max(klineData.length - 1, 1)
+    return klineData
+      .map((d, i) => `${i * xStep},${NAV_CHART_BASELINE - ((d.close - min) / range) * NAV_CHART_SCALE}`)
+      .join(' ')
+  }, [klineData])
 
   const hasValidEtfQuote = etfQuote && etfQuote.nav && etfQuote.nav > 0.001
   const etfQuoteChangeColor = hasValidEtfQuote ? pnlColor(etfQuote.dailyChange) : 'text-green-500'
@@ -195,9 +217,9 @@ export default function KlineChartCard({
         ) : (
           <div className="flex items-center justify-center h-[200px]">
             {klineData.length > 0 ? (
-              <svg width={560} height={200} className="overflow-visible">
+              <svg width={NAV_CHART_WIDTH} height={NAV_CHART_HEIGHT} className="overflow-visible">
                 <polyline
-                  points={klineData.map((d, i) => `${i * (560 / Math.max(klineData.length - 1, 1))},${180 - ((d.close - Math.min(...klineData.map((x) => x.close))) / (Math.max(...klineData.map((x) => x.close)) - Math.min(...klineData.map((x) => x.close)) || 1)) * 160}`).join(' ')}
+                  points={navLinePoints}
                   fill="none" stroke="#3b82f6" strokeWidth={2}
                 />
               </svg>
