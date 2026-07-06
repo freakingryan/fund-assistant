@@ -15,9 +15,14 @@ import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
 import { fetchFundGzJsonp, fetchFundPingZhongData, fetchFundHoldingsF10 } from './jsonp-utils'
 import { periodToCount } from './periodConfig'
+import type { stocks as StockApiModule } from 'stock-api'
+
+// stock-api 的 getStocks 运行时可能额外返回 amount（成交额），此处补声明
+type StockResult = Awaited<ReturnType<StockApiModule['auto']['getStocks']>>[number]
+type StockWithAmount = StockResult & { amount?: number }
 
 // stock-api 是 ESM-only 库，动态 import 以适应项目构建配置
-let stocks: any = null
+let stocks: StockApiModule | null = null
 
 async function ensureStocks() {
   if (!stocks) {
@@ -363,7 +368,7 @@ export class StockApiAdapter implements FundDataSource {
       )
 
       const holdings = results
-        .map((result: PromiseSettledResult<any>, i: number) => {
+        .map((result: PromiseSettledResult<StockResult>, i: number) => {
           const raw = result.status === 'fulfilled' && result.value?.name
             ? { code: codes[i].replace(/^(SH|SZ|HK)/, ''), name: result.value.name, ratio: 0, value: 0 }
             : null
@@ -533,8 +538,8 @@ export class StockApiAdapter implements FundDataSource {
       const uniqueThematicKeywords = [...kwSet].filter((s) => s.length >= 2)
 
       try {
-        const stocksList = await s.auto.getStocks(apiCodes)
-        const scored = stocksList.map((stock: any, i: number) => ({
+        const stocksList = (await s.auto.getStocks(apiCodes)) as StockWithAmount[]
+        const scored = stocksList.map((stock, i: number) => ({
           code: etfCodes[i],
           name: allEtfs.get(etfCodes[i])!.name,
           amount: stock?.amount || 0,
@@ -546,7 +551,7 @@ export class StockApiAdapter implements FundDataSource {
         }))
         // 按(成交额 + 名称匹配 + 公司匹配)降序排列
         // 成交额相等时，公司匹配优先；都相等时，名称匹配优先
-        scored.sort((a: any, b: any) => (b.amount + b.nameMatch + b.companyMatch) - (a.amount + a.nameMatch + a.companyMatch))
+        scored.sort((a, b) => (b.amount + b.nameMatch + b.companyMatch) - (a.amount + a.nameMatch + a.companyMatch))
         const best = scored[0]
         return { otcCode, otcName, exchangeCode: best.code, exchangeName: best.name }
       } catch {
@@ -565,10 +570,10 @@ export class StockApiAdapter implements FundDataSource {
     try {
       const s = await ensureStocks()
       const results = await s.auto.searchStocks(key)
-      return results.map((r: any) => ({
+      return results.map((r) => ({
         code: r.code || '',
         name: r.name || '',
-      })).filter((r: any) => r.code && r.name)
+      })).filter((r) => r.code && r.name)
     } catch { return [] }
   }
 
