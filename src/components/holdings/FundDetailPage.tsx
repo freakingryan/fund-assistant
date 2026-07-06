@@ -149,7 +149,7 @@ export default function FundDetailPage() {
   useEffect(() => {
     if (!fund) return
     let cancelled = false
-    setTimeout(() => setKlineLoading(true), 0)
+    setKlineLoading(true)
     const timer = setTimeout(() => { if (!cancelled) setKlineLoading(false) }, 15000)
 
     const load = async () => {

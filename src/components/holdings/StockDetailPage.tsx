@@ -99,7 +99,7 @@ export default function StockDetailPage() {
     if (!code) return
     let cancelled = false
     const cacheKey = `stock_${code}`
-    setTimeout(() => setKlineLoading(true), 0)
+    setKlineLoading(true)
     const timer = setTimeout(() => { if (!cancelled) setKlineLoading(false) }, 15000)
 
     const load = async () => {

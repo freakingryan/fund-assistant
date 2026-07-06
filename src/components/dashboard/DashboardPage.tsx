@@ -67,7 +67,7 @@ export default function DashboardPage() {
   }, [holdings])
 
   // 初始加载时也获取更新时间
-  useEffect(() => { if (!quotesUpdateTime) { setTimeout(() => { updateQuotesTime().catch(() => {}) }, 0) } }, [updateQuotesTime, quotesUpdateTime])
+  useEffect(() => { if (!quotesUpdateTime) { updateQuotesTime().catch(() => {}) } }, [updateQuotesTime, quotesUpdateTime])
 
   // Load quotes（带缓存 + 手动刷新）
   const loadQuotes = useCallback(async (force = false) => {
@@ -94,13 +94,13 @@ export default function DashboardPage() {
     setQuotesLoading(false)
   }, [holdings])
 
-  useEffect(() => { setTimeout(() => { loadQuotes().catch(() => {}) }, 0) }, [loadQuotes])
+  useEffect(() => { loadQuotes().catch(() => {}) }, [loadQuotes])
 
   // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线（带安全超时）
   useEffect(() => {
     if (!selectedFund) return
     let cancelled = false
-    setTimeout(() => setKlineLoading(true), 0)
+    setKlineLoading(true)
 
     const timer = setTimeout(() => { if (!cancelled) setKlineLoading(false) }, 15000)
 

@@ -82,15 +82,13 @@ export default function AddFundDialog() {
 
   useEffect(() => {
     if (open) {
-      setTimeout(() => {
-        setRows([makeRow()])
-        setError('')
-        setSelected(new Set())
-        setShowAllDetails(false)
-        setSearchQuery('')
-        setSearchResults([])
-        setEtfLookupResults(new Map())
-      }, 0)
+      setRows([makeRow()])
+      setError('')
+      setSelected(new Set())
+      setShowAllDetails(false)
+      setSearchQuery('')
+      setSearchResults([])
+      setEtfLookupResults(new Map())
     }
   }, [open])
 

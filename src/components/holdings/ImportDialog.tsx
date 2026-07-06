@@ -112,7 +112,7 @@ export default function ImportDialog() {
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
 
   useEffect(() => {
-    if (open) setTimeout(() => setAiConfigured(!!getDefaultAI()), 0)
+    if (open) setAiConfigured(!!getDefaultAI())
   }, [open])
 
   // ---- CSV/Excel ----
@@ -185,7 +185,7 @@ export default function ImportDialog() {
 
   // #9: 弹窗关闭时重置状态，不用 setTimeout
   useEffect(() => {
-    if (!open) { setTimeout(() => { setRows([]); setErrors([]); setStep('upload') }, 0) }
+    if (!open) { setRows([]); setErrors([]); setStep('upload') }
   }, [open])
 
   const reset = () => {
