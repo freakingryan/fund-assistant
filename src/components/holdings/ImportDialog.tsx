@@ -155,7 +155,8 @@ export default function ImportDialog() {
           market: auto.market, type: auto.type, sector: auto.sector,
           costNAV: h.costNAV || 0,
           shares: h.shares || 0,
-          holdingAmount: 0, holdingProfit: 0,
+          holdingAmount: h.holdingAmount || 0,
+          holdingProfit: h.holdingProfit || 0,
           purchaseDate: new Date().toISOString().slice(0, 10),
           tags: '', notes: '',
         }
@@ -220,7 +221,7 @@ export default function ImportDialog() {
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-auto">
         <DialogHeader>
           <DialogTitle>导入持仓数据</DialogTitle>
-          <DialogDescription>上传 CSV/Excel 文件，或上传持仓截图由 AI 提取</DialogDescription>
+          <DialogDescription>上传 CSV/Excel 文件，或上传持仓截图由 AI 提取（支持京东金融、支付宝、天天基金等）</DialogDescription>
         </DialogHeader>
 
         {step === 'upload' && (
@@ -270,7 +271,7 @@ export default function ImportDialog() {
                   ) : (
                     <>
                       <Camera className="h-10 w-10 mx-auto text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">上传持仓截图，AI 自动识别基金信息</p>
+                      <p className="text-sm text-muted-foreground">上传持仓截图（京东金融 / 支付宝 / 天天基金等），AI 自动识别基金名称、金额、收益</p>
                       <Input type="file" accept="image/*" capture="environment" onChange={handleImage} className="max-w-xs mx-auto" />
                       <p className="text-xs text-muted-foreground">支持 JPG/PNG，建议截图清晰完整</p>
                     </>
@@ -306,14 +307,16 @@ export default function ImportDialog() {
                     <TableHead>名称</TableHead>
                     <TableHead className="w-[70px]">市场</TableHead>
                     <TableHead className="w-[80px]">类型</TableHead>
-                    <TableHead className="w-[70px]">成本</TableHead>
-                    <TableHead className="w-[70px]">份额</TableHead>
+                    <TableHead className="w-[80px]">金额</TableHead>
+                    <TableHead className="w-[75px]">收益</TableHead>
+                    <TableHead className="w-[65px]">成本</TableHead>
+                    <TableHead className="w-[65px]">份额</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.slice(0, 20).map((row, i) => (
                     <TableRow key={i}>
-                      <TableCell className="text-xs font-mono">{row.code}</TableCell>
+                      <TableCell className="text-xs font-mono">{row.code || '-'}</TableCell>
                       <TableCell className="text-xs">{row.name}</TableCell>
                       <TableCell>
                         <Select value={row.market} onValueChange={(v) => updateRow(i, 'market', v)}>
@@ -326,6 +329,10 @@ export default function ImportDialog() {
                           <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>{TYPE_OPTIONS.map((t) => <SelectItem key={t} value={t}>{TYPE_LABELS[t]}</SelectItem>)}</SelectContent>
                         </Select>
+                      </TableCell>
+                      <TableCell className="text-xs">{row.holdingAmount ? `¥${row.holdingAmount.toLocaleString()}` : '-'}</TableCell>
+                      <TableCell className={`text-xs ${row.holdingProfit > 0 ? 'text-up' : row.holdingProfit < 0 ? 'text-down' : ''}`}>
+                        {row.holdingProfit ? `${row.holdingProfit > 0 ? '+' : ''}${row.holdingProfit.toLocaleString()}` : '-'}
                       </TableCell>
                       <TableCell className="text-xs">{row.costNAV || '-'}</TableCell>
                       <TableCell className="text-xs">{row.shares || '-'}</TableCell>

@@ -93,6 +93,12 @@ function getDefaultAI(): AIConfig | null {
 
 /**
  * 从图片中提取基金持仓信息（通过 AI Vision）
+ *
+ * 支持平台格式：
+ * - 京东金融：基金名称 / 金额(持有市值) / 今日收益 / 持仓收益 / 收益率（代码不可见）
+ * - 支付宝/蚂蚁财富：基金名称 / 持有金额 / 持有收益 / 今日收益
+ * - 天天基金/蛋卷基金：基金代码+名称 / 持有份额 / 持有市值 / 持有收益
+ * - 雪球/其他券商：基金名称或代码 / 仓位 / 盈亏
  */
 export async function extractFundInfoFromImage(imageDataUrl: string): Promise<{
   holdings: Array<{
@@ -100,26 +106,33 @@ export async function extractFundInfoFromImage(imageDataUrl: string): Promise<{
     name: string
     costNAV: number
     shares: number
+    holdingAmount: number
+    holdingProfit: number
   }>
   raw: string
 }> {
   const ai = getDefaultAI()
   if (!ai) throw new Error('请先在设置页配置 AI API Key')
 
-  const prompt = `你是一个基金持仓数据提取助手。请从这张持仓截图中提取所有基金信息。
-对每只基金返回：基金代码、基金名称、持仓成本净值、持有份额。
-请严格按以下 JSON 格式返回，不要包含其他内容：
-{
-  "holdings": [
-    {
-      "code": "基金代码",
-      "name": "基金名称", 
-      "costNAV": 持仓成本净值(数字),
-      "shares": 持有份额(数字)
-    }
-  ]
-}
-如果看不清某些数据，costNAV 或 shares 可以填 0，但 code 和 name 必须尽量识别。`
+  const prompt = `你是一个专业的基金持仓数据 OCR 提取助手。请从这张基金持仓截图中精确提取每只基金的信息。
+
+## 截图可能来自以下平台，请自动识别并适配：
+1. **京东金融** — 显示：基金名称、金额（持有市值）、今日收益、持仓收益、收益率；通常**不显示基金代码**
+2. **支付宝/蚂蚁财富** — 显示：基金名称、持有金额、持有收益、今日收益、收益率
+3. **天天基金/蛋卷基金** — 显示：基金代码、基金名称、持有份额、持有市值、持有收益
+4. **雪球/券商 App** — 显示：基金名称或代码、持仓市值、盈亏/盈亏比例
+
+## 提取规则：
+- **基金名称 (name)**：必须提取完整准确的全称，不要省略
+- **基金代码 (code)**：如果截图中有则提取（6 位数字）；如果没有则填空字符串 ""，不要猜测或编造
+- **持有金额/市值 (holdingAmount)**：当前持有的总市值（元），即「金额」「持有金额」「持仓市值」等字段
+- **持有收益 (holdingProfit)**：累计盈亏金额（元），正数=盈利，负数=亏损。即「持仓收益」「持有收益」「盈亏」等字段
+- **持仓成本净值 (costNAV)**：如果有明确的成本单价则填写，否则填 0
+- **持有份额 (shares)**：如果有明确的份额数据则填写，否则填 0
+
+## 输出格式（严格 JSON，不要 markdown 包裹）：
+{"holdings":[{"code":"基金代码或空串","name":"基金完整名称","holdingAmount":持有金额数字,"holdingProfit":持有收益数字,"costNAV":成本净值或0,"shares":份额或0}]}`
+
 
   const messages = [
     {
