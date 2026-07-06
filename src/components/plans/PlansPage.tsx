@@ -4,6 +4,7 @@ import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { sendAlertBatch, requestNotificationPermission } from '@/services/notification'
 import { toast } from '@/components/ui/toast'
+import { ConfirmAction } from '@/components/ui/confirm-dialog'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -279,14 +280,20 @@ export default function PlansPage() {
                       )}
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-6 w-6"
+                      <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="编辑规则"
                         onClick={() => setEditingRule(rule)}>
                         <Settings2 className="h-3 w-3" />
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive"
-                        onClick={() => removeRule(rule.id)}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      <ConfirmAction
+                        title="删除该规则？"
+                        description="删除后该规则不再参与计划扫描。"
+                        confirmText="确认删除"
+                        onConfirm={() => { removeRule(rule.id); toast({ type: 'success', message: '已删除规则' }) }}
+                      >
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" aria-label="删除规则">
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </ConfirmAction>
                     </div>
                   </div>
                 </CardContent>

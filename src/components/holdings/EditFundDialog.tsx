@@ -8,6 +8,7 @@ import {
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
+import { ConfirmAction } from '@/components/ui/confirm-dialog'
 import { AlertCircle, Loader2, Sparkles, Search, Plus, X } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
@@ -408,9 +409,16 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
                       <span className="font-mono font-medium">{currentMapping.exchangeCode}</span>
                       <span className="text-muted-foreground ml-1">{currentMapping.exchangeName}</span>
                     </span>
-                    <Button variant="ghost" size="icon" className="h-5 w-5" onClick={handleRemoveMapping}>
+                  <ConfirmAction
+                    title="移除 ETF 映射？"
+                    description="移除后将无法在 K 线图查看该 ETF 实时行情。"
+                    confirmText="确认移除"
+                    onConfirm={handleRemoveMapping}
+                  >
+                    <Button variant="ghost" size="icon" className="h-5 w-5" aria-label="移除 ETF 映射">
                       <X className="h-3 w-3" />
                     </Button>
+                  </ConfirmAction>
                   </div>
                 )}
 

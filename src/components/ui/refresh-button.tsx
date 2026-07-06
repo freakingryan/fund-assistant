@@ -35,6 +35,7 @@ export function RefreshButton({
       onClick={onClick}
       disabled={loading}
       title={title}
+      aria-label={title ?? '刷新'}
     >
       <Icon className={iconCls} />
       {label}

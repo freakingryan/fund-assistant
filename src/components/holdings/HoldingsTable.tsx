@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   useReactTable, getCoreRowModel, getSortedRowModel, getFilteredRowModel,
   createColumnHelper, flexRender, type SortingState, type VisibilityState,
@@ -15,6 +15,8 @@ import type { FundHolding } from '@/types'
 import { pnlColor, formatSigned } from '@/lib/format'
 import { TYPE_LABELS, MARKET_LABELS, SECTOR_LABELS } from '@/lib/labels'
 import { RefreshButton } from '@/components/ui/refresh-button'
+import { ConfirmAction } from '@/components/ui/confirm-dialog'
+import { toast } from '@/components/ui/toast'
 import { Trash2, Search, ArrowUpDown, ChevronDown, Pencil, TrendingUp, RefreshCw } from 'lucide-react'
 import EditFundDialog from './EditFundDialog'
 import QuickAdjustDialog from './QuickAdjustDialog'
@@ -34,6 +36,18 @@ export default function HoldingsTable() {
   const navigate = useNavigate()
   const removeHolding = useHoldingsStore((s) => s.removeHolding)
   const removeHoldings = useHoldingsStore((s) => s.removeHoldings)
+
+  // F8: 全局搜索选中后跳转 /holdings?highlight=CODE，自动筛选并高亮该行 3 秒
+  const [searchParams, setSearchParams] = useSearchParams()
+  const highlightCode = searchParams.get('highlight')
+  useEffect(() => {
+    if (!highlightCode) return
+    setGlobalFilter(highlightCode)
+    const t = setTimeout(() => {
+      setSearchParams((prev) => { prev.delete('highlight'); return prev }, { replace: true })
+    }, 3000)
+    return () => clearTimeout(t)
+  }, [highlightCode, setGlobalFilter, setSearchParams])
 
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
@@ -262,15 +276,22 @@ export default function HoldingsTable() {
       header: '操作',
       cell: ({ row }) => (
         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setAdjustFund(row.original); setAdjustOpen(true) }}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="补仓" onClick={() => { setAdjustFund(row.original); setAdjustOpen(true) }}>
             <TrendingUp className="h-3 w-3 text-green-500" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingFund(row.original); setEditOpen(true) }}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="编辑持仓" onClick={() => { setEditingFund(row.original); setEditOpen(true) }}>
             <Pencil className="h-3 w-3 text-muted-foreground" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeHolding(row.original.id)}>
-            <Trash2 className="h-3 w-3 text-muted-foreground" />
-          </Button>
+          <ConfirmAction
+            title="删除该持仓？"
+            description="此操作不可撤销，将从本地数据库永久移除。"
+            confirmText="确认删除"
+            onConfirm={() => { removeHolding(row.original.id); toast({ type: 'success', message: '已删除持仓' }) }}
+          >
+            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="删除持仓">
+              <Trash2 className="h-3 w-3 text-muted-foreground" />
+            </Button>
+          </ConfirmAction>
         </div>
       ),
       size: 100,
@@ -334,14 +355,20 @@ export default function HoldingsTable() {
         <div className="ml-auto flex gap-2">
           <RefreshButton onClick={refreshQuotes} loading={quotesLoading} label="刷新估值" />
           {selectedIds.length > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => removeHoldings(selectedIds)}
+            <ConfirmAction
+              title={`删除选中的 ${selectedIds.length} 只持仓？`}
+              description="此操作不可撤销，将从本地数据库永久移除。"
+              confirmText="确认删除"
+              onConfirm={() => { removeHoldings(selectedIds); toast({ type: 'success', message: `已删除 ${selectedIds.length} 只持仓` }) }}
             >
-              <Trash2 className="h-3 w-3 mr-1" />删除选中 ({selectedIds.length})
-            </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 text-xs"
+              >
+                <Trash2 className="h-3 w-3 mr-1" />删除选中 ({selectedIds.length})
+              </Button>
+            </ConfirmAction>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -403,7 +430,7 @@ export default function HoldingsTable() {
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
-                  className="row-hover"
+                  className={`row-hover ${highlightCode && row.original.code === highlightCode ? 'ring-2 ring-primary' : ''}`}
                   data-state={selectedIds.includes(row.original.id) ? 'selected' : undefined}
                   onClick={() => navigate(`/detail/${row.original.id}`)}
                 >

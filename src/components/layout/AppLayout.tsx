@@ -72,10 +72,10 @@ export default function AppLayout() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  const handleSearchSelect = (_code: string) => {
+  const handleSearchSelect = (code: string) => {
     setGlobalSearch('')
     setSearchResults([])
-    navigate(`/holdings`)
+    navigate(`/holdings?highlight=${encodeURIComponent(code)}`)
   }
 
   const cycleTheme = () => {
@@ -186,6 +186,7 @@ export default function AppLayout() {
               onClick={cycleTheme}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded cursor-pointer"
               title={`主题: ${themeLabel}（点击切换）`}
+              aria-label={`切换主题（当前：${themeLabel}）`}
             >
               <SunMoon className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{themeLabel}</span>
