@@ -292,21 +292,10 @@ export default function SettingsPage() {
                   provider.charAt(0).toUpperCase() + provider.slice(1)
                 return (
                   <div key={provider} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs flex items-center gap-1">
-                        {providerLabel} API Key
-                        {key && <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />}
-                      </Label>
-                      {key && (
-                        <Button
-                          variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteAi(provider)}
-                          title={`删除 ${providerLabel} 配置`}
-                        >
-                          <Trash2 className="h-3 w-3 mr-1" /> 删除
-                        </Button>
-                      )}
-                    </div>
+                    <Label className="text-xs flex items-center gap-1">
+                      {providerLabel} API Key
+                      {key && <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />}
+                    </Label>
                     <div className="flex gap-2">
                       <Input
                         type="password"
@@ -342,6 +331,15 @@ export default function SettingsPage() {
                         {testing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
                         测试
                       </Button>
+                      {key && (
+                        <Button
+                          variant="ghost" size="sm" className="h-9 shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeleteAi(provider)}
+                          title={`删除 ${providerLabel} 配置`}
+                        >
+                          <Trash2 className="h-3 w-3 mr-1" /> 删除
+                        </Button>
+                      )}
                     </div>
                     {provider === 'agnes' && (
                       <div className="space-y-1">
@@ -366,18 +364,7 @@ export default function SettingsPage() {
               })}
               <Separator />
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs">自定义 API</Label>
-                  {settings.aiConfigs.some((c) => c.provider === 'custom') && (
-                    <Button
-                      variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                      onClick={() => handleDeleteAi('custom')}
-                      title="删除自定义 API 配置"
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" /> 删除
-                    </Button>
-                  )}
-                </div>
+                <Label className="text-xs">自定义 API</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     placeholder="Base URL"
@@ -433,6 +420,15 @@ export default function SettingsPage() {
                         </Button>
                       ) : null
                     })()}
+                    {settings.aiConfigs.some((c) => c.provider === 'custom') && (
+                      <Button
+                        variant="ghost" size="sm" className="h-9 shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDeleteAi('custom')}
+                        title="删除自定义 API 配置"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" /> 删除
+                      </Button>
+                    )}
                 </div>
               </div>
             </div>
