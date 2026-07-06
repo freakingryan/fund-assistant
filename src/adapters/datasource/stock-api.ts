@@ -26,6 +26,27 @@ async function ensureStocks() {
   return stocks
 }
 
+interface StockApiKline {
+  date?: string
+  open?: number
+  close?: number
+  high?: number
+  low?: number
+  volume?: number
+}
+
+/** 将 stock-api 返回的 K 线对象统一映射为内部 KLineData 结构 */
+function mapStockApiKline(k: StockApiKline): KLineData {
+  return {
+    date: k.date ?? '',
+    open: k.open ?? 0,
+    close: k.close ?? 0,
+    high: k.high ?? 0,
+    low: k.low ?? 0,
+    volume: k.volume ?? 0,
+  }
+}
+
 /**
  * 将场内 ETF 代码转换为 stock-api 格式（带市场前缀）
  * 159xxx/16xxxx → SZ159xxx/SZ16xxxx（深交所）
@@ -212,14 +233,7 @@ export class StockApiAdapter implements FundDataSource {
       const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
 
       if (klines.length > 0) {
-        return klines.map((k: any) => ({
-          date: k.date || '',
-          open: k.open || 0,
-          close: k.close || 0,
-          high: k.high || 0,
-          low: k.low || 0,
-          volume: k.volume || 0,
-        }))
+        return klines.map(mapStockApiKline)
       }
     } catch { /* fallback */ }
     return []
@@ -239,14 +253,7 @@ export class StockApiAdapter implements FundDataSource {
       const klines = await s.tencent.getKlines(apiCode, { period: 'day', count })
 
       if (klines.length > 0) {
-        return klines.map((k: any) => ({
-          date: k.date || '',
-          open: k.open || 0,
-          close: k.close || 0,
-          high: k.high || 0,
-          low: k.low || 0,
-          volume: k.volume || 0,
-        }))
+        return klines.map(mapStockApiKline)
       }
     } catch { /* fallback to auto */ }
 
@@ -258,14 +265,7 @@ export class StockApiAdapter implements FundDataSource {
       const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
 
       if (klines.length > 0) {
-        return klines.map((k: any) => ({
-          date: k.date || '',
-          open: k.open || 0,
-          close: k.close || 0,
-          high: k.high || 0,
-          low: k.low || 0,
-          volume: k.volume || 0,
-        }))
+        return klines.map(mapStockApiKline)
       }
     } catch { /* fallback */ }
     return []
@@ -282,14 +282,7 @@ export class StockApiAdapter implements FundDataSource {
       const count = periodToCount(period)
       const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
       if (klines.length > 0) {
-        return klines.map((k: any) => ({
-          date: k.date || '',
-          open: k.open || 0,
-          close: k.close || 0,
-          high: k.high || 0,
-          low: k.low || 0,
-          volume: k.volume || 0,
-        }))
+        return klines.map(mapStockApiKline)
       }
     } catch { /* fallback */ }
     return []

@@ -374,11 +374,11 @@ export function detectMultiPatterns(
 
   // ── 三连阳 / 三连阴（3 K 线） ──
   for (let i = 2; i < len; i++) {
-    const c0 = data[i - 2]; const f0 = features[i - 2]
-    const _c1 = data[i - 1]; const f1 = features[i - 1]
-    const c2 = data[i]; const f2 = features[i]
+    const prevCandle = data[i - 2]; const f0 = features[i - 2]
+    const currCandle = data[i - 1]; const f1 = features[i - 1]
+    const nextCandle = data[i]; const f2 = features[i]
 
-    const bullish = [c0, _c1, c2].map((c) => c.close >= c.open)
+    const bullish = [prevCandle, currCandle, nextCandle].map((c) => c.close >= c.open)
     const bodies = [f0, f1, f2].map((f) => f.bodySize)
 
     // 三连阳：连续 3 根阳线，实体递增（实体强度递增为佳）
