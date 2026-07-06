@@ -32,7 +32,6 @@ export default function DashboardPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const loading = useHoldingsStore((s) => s.loading)
-  const tushareToken = useSettingsStore((s) => s.settings.dataSource.tushareToken)
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
   const alerts = usePlansStore((s) => s.alerts)
   const loadAlerts = usePlansStore((s) => s.loadAlerts)
@@ -193,7 +192,7 @@ export default function DashboardPage() {
   }, [holdings])
 
   const formatCurrency = (v: number) => `¥${Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  const dataSourceLabel = tushareToken ? 'Tushare' : '模拟数据'
+  const dataSourceLabel = 'stock-api 实时行情'
 
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>

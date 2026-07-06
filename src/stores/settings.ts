@@ -6,10 +6,6 @@ const defaultSettings: UserSettings = {
   theme: 'system',
   aiConfigs: [],
   defaultAIProvider: 'deepseek',
-  dataSource: {
-    tushareToken: '',
-    primarySource: 'tushare',
-  },
   storage: {
     type: 'local',
   },
@@ -32,7 +28,6 @@ interface SettingsState {
   loadSettings: () => Promise<void>
   updateSettings: (data: Partial<UserSettings>) => Promise<void>
   updateAIConfig: (aiConfigs: UserSettings['aiConfigs']) => Promise<void>
-  updateDataSource: (dataSource: Partial<UserSettings['dataSource']>) => Promise<void>
   updateStorage: (storage: Partial<UserSettings['storage']>) => Promise<void>
   updateNotifications: (notifications: Partial<UserSettings['notifications']>) => Promise<void>
   addEtfMapping: (otcCode: string, otcName: string, exchangeCode: string, exchangeName: string) => Promise<void>
@@ -70,13 +65,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateAIConfig: async (aiConfigs) => {
     const current = get().settings
     const updated = { ...current, aiConfigs }
-    await db.settings.put({ ...updated, id: 'user-settings' })
-    set({ settings: updated })
-  },
-
-  updateDataSource: async (dataSource) => {
-    const current = get().settings
-    const updated = { ...current, dataSource: { ...current.dataSource, ...dataSource } }
     await db.settings.put({ ...updated, id: 'user-settings' })
     set({ settings: updated })
   },

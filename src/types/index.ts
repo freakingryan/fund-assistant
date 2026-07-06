@@ -160,12 +160,6 @@ export interface AIConfig {
   model?: string
 }
 
-export interface DataSourceConfig {
-  tushareToken: string
-  /** 仅 'tushare' 实际受支持（其余为未实现的僵尸选项，已移除） */
-  primarySource: 'tushare'
-}
-
 export interface NotionConfig {
   token: string
   databaseId: string
@@ -176,7 +170,6 @@ export interface UserSettings {
   theme: 'light' | 'dark' | 'system'
   aiConfigs: AIConfig[]
   defaultAIProvider: AIProvider
-  dataSource: DataSourceConfig
   storage: {
     type: 'local' | 'notion'
     notion?: NotionConfig

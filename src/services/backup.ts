@@ -31,12 +31,11 @@ export async function exportAllData(): Promise<BackupData> {
   ])
 
   // 清除敏感字段：Token、API Key 等（推送到 Gist 时如包含 Token 会被 GitHub 自动吊销）
-  const sanitizedSettings = settings.map((s) => ({
-    ...s,
-    sync: { ...s.sync, gistToken: '', gistId: s.sync?.gistId || '' },
-    dataSource: { ...s.dataSource, tushareToken: '' },
-    aiConfigs: (s.aiConfigs || []).map((c: any) => ({ ...c, apiKey: '' })),
-  }))
+    const sanitizedSettings = settings.map((s) => ({
+      ...s,
+      sync: { ...s.sync, gistToken: '', gistId: s.sync?.gistId || '' },
+      aiConfigs: (s.aiConfigs || []).map((c: any) => ({ ...c, apiKey: '' })),
+    }))
 
   return {
     version: CURRENT_VERSION,

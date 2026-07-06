@@ -22,7 +22,6 @@ import { toast } from '@/components/ui/toast'
 
 export default function SettingsPage() {
   const settings = useSettingsStore((s) => s.settings)
-  const updateDataSource = useSettingsStore((s) => s.updateDataSource)
   const updateAIConfig = useSettingsStore((s) => s.updateAIConfig)
   const updateNotifications = useSettingsStore((s) => s.updateNotifications)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
@@ -167,35 +166,13 @@ export default function SettingsPage() {
         <TabsContent value="datasource">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">数据源配置</CardTitle>
-              <CardDescription>配置 Tushare Token 和默认数据源</CardDescription>
+              <CardTitle className="text-base">数据源</CardTitle>
+              <CardDescription>行情数据由浏览器端实时获取，无需配置</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>默认数据源</Label>
-                <Select
-                  value={settings.dataSource.primarySource}
-                  onValueChange={(v) => updateDataSource({ primarySource: v as 'tushare' })}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="tushare">Tushare</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Tushare Token</Label>
-                  <span className="text-[10px] text-muted-foreground">已在 MCP 配置中管理</span>
-                </div>
-                <Input
-                  type="password"
-                  value={settings.dataSource.tushareToken}
-                  onChange={(e) => updateDataSource({ tushareToken: e.target.value })}
-                  placeholder="可选 — 供浏览器端直接调用 Tushare HTTP API"
-                  className="flex-1"
-                />
-              </div>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>• 基金净值 / 实时行情：stock-api（腾讯 / 新浪 / 东方财富自动兜底）</p>
+              <p>• 历史 K 线 / 重仓股：东方财富 JSONP</p>
+              <p>所有数据均在你的浏览器中直接请求，零后端、无 Token 要求。</p>
             </CardContent>
           </Card>
 
