@@ -31,6 +31,55 @@ async function ensureStocks() {
   return stocks
 }
 
+// ── 搜索兜底：东方财富基金搜索（JSONP，跨域可用，返回基金/ETF） ──
+function jsonpOnce(url: string, cbName: string, timeout: number): Promise<any> {
+  return new Promise((resolve) => {
+    const script = document.createElement('script')
+    const cleanup = () => {
+      try { delete (window as any)[cbName] } catch { /* ignore */ }
+      if (script.parentNode) script.parentNode.removeChild(script)
+    }
+    ;(window as any)[cbName] = (data: any) => { cleanup(); resolve(data) }
+    script.onerror = () => { cleanup(); resolve(null) }
+    script.src = url
+    document.head.appendChild(script)
+    setTimeout(() => { cleanup(); resolve(null) }, timeout)
+  })
+}
+
+async function searchStocksEastmoney(key: string): Promise<{ code: string; name: string }[]> {
+  const keyword = (key || '').trim()
+  if (keyword.length < 2) return []
+  const cbName = `__emSearchCb_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+  const url = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
+  const data = await jsonpOnce(url, cbName, 8000)
+  const datas: any[] = data?.Datas || []
+  return datas
+    .map((d: any) => ({ code: String(d.CODE || ''), name: String(d.NAME || '') }))
+    .filter((d: any) => d.code && d.name)
+}
+
+// 稳健搜索：合并 stock-api 与东方财富（CORS 安全、按全名索引基金与 ETF）的结果，最大化候选覆盖
+async function searchStocksRobust(key: string): Promise<{ code: string; name: string }[]> {
+  const out = new Map<string, { code: string; name: string }>()
+  const push = (list: { code: string; name: string }[]) => {
+    for (const r of list) {
+      const c = (r.code || '').replace(/^(SZ|SH)/, '')
+      if (c && r.name) out.set(c, { code: c, name: r.name })
+    }
+  }
+  try {
+    const s = await ensureStocks()
+    const results = await s.auto.searchStocks(key)
+    if (results && results.length) push(results as { code: string; name: string }[])
+  } catch { /* ignore */ }
+  try {
+    const em = await searchStocksEastmoney(key)
+    if (em.length) push(em)
+  } catch { /* ignore */ }
+  return [...out.values()]
+}
+
 interface StockApiKline {
   date?: string
   open?: number
@@ -448,23 +497,32 @@ export class StockApiAdapter implements FundDataSource {
       if (!fundData?.name) return null
       const otcName: string = fundData.name
 
-      // 从名称提取关键词（去掉 "联接" "ETF" "C" 等）
-      const keyword = otcName
-        .replace(/ETF/i, '').replace(/联接/i, '')
-        .replace(/C$/, '').replace(/A$/, '')
-        .replace(/\(QDII\)/i, '').replace(/指数/i, '')
-        .trim()
+      // 统一清洗：去掉 ETF/联接/指数/发起式/QDII，并去掉尾部份额类别字母（A/B/C/D/E/F/H/I/Y）
+      // 例："华夏中证5G通信主题ETF联接D" → "华夏中证5G通信主题"
+      const stripNoise = (name: string) =>
+        name
+          .replace(/\(QDII\)/i, ' ')
+          .replace(/ETF联接|ETF连接|联接|连接/i, ' ')
+          .replace(/发起式/i, ' ')
+          .replace(/指数(分级|增强|型)?/i, ' ')
+          .replace(/ETF/i, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+      const stripShareClass = (x: string) => x.replace(/[ABCDEFHIY]$/i, '').trim()
+      const coreName = stripShareClass(stripNoise(otcName))
+      const keyword = coreName
 
       const s = await ensureStocks()
 
       // 基金公司前缀列表
       const fundCompanies = ['华宝', '华夏', '易方达', '广发', '南方', '富国', '嘉实', '博时', '招商', '天弘', '工银', '交银', '景顺', '汇添富', '鹏华', '国泰', '东财', '万家', '国联安', '银河', '银华', '长信', '前海开源', '申万菱信', '信达澳亚', '中欧', '兴全', '兴证全球']
 
-      // 生成基础搜索词
+      // 生成基础搜索词（核心名 / 去公司名 / 去市场前缀 / 裸主题词）
       const baseTerms = [
         keyword,
         keyword.replace(/发起式/i, '').replace(/连接/i, '').trim(),
         keyword.replace(new RegExp(`^(${fundCompanies.join('|')})`), '').trim(),
+        keyword.replace(new RegExp(`^(${fundCompanies.join('|')})`), '').replace(/^(上证|深证|沪深|中证|创业板|科创板)/, '').trim(),
       ]
 
       // 补充搜索策略：生成多种命名惯例变体
@@ -509,6 +567,15 @@ export class StockApiAdapter implements FundDataSource {
         }
       }
 
+      // 补充：裸主题词的 2 字滑动窗口 + "ETF"，覆盖场内 ETF 的简称
+      // 例："5G通信主题" → "通信ETF"（搜索源里 515050 的交易简称为"通信ETF华夏"，长全称反向查不到）
+      if (noMarketCore && noMarketCore.length >= 2) {
+        for (let i = 0; i <= noMarketCore.length - 2; i++) {
+          const w = noMarketCore.slice(i, i + 2)
+          if (/[一-龥]/.test(w)) additionalTerms.push(w + 'ETF')
+        }
+      }
+
       // 去重搜索
       const searchTerms = [...new Set([...baseTerms, ...additionalTerms].filter(Boolean))]
 
@@ -516,7 +583,7 @@ export class StockApiAdapter implements FundDataSource {
       const allEtfs = new Map<string, { code: string; name: string }>()
       for (const term of [...new Set(searchTerms)]) {
         if (term.length < 2) continue
-        const results = await s.auto.searchStocks(term)
+        const results = await searchStocksRobust(term)
         for (const r of results) {
           const c = r.code?.replace(/^(SZ|SH)/, '')
           if (c && (c.startsWith('159') || c.startsWith('51') || c.startsWith('56') || c.startsWith('58') || c.startsWith('16'))) {
@@ -546,7 +613,7 @@ export class StockApiAdapter implements FundDataSource {
       // 保留市场/指数前缀（中证、国证、创业板、上证科创板）以更精确匹配
       const cleanedTheme = otcName
         .replace(/ETF/i, '').replace(/联接/i, '').replace(/连接/i, '')
-        .replace(/发起式/i, '').replace(/C$/i, '').replace(/A$/i, '')
+        .replace(/发起式/i, '').replace(/[ABCDEFHIY]$/i, '')
         .replace(/\(QDII\)/i, '').replace(/指数/i, '')
         .replace(new RegExp(`^(${fundCompanies.join('|')})`), '') // 只去掉公司名，保留市场前缀
         .trim()
@@ -606,14 +673,7 @@ export class StockApiAdapter implements FundDataSource {
    * 通过 stocks.auto.searchStocks 实现关键词搜索
    */
   async searchStocks(key: string): Promise<{ code: string; name: string }[]> {
-    try {
-      const s = await ensureStocks()
-      const results = await s.auto.searchStocks(key)
-      return results.map((r) => ({
-        code: r.code || '',
-        name: r.name || '',
-      })).filter((r) => r.code && r.name)
-    } catch { return [] }
+    return searchStocksRobust(key)
   }
 
   /**
