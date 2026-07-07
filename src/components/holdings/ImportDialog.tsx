@@ -16,7 +16,7 @@ import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { toast } from '@/components/ui/toast'
 import { autoClassify } from '@/lib/classification'
-import { extractFundInfoFromImage, getDefaultAI, fetchEtfMapping } from '@/services/ai'
+import { extractFundInfoFromImage, getDefaultAI, fetchEtfMappings } from '@/services/ai'
 import { fetchFundCodeByName } from '@/adapters/datasource/jsonp-utils'
 import { fetchFundQuoteWithFallback } from '@/adapters/datasource/stock-api'
 import type { Market, FundType, FundSector } from '@/types'
@@ -231,9 +231,9 @@ export default function ImportDialog() {
   }
 
   /**
-   * 导入后自动补全场内 ETF 映射（非阻塞后台执行，复用 fetchEtfMapping 的「数据源→AI」链路）。
+   * 导入后自动补全场内 ETF 映射（非阻塞后台执行，复用 fetchEtfMappings 的「数据源→AI」链路）。
    * - 跳过场内 ETF 代码本身（51/159/56/58/16 开头）与已有映射的基金，避免重复写入；
-   * - 限制并发为 3，规避数据源限流；
+   * - 串行处理 + 请求间隔（fetchEtfMappings 内部实现），规避数据源连发限流；
    * - 失败不影响已完成的导入，仅对未找到的做 toast 提示。
    */
   const autoResolveEtfMappings = useCallback(async (imported: { code: string; name: string }[]) => {
@@ -249,40 +249,21 @@ export default function ImportDialog() {
       )
       .map((r) => {
         seen.add(r.code)
-        return { otcCode: r.code, otcName: r.name }
+        return r.code
       })
     if (candidates.length === 0) return
 
     setResolvingEtfs(true)
     try {
-      let resolved = 0
-      let failed = 0
-      const CONC = 3
-      for (let i = 0; i < candidates.length; i += CONC) {
-        const batch = candidates.slice(i, i + CONC)
-        const results = await Promise.all(
-          batch.map(async (c) => {
-            try {
-              return await fetchEtfMapping(c.otcCode)
-            } catch {
-              return null
-            }
-          }),
-        )
-        for (const m of results) {
-          if (m?.exchangeCode) {
-            await addEtfMapping(m.otcCode, m.otcName, m.exchangeCode, m.exchangeName)
-            resolved++
-          } else {
-            failed++
-          }
-        }
+      const { found, missing } = await fetchEtfMappings(candidates)
+      for (const m of found) {
+        await addEtfMapping(m.otcCode, m.otcName, m.exchangeCode, m.exchangeName)
       }
-      if (resolved > 0) {
+      if (found.length > 0) {
         toast({
           type: 'success',
-          message: `已自动建立 ${resolved} 条 ETF 映射${
-            failed > 0 ? `，${failed} 条未找到（可到基金详情手动添加）` : ''
+          message: `已自动建立 ${found.length} 条 ETF 映射${
+            missing.length > 0 ? `，${missing.length} 条未找到（可到基金详情手动添加）` : ''
           }`,
         })
       }

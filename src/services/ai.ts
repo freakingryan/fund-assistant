@@ -322,6 +322,50 @@ export async function fetchEtfMapping(otcCode: string): Promise<{
   return null
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+export interface EtfMappingResult {
+  otcCode: string
+  otcName: string
+  exchangeCode: string
+  exchangeName: string
+}
+
+/**
+ * 批量查询场外基金对应的场内 ETF 映射
+ *
+ * 说明：底层数据源（东方财富/新浪/腾讯）的搜索接口均为「按关键词单查」，
+ * 没有真正的批量端点。为规避连续请求被限流（429），此处对每只基金
+ * **串行处理并在彼此之间加间隔**，而非并发爆发。
+ *
+ * @param codes   场外基金代码列表
+ * @param opts.onProgress 每处理完一只回调 (done, total)
+ * @returns found 已匹配到的映射；missing 未匹配到的代码
+ */
+export async function fetchEtfMappings(
+  codes: string[],
+  opts: { onProgress?: (done: number, total: number) => void } = {},
+): Promise<{ found: EtfMappingResult[]; missing: string[] }> {
+  const found: EtfMappingResult[] = []
+  const missing: string[] = []
+  let done = 0
+  for (const code of codes) {
+    try {
+      const r = await fetchEtfMapping(code)
+      if (r?.exchangeCode) found.push(r as EtfMappingResult)
+      else missing.push(code)
+    } catch {
+      missing.push(code)
+    }
+    done++
+    opts.onProgress?.(done, codes.length)
+    if (done < codes.length) await sleep(200)
+  }
+  return { found, missing }
+}
+
 /**
  * 测试 AI API 联通性
  */

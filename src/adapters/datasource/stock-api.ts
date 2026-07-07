@@ -31,6 +31,11 @@ async function ensureStocks() {
   return stocks
 }
 
+// 请求间隔，避免对东方财富/新浪/腾讯搜索接口连发触发限流（429）
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 // ── 搜索兜底：东方财富基金搜索（JSONP，跨域可用，返回基金/ETF） ──
 function jsonpOnce(url: string, cbName: string, timeout: number): Promise<any> {
   return new Promise((resolve) => {
@@ -576,10 +581,9 @@ export class StockApiAdapter implements FundDataSource {
         }
       }
 
-      // 去重搜索
+      // 去重搜索（每个搜索词之间加间隔，避免东方财富连续请求被限流）
       const searchTerms = [...new Set([...baseTerms, ...additionalTerms].filter(Boolean))]
 
-      // 去重搜索
       const allEtfs = new Map<string, { code: string; name: string }>()
       for (const term of [...new Set(searchTerms)]) {
         if (term.length < 2) continue
@@ -593,6 +597,7 @@ export class StockApiAdapter implements FundDataSource {
             }
           }
         }
+        await sleep(100)
       }
 
       if (allEtfs.size === 0) return null

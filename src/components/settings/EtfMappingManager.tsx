@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import {
-  Plus, Trash2, Pencil, Search, RefreshCw, Loader2, X,
+  Plus, Trash2, Pencil, Search, RefreshCw, Loader2, X, Wand2,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settings'
+import { useHoldingsStore } from '@/stores/holdings'
 import { dataSourceService } from '@/adapters/datasource/service'
-import { fetchEtfMapping } from '@/services/ai'
+import { fetchEtfMapping, fetchEtfMappings } from '@/services/ai'
 import { toast } from '@/components/ui/toast'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -12,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
@@ -19,6 +21,9 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import type { EtfMapping } from '@/types'
+
+// 场内 ETF 代码段（沪/深/京），这类基金本身即可交易、无需映射到另一个场内 ETF
+const EXCHANGE_ETF_PREFIX = /^(51|159|56|58|16)/
 
 interface Draft {
   otcCode: string
@@ -29,11 +34,16 @@ interface Draft {
 
 const emptyDraft: Draft = { otcCode: '', otcName: '', exchangeCode: '', exchangeName: '' }
 
+type Row =
+  | { kind: 'holding'; code: string; name: string; mapping: EtfMapping | null; mappingIndex: number | null }
+  | { kind: 'orphan'; code: string; name: string; mapping: EtfMapping; mappingIndex: number }
+
 export default function EtfMappingManager() {
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
   const updateEtfMapping = useSettingsStore((s) => s.updateEtfMapping)
   const removeEtfMapping = useSettingsStore((s) => s.removeEtfMapping)
+  const holdings = useHoldingsStore((s) => s.holdings)
 
   const [open, setOpen] = useState(false)
   const [editIndex, setEditIndex] = useState<number | null>(null)
@@ -41,9 +51,43 @@ export default function EtfMappingManager() {
   const [searching, setSearching] = useState(false)
   const [candidates, setCandidates] = useState<{ exchangeCode: string; exchangeName: string }[]>([])
   const [refreshing, setRefreshing] = useState<number | null>(null)
+  const [batchRunning, setBatchRunning] = useState(false)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
+
+  // 合并：所有持仓 + 持仓中不存在的孤儿映射
+  const rows = useMemo<Row[]>(() => {
+    const mapByCode = new Map<string, { m: EtfMapping; i: number }>()
+    etfMappings.forEach((m, i) => { if (!mapByCode.has(m.otcCode)) mapByCode.set(m.otcCode, { m, i }) })
+    const result: Row[] = []
+    const seen = new Set<string>()
+    for (const h of holdings) {
+      seen.add(h.code)
+      const hit = mapByCode.get(h.code)
+      result.push({ kind: 'holding', code: h.code, name: h.name, mapping: hit?.m ?? null, mappingIndex: hit?.i ?? null })
+    }
+    // 孤儿映射（otcCode 不在当前持仓中）
+    for (const m of etfMappings) {
+      if (seen.has(m.otcCode)) continue
+      const hit = mapByCode.get(m.otcCode)
+      if (hit) result.push({ kind: 'orphan', code: m.otcCode, name: m.otcName, mapping: m, mappingIndex: hit.i })
+    }
+    return result
+  }, [holdings, etfMappings])
+
+  const unmappedCount = useMemo(
+    () => rows.filter((r) => r.kind === 'holding' && !r.mapping && !EXCHANGE_ETF_PREFIX.test(r.code) && /^\d{6}$/.test(r.code)).length,
+    [rows],
+  )
 
   const openAdd = () => {
     setDraft(emptyDraft)
+    setEditIndex(null)
+    setCandidates([])
+    setOpen(true)
+  }
+
+  const openAddFromHolding = (code: string, name: string) => {
+    setDraft({ otcCode: code, otcName: name, exchangeCode: '', exchangeName: '' })
     setEditIndex(null)
     setCandidates([])
     setOpen(true)
@@ -172,73 +216,148 @@ export default function EtfMappingManager() {
     setCandidates([])
   }
 
+  // 批量补全：对所有「未映射的场外基金」串行查询并写入
+  const handleBatchResolve = useCallback(async () => {
+    const targets = rows
+      .filter((r): r is Extract<Row, { kind: 'holding' }> =>
+        r.kind === 'holding' && !r.mapping && !EXCHANGE_ETF_PREFIX.test(r.code) && /^\d{6}$/.test(r.code))
+      .map((r) => r.code)
+    if (targets.length === 0) {
+      toast({ type: 'info', message: '没有需要补全的未映射场外基金' })
+      return
+    }
+    setBatchRunning(true)
+    setBatchProgress({ done: 0, total: targets.length })
+    try {
+      const { found, missing } = await fetchEtfMappings(targets, {
+        onProgress: (done, total) => setBatchProgress({ done, total }),
+      })
+      for (const m of found) {
+        await addEtfMapping(m.otcCode, m.otcName, m.exchangeCode, m.exchangeName)
+      }
+      toast({
+        type: found.length > 0 ? 'success' : 'info',
+        message: `批量补全完成：新增 ${found.length} 条映射${
+          missing.length > 0 ? `，${missing.length} 条未找到（可手动添加）` : ''
+        }`,
+      })
+    } catch {
+      toast({ type: 'error', message: '批量补全失败' })
+    } finally {
+      setBatchRunning(false)
+    }
+  }, [rows, addEtfMapping])
+
   return (
     <Card>
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <CardTitle className="text-base">场内 ETF 映射</CardTitle>
-            <CardDescription>场外基金与场内 ETF 的对应关系，用于实时行情与 K 线展示</CardDescription>
+            <CardDescription>
+              覆盖全部 {holdings.length} 只持仓；场外基金可关联场内 ETF 用于实时行情与 K 线
+            </CardDescription>
           </div>
-          <Button size="sm" className="h-7 text-xs" onClick={openAdd}>
-            <Plus className="h-3 w-3 mr-1" />新增映射
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm" className="h-7 text-xs" variant="outline"
+              onClick={handleBatchResolve} disabled={batchRunning || unmappedCount === 0}
+              title="对所有未映射的场外基金自动查询场内 ETF"
+            >
+              {batchRunning
+                ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />补全中 {batchProgress.done}/{batchProgress.total}</>
+                : <><Wand2 className="h-3 w-3 mr-1" />批量补全未映射{unmappedCount > 0 ? ` (${unmappedCount})` : ''}</>}
+            </Button>
+            <Button size="sm" className="h-7 text-xs" onClick={openAdd}>
+              <Plus className="h-3 w-3 mr-1" />新增映射
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
-        {etfMappings.length === 0 ? (
+        {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground py-6 text-center">
-            暂无映射。导入持仓或新增基金会自动建立，也可在此手动添加。
+            暂无持仓。导入持仓或新增基金会自动建立映射，也可在此手动添加。
           </p>
         ) : (
           <div className="border rounded-md overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[88px]">场外代码</TableHead>
-                  <TableHead>场外名称</TableHead>
+                  <TableHead className="w-[88px]">代码</TableHead>
+                  <TableHead>名称</TableHead>
+                  <TableHead className="w-[72px]">类型</TableHead>
                   <TableHead className="w-[88px]">场内ETF</TableHead>
                   <TableHead>场内名称</TableHead>
+                  <TableHead className="w-[76px]">状态</TableHead>
                   <TableHead className="w-[120px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {etfMappings.map((m, i) => (
-                  <TableRow key={`${m.otcCode}-${i}`}>
-                    <TableCell className="text-xs font-mono">{m.otcCode}</TableCell>
-                    <TableCell className="text-xs">{m.otcName}</TableCell>
-                    <TableCell className="text-xs font-mono">{m.exchangeCode}</TableCell>
-                    <TableCell className="text-xs">{m.exchangeName}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          title="重新查询"
-                          disabled={refreshing === i}
-                          onClick={() => handleRefresh(i)}
-                        >
-                          {refreshing === i
-                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            : <RefreshCw className="h-3.5 w-3.5" />}
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7"
-                          title="编辑"
-                          onClick={() => openEdit(i)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          title="删除"
-                          onClick={() => handleDelete(i)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {rows.map((r) => {
+                  const isEtf = r.kind !== 'orphan' && EXCHANGE_ETF_PREFIX.test(r.code)
+                  const typeBadge = r.kind === 'orphan'
+                    ? <Badge variant="outline" className="text-[10px]">映射(无持仓)</Badge>
+                    : isEtf
+                      ? <Badge variant="outline" className="text-[10px]">场内ETF</Badge>
+                      : <Badge variant="secondary" className="text-[10px]">场外基金</Badge>
+                  const statusBadge = isEtf
+                    ? <Badge variant="secondary" className="text-[10px] text-muted-foreground">无需映射</Badge>
+                    : r.mapping
+                      ? <Badge variant="secondary" className="text-[10px] text-green-600">已映射</Badge>
+                      : <Badge variant="destructive" className="text-[10px]">未映射</Badge>
+                  return (
+                    <TableRow key={`${r.kind}-${r.code}`}>
+                      <TableCell className="text-xs font-mono">{r.code}</TableCell>
+                      <TableCell className="text-xs">{r.name}</TableCell>
+                      <TableCell>{typeBadge}</TableCell>
+                      <TableCell className="text-xs font-mono">{r.mapping ? r.mapping.exchangeCode : '-'}</TableCell>
+                      <TableCell className="text-xs">{r.mapping ? r.mapping.exchangeName : '-'}</TableCell>
+                      <TableCell>{statusBadge}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-1">
+                          {isEtf ? (
+                            <span className="text-[10px] text-muted-foreground">—</span>
+                          ) : r.mapping ? (
+                            <>
+                              <Button
+                                variant="ghost" size="icon" className="h-7 w-7"
+                                title="重新查询"
+                                disabled={refreshing === r.mappingIndex}
+                                onClick={() => r.mappingIndex !== null && handleRefresh(r.mappingIndex)}
+                              >
+                                {refreshing === r.mappingIndex
+                                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  : <RefreshCw className="h-3.5 w-3.5" />}
+                              </Button>
+                              <Button
+                                variant="ghost" size="icon" className="h-7 w-7"
+                                title="编辑"
+                                onClick={() => r.mappingIndex !== null && openEdit(r.mappingIndex)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                title="删除"
+                                onClick={() => r.mappingIndex !== null && handleDelete(r.mappingIndex)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              variant="outline" size="sm" className="h-7 text-xs"
+                              onClick={() => openAddFromHolding(r.code, r.name)}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />添加映射
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>
