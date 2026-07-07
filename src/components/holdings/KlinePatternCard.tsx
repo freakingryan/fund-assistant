@@ -5,7 +5,7 @@ import type { KlineAnalysisResult } from '@/services/klineAnalysis'
 import { getPatternLabel } from '@/services/klinePatterns'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Loader2, BrainCircuit, MessageSquareText, Sparkles } from 'lucide-react'
+import { Loader2, BrainCircuit, MessageSquareText, Sparkles, CircleSlash } from 'lucide-react'
 
 interface Props {
   klineData: KLineData[]
@@ -20,12 +20,15 @@ interface Props {
   onPatternSelect?: (index: number | null) => void
   onAnalyzeKline: () => void
   onGenerateKlinePrompt: () => void
+  /** 是否展示「场内 ETF 真实 K 线」；为 false（基金净值走势）时形态分析暂不可用，隐藏生成/AI 按钮 */
+  isRealKline?: boolean
 }
 
 export default function KlinePatternCard({
   klineData, klineDetectedPatterns, klinePatterns,
   klineAnalysis, klineAnalyzing, klineAnalysisError,
   hoveredKlineIndex, selectedKlineIndex, onPatternHover, onPatternSelect, onAnalyzeKline, onGenerateKlinePrompt,
+  isRealKline = true,
 }: Props) {
   const [glossaryOpen, setGlossaryOpen] = useState(false)
 
@@ -36,22 +39,33 @@ export default function KlinePatternCard({
           <CardTitle className="text-sm flex items-center gap-1.5">
             <BrainCircuit className="h-3.5 w-3.5" />K 线形态分析
           </CardTitle>
-          <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={klineData.length === 0} onClick={onGenerateKlinePrompt}>
-              <MessageSquareText className="h-3 w-3 mr-1" />生成 Prompt
-            </Button>
-            <Button variant="outline" size="sm" className="h-7 text-xs" disabled={klineAnalyzing || klineData.length === 0} onClick={onAnalyzeKline}>
-              {klineAnalyzing ? (
-                <><Loader2 className="h-3 w-3 mr-1 animate-spin" />分析中</>
-              ) : (
-                <><Sparkles className="h-3 w-3 mr-1" />AI 分析</>
-              )}
-            </Button>
-          </div>
+          {/* 仅真实 K 线模式下提供生成 Prompt / AI 分析；净值走势无形态，隐藏按钮 */}
+          {isRealKline && (
+            <div className="flex items-center gap-1.5">
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={klineData.length === 0} onClick={onGenerateKlinePrompt}>
+                <MessageSquareText className="h-3 w-3 mr-1" />生成 Prompt
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" disabled={klineAnalyzing || klineData.length === 0} onClick={onAnalyzeKline}>
+                {klineAnalyzing ? (
+                  <><Loader2 className="h-3 w-3 mr-1 animate-spin" />分析中</>
+                ) : (
+                  <><Sparkles className="h-3 w-3 mr-1" />AI 分析</>
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* 算法检测结果 */}
+        {/* 净值走势模式：无真实 K 线，形态分析暂不可用 */}
+        {!isRealKline ? (
+          <div className="flex flex-col items-center justify-center gap-1.5 py-8 text-center">
+            <CircleSlash className="h-7 w-7 text-muted-foreground/40" />
+            <p className="text-xs text-muted-foreground">K 线形态分析暂不可用</p>
+            <p className="text-[10px] text-muted-foreground/70">当前为基金净值走势，无场内 ETF 真实 K 线数据</p>
+          </div>
+        ) : (
+        /* 算法检测结果 */
         <div>
           <p className="text-[10px] text-muted-foreground mb-1">算法检测</p>
           {klineDetectedPatterns.length > 0 ? (
@@ -91,6 +105,7 @@ export default function KlinePatternCard({
             </div>
           )}
         </div>
+        )}
 
         {/* AI 分析结果 */}
         {klineAnalysis && (

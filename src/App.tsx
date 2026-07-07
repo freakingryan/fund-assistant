@@ -6,6 +6,7 @@ import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
 import { useNotificationsStore } from './stores/notifications'
 import { runDailyGistPush } from './services/autoSync'
+import { warmKlineCache } from './services/klineWarm'
 import ToastContainer from './components/ui/toast'
 import InstallPrompt from './components/layout/InstallPrompt'
 import { AlertCircle } from 'lucide-react'
@@ -74,6 +75,8 @@ export default function App() {
       loadPlan()
       await useNotificationsStore.getState().loadNotifications()
       runDailyGistPush()
+      // 后台预热有映射 ETF 的 K 线缓存，使进入详情页/切换基金时无需漫长加载
+      warmKlineCache()
     }
     init()
   }, [loadSettings, loadHoldings, loadPlan])
@@ -84,6 +87,23 @@ export default function App() {
       runDailyGistPush()
     }, 6 * 60 * 60 * 1000)
     return () => clearInterval(timer)
+  }, [])
+
+  // K 线后台预热：每 20 分钟复查一次（< 交易时段内 30min TTL，能及时刷新盘中变动）
+  useEffect(() => {
+    const timer = setInterval(() => {
+      warmKlineCache()
+    }, 20 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // 标签页重新可见时（用户切回应用）立即预热一次
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') warmKlineCache()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   return (

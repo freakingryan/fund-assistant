@@ -4,28 +4,22 @@
  * fundgz.1234567.com.cn — 基金实时估算净值（JSONP，无 CORS）
  * fund.eastmoney.com/pingzhongdata — 基金历史数据（JS，无 CORS）
  *
- * 策略：
- * 1. Vite dev server 下：通过 Vite proxy（/fundgz, /pingzhongdata）用 fetch 获取，
- *    同源请求无 CORS 问题。
- * 2. 生产环境（GitHub Pages）/Vite proxy 不可用时：用 <script> 标签（JSONP）加载。
+ * 策略：统一用 <script> 标签（JSONP）加载——<script> 跨域不受 CORS 限制，
+ * 开发与生产行为完全一致，无需 Vite proxy。东方财富部分基金无 pingzhongdata
+ * 数据时会 301 重定向到 notfound.html，此时脚本 onload 后无对应全局变量，
+ * 返回空对象由调用方回退。
  */
 
 // ── 工具函数 ─────────────────────────────────────
 
-/** 判断是否在 Vite dev server 下运行（可通过 proxy 走 fetch） */
+/** 判断是否在 Vite dev server 下运行（fundf10 的 HTML 抓取仍依赖 Vite proxy） */
 function isViteDev(): boolean {
-  return typeof window !== 'undefined' && 
+  return typeof window !== 'undefined' &&
     (!!window.location.port && window.location.port !== '8080') &&
     window.location.protocol !== 'file:'
 }
 
-/** 解析 fundgz JSONP 响应文本 {@code jsonpgz({...})} */
-function parseGzJsonp(text: string): any {
-  const m = text.trim().match(/^jsonpgz\((.+)\);?\s*$/)
-  return m ? JSON.parse(m[1]) : null
-}
-
-// ── JSONP 回调（生产环境降级） ──────────────────────
+// ── JSONP 回调 ─────────────────────────────────────
 type Resolver = (data: any) => void
 const pending = new Map<string, Resolver>()
 
@@ -60,51 +54,17 @@ function loadJsonp(code: string, timeout: number): Promise<any> {
 // ── 公开 API ─────────────────────────────────────
 
 /**
- * 获取基金实时估算净值。
- * 优先走 Vite proxy（开发环境），降级到 JSONP（生产环境）。
+ * 获取基金实时估算净值（JSONP，<script> 标签加载，跨域无 CORS 问题）。
  */
 export async function fetchFundGzJsonp(code: string, timeout = 10000): Promise<any> {
-  if (isViteDev()) {
-    // 开发环境：优先走 Vite proxy（同源 fetch），但代理未配置/返回 404 时降级到 JSONP 绝对地址
-    try {
-      const res = await fetch(`/fundgz/js/${code}.js?rt=${Date.now()}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const text = await res.text()
-      const data = parseGzJsonp(text)
-      if (!data || data.fundcode !== code) throw new Error('数据解析失败')
-      return data
-    } catch {
-      // 代理不可用，落到下面的 JSONP 绝对地址加载
-    }
-  }
-  // 生产环境 / 代理不可用时：用 JSONP 方式加载（绝对地址，跨域无 CORS 问题）
   return loadJsonp(code, timeout)
 }
 
 /**
- * 获取基金历史数据（净值走势、持仓等）。
- * 优先走 Vite proxy，降级到 <script> 标签加载。
+ * 获取基金历史数据（净值走势、持仓等）。用 <script> 标签（JSONP）加载，跨域无 CORS 问题。
  */
-/** 从 pingzhongdata JS 文本中用正则提取已知全局变量赋值 */
-function extractPingZhongVars(text: string): Record<string, any> {
-  const vars: Record<string, any> = {}
-  const names = [
-    'Data_netWorthTrend', 'Data_ACWorthTrend', 'Data_assetAllocation',
-    'Data_fundSharesPositions', 'Data_fluctuationScale', 'Data_holderStructure',
-    'Data_currentFundManager', 'Data_buySedemption', 'Data_performanceEvaluation',
-    'fS_name', 'fS_code', 'stockCodes', 'stockCodesNew',
-  ]
-  for (const name of names) {
-    const re = new RegExp(`var ${name}\\s*=\\s*(\\[.+?\\]|\\{.+?\\});`, 's')
-    const m = text.match(re)
-    if (m) {
-      try { vars[name] = JSON.parse(m[1]) } catch { /* skip */ }
-    }
-  }
-  return vars
-}
 
-/** 生产环境：用 <script> 标签加载 pingzhongdata（绝对地址，跨域无 CORS 问题） */
+/** 用 <script> 标签加载 pingzhongdata（绝对地址，跨域无 CORS 问题） */
 function loadPingZhongData(code: string, timeout: number): Promise<Record<string, any>> {
   return new Promise((resolve, reject) => {
     const el = document.createElement('script')
@@ -139,20 +99,9 @@ function loadPingZhongData(code: string, timeout: number): Promise<Record<string
 }
 
 export async function fetchFundPingZhongData(code: string, timeout = 15000): Promise<Record<string, any>> {
-  if (isViteDev()) {
-    // 开发环境：优先走 Vite proxy；代理不可用则降级到 JSONP 绝对地址
-    try {
-      const res = await fetch(`/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const text = await res.text()
-      const vars = extractPingZhongVars(text)
-      if (Object.keys(vars).length === 0) throw new Error('数据解析失败')
-      return vars
-    } catch {
-      // 代理不可用，落到下面的 JSONP 加载
-    }
-  }
-  // 生产环境 / 代理不可用时：用 <script> 标签加载
+  // 始终用 <script> 标签（JSONP）加载：跨域无 CORS 问题，开发与生产行为一致。
+  // 东方财富部分基金代码无 pingzhongdata 数据，会 301 重定向到 notfound.html；
+  // 此时脚本 onload 后无对应全局变量，返回空对象，由调用方回退。
   return loadPingZhongData(code, timeout)
 }
 

@@ -2,12 +2,14 @@ import { useState } from 'react'
 import type { SignalResult } from '@/services/signalEngine'
 import { DEFAULT_WEIGHTS } from '@/services/signalEngine'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrendingUp } from 'lucide-react'
+import { TrendingUp, CircleSlash } from 'lucide-react'
 
 interface Props {
   signalResult: SignalResult | null
   showSignalDetail: boolean
   setShowSignalDetail: (v: boolean) => void
+  /** 是否展示「场内 ETF 真实 K 线」；为 false 时评分为基于净值走势，置信度较低 */
+  isRealKline?: boolean
 }
 
 /** 根据评分和指标生成调仓建议 */
@@ -72,7 +74,7 @@ function buildAdvice(signalResult: SignalResult): { label: string; color: string
   return { label, color, details }
 }
 
-export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail }: Props) {
+export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail, isRealKline = true }: Props) {
   const [showRef, setShowRef] = useState(false)
   if (!signalResult) return null
   const advice = buildAdvice(signalResult)
@@ -85,6 +87,12 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {!isRealKline && (
+          <p className="text-[10px] text-muted-foreground/70 mb-2 flex items-center gap-1">
+            <CircleSlash className="h-3 w-3 shrink-0" />
+            评分基于基金净值走势（无成交量与 K 线形态信号，置信度较低，仅供参考）
+          </p>
+        )}
         {/* 主评分 + 方向 */}
         <div className="flex items-center gap-2 mb-1">
           <div className={`text-base font-bold px-2 py-0.5 rounded ${

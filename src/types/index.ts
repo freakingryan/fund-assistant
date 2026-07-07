@@ -181,6 +181,7 @@ export interface UserSettings {
   }
   etfMappings: EtfMapping[]
   sync: SyncConfig
+  preloadKline: boolean   // 应用打开时后台静默预热有映射 ETF 的 K 线缓存，默认开启
 }
 
 /** GitHub Gist 同步配置 */

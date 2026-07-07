@@ -108,6 +108,10 @@ export default function FundDetailPage() {
     return m?.exchangeCode || null
   }, [fund, etfMappings])
 
+  // 是否正在展示「场内 ETF 真实 K 线」：用于联动形态分析 / 评分说明。
+  // 若 ETF 真实 K 线获取失败，加载逻辑会自动把 useEtfKline 置为 false，故此处与开关状态一致。
+  const isRealKline = useEtfKline && !!etfCode
+
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
 
@@ -179,7 +183,10 @@ export default function FundDetailPage() {
         if (etfData.length > 0) setKlineCache(etfCacheKey, period, etfData)
         if (navData.length > 0) setKlineCache(navCacheKey, period, navData)
         clearTimeout(timer)
-        setKlineData(useEtfKline && etfData.length > 0 ? etfData : navData)
+        // 场内 ETF 真实 K 线获取失败 → 自动切换为「基金净值走势」，保证开关状态与实际展示一致
+        const useEtf = useEtfKline && etfData.length > 0
+        if (!useEtf && useEtfKline) setUseEtfKline(false)
+        setKlineData(useEtf ? etfData : navData)
         setKlineLoading(false)
       }
     }
@@ -422,8 +429,9 @@ export default function FundDetailPage() {
             onPatternHover={setHoveredKlineIndex}
             onPatternSelect={handlePatternClick}
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}
+            isRealKline={isRealKline}
           />
-          <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} />
+          <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
         </div>
 
         {/* Right Column */}

@@ -111,6 +111,41 @@ function markSourceOk(label: string) {
   if (sourceBrokenUntil.has(label)) sourceBrokenUntil.delete(label)
 }
 
+// 熔断源标签（与 doFetchExchangeKline 中 sources 的 label 完全一致）
+const KLINE_SOURCE_LABELS = ['腾讯', '东方财富', '新浪'] as const
+
+export interface KlineCooldownInfo {
+  /** 三源是否全部处于熔断冷却期（场内 K 线子系统整体不可用） */
+  allBroken: boolean
+  /** 当前处于冷却期的源数量（0~3） */
+  brokenCount: number
+  /** 最早冷却结束的绝对时间戳(ms)；无源冷却则为 null */
+  earliestResumeAt: number | null
+}
+
+/**
+ * 查询场内 K 线三源（腾讯/东方财富/新浪）的熔断冷却状态。
+ * 供后台预热（klineWarm）在「三源全部熔断」时暂停预取、等冷却结束再继续，
+ * 避免对已知不可用的源反复打请求；冷却结束自动重试，实现「被拦截后自动恢复」。
+ */
+export function getKlineCooldownInfo(): KlineCooldownInfo {
+  const now = Date.now()
+  let brokenCount = 0
+  let earliest = Infinity
+  for (const label of KLINE_SOURCE_LABELS) {
+    const until = sourceBrokenUntil.get(label)
+    if (until !== undefined && now < until) {
+      brokenCount++
+      if (until < earliest) earliest = until
+    }
+  }
+  return {
+    allBroken: brokenCount === KLINE_SOURCE_LABELS.length,
+    brokenCount,
+    earliestResumeAt: earliest === Infinity ? null : earliest,
+  }
+}
+
 async function searchStocksEastmoney(key: string): Promise<{ code: string; name: string }[]> {
   const keyword = (key || '').trim()
   if (keyword.length < 2) return []

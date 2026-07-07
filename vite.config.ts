@@ -8,19 +8,8 @@ export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : '/fund-assistant/',
   server: {
     proxy: {
-      // 开发模式下代理基金实时估算 API（fundgz.1234567.com.cn 无 CORS）
-      '/fundgz': {
-        target: 'https://fundgz.1234567.com.cn',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/fundgz/, ''),
-      },
-      // 开发模式下代理基金数据 JS（pingzhongdata 无 CORS）
-      '/pingzhongdata': {
-        target: 'https://fund.eastmoney.com',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/pingzhongdata/, ''),
-      },
-      // 开发模式下代理基金 F10 持仓明细（fundf10.eastmoney.com 无 CORS）
+      // 开发模式下代理基金 F10 持仓明细 HTML（fundf10.eastmoney.com 无 CORS，且无 JSONP callback）。
+      // 注：fundgz / pingzhongdata 已统一用 <script> JSONP 加载，跨域不受 CORS 限制，无需代理。
       '/fundf10': {
         target: 'https://fundf10.eastmoney.com',
         changeOrigin: true,

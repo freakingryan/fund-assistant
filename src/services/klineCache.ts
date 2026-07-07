@@ -102,6 +102,43 @@ export function getTradingSessionTTL(fallbackTTL = 24 * 60 * 60 * 1000): number 
   return Math.max(ttl, 60 * 1000) // 最小 1 分钟
 }
 
+/**
+ * K 线缓存的「交易时段感知」TTL（供 getKlineCache / getKlineCacheTime 统一使用）：
+ * - 交易时段内：较短 TTL（默认 30 分钟），使当日 K 线能反映盘中变动；
+ *   同时受周期上限约束（1m=15min 更短），避免长周期图被无意义刷新。
+ * - 交易时段外（收盘后 / 非交易日）：使用「距离下一交易时段开盘」的长 TTL，
+ *   收盘价一旦确定便不再变化，故缓存基本不失效，直到次日开盘才刷新。
+ */
+const KLINE_INTRADAY_TTL = 30 * 60 * 1000
+
+function isNowTradingSession(): boolean {
+  const now = new Date()
+  const day = now.getDay()
+  if (day < 1 || day > 5) return false // 周末非交易
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  const inMorning = minutes >= 9 * 60 + 30 && minutes < 11 * 60 + 30
+  const inAfternoon = minutes >= 13 * 60 && minutes < 15 * 60
+  return inMorning || inAfternoon
+}
+
+/** 距离下一个交易日 9:30 开盘的毫秒数（跳过周末） */
+function getMsUntilNextTradingOpen(): number {
+  const now = new Date()
+  const next = new Date(now)
+  next.setHours(9, 30, 0, 0)
+  if (now.getTime() >= next.getTime()) next.setDate(next.getDate() + 1)
+  while (next.getDay() < 1 || next.getDay() > 5) next.setDate(next.getDate() + 1)
+  return Math.max(next.getTime() - now.getTime(), 60 * 1000)
+}
+
+export function getKlineCacheTTL(period: string): number {
+  if (isNowTradingSession()) {
+    const cap = TTL[period] || DEFAULT_TTL
+    return Math.min(KLINE_INTRADAY_TTL, cap)
+  }
+  return getMsUntilNextTradingOpen()
+}
+
 /** 通用缓存：从 IndexedDB 读取 */
 async function getCache<T>(id: string, ttl = DEFAULT_TTL): Promise<T | null> {
   try {
@@ -161,7 +198,7 @@ async function deleteCacheByPrefix(prefix: string): Promise<void> {
 const KLINE_CACHE_VERSION = 'v2'
 
 export async function getKlineCache(code: string, period: string): Promise<KLineData[] | null> {
-  return getCache<KLineData[]>(`k_${KLINE_CACHE_VERSION}_${code}__${period}`, TTL[period] || DEFAULT_TTL)
+  return getCache<KLineData[]>(`k_${KLINE_CACHE_VERSION}_${code}__${period}`, getKlineCacheTTL(period))
 }
 
 export async function setKlineCache(code: string, period: string, data: KLineData[]): Promise<void> {
@@ -177,7 +214,7 @@ export async function deleteAllKlineCache(): Promise<void> {
 }
 
 export async function getKlineCacheTime(code: string, period: string): Promise<number | null> {
-  return getCacheTime(`k_${code}__${period}`, TTL[period] || DEFAULT_TTL)
+  return getCacheTime(`k_${KLINE_CACHE_VERSION}_${code}__${period}`, getKlineCacheTTL(period))
 }
 
 
