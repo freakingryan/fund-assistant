@@ -1,0 +1,338 @@
+import { useState, useCallback } from 'react'
+import {
+  Plus, Trash2, Pencil, Search, RefreshCw, Loader2, X,
+} from 'lucide-react'
+import { useSettingsStore } from '@/stores/settings'
+import { dataSourceService } from '@/adapters/datasource/service'
+import { fetchEtfMapping } from '@/services/ai'
+import { toast } from '@/components/ui/toast'
+import {
+  Card, CardContent, CardHeader, CardTitle, CardDescription,
+} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog'
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table'
+import type { EtfMapping } from '@/types'
+
+interface Draft {
+  otcCode: string
+  otcName: string
+  exchangeCode: string
+  exchangeName: string
+}
+
+const emptyDraft: Draft = { otcCode: '', otcName: '', exchangeCode: '', exchangeName: '' }
+
+export default function EtfMappingManager() {
+  const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
+  const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
+  const updateEtfMapping = useSettingsStore((s) => s.updateEtfMapping)
+  const removeEtfMapping = useSettingsStore((s) => s.removeEtfMapping)
+
+  const [open, setOpen] = useState(false)
+  const [editIndex, setEditIndex] = useState<number | null>(null)
+  const [draft, setDraft] = useState<Draft>(emptyDraft)
+  const [searching, setSearching] = useState(false)
+  const [candidates, setCandidates] = useState<{ exchangeCode: string; exchangeName: string }[]>([])
+  const [refreshing, setRefreshing] = useState<number | null>(null)
+
+  const openAdd = () => {
+    setDraft(emptyDraft)
+    setEditIndex(null)
+    setCandidates([])
+    setOpen(true)
+  }
+
+  const openEdit = (index: number) => {
+    const m = etfMappings[index]
+    if (!m) return
+    setDraft({ ...m })
+    setEditIndex(index)
+    setCandidates([])
+    setOpen(true)
+  }
+
+  const closeDialog = () => {
+    setOpen(false)
+    setEditIndex(null)
+    setDraft(emptyDraft)
+    setCandidates([])
+  }
+
+  // 按场内 ETF 名称/代码搜索候选（复用数据源搜索兜底）
+  const handleSearch = useCallback(async () => {
+    const keyword = (draft.otcName || draft.otcCode).trim()
+    if (!keyword) {
+      toast({ type: 'warning', message: '请先填写场外基金名称或代码' })
+      return
+    }
+    setSearching(true)
+    setCandidates([])
+    try {
+      const results = await dataSourceService.searchStocks(keyword)
+      const etfs = results
+        .map((r: any) => ({ exchangeCode: String(r.code || '').replace(/^(SZ|SH)/, ''), exchangeName: String(r.name || '') }))
+        .filter((r) => /^(\d{6})$/.test(r.exchangeCode) && /^(159|51|56|58|16)/.test(r.exchangeCode))
+      if (etfs.length > 0) {
+        setCandidates(etfs)
+      } else {
+        toast({ type: 'info', message: '未搜到场内 ETF，可尝试「自动匹配」或手动填写' })
+      }
+    } catch {
+      toast({ type: 'error', message: '搜索失败，请手动填写场内 ETF 代码' })
+    }
+    setSearching(false)
+  }, [draft.otcCode, draft.otcName])
+
+  // 按场外代码自动匹配（数据源 → AI 兜底）
+  const handleAutoMatch = useCallback(async () => {
+    const code = draft.otcCode.trim()
+    if (!code) {
+      toast({ type: 'warning', message: '请先填写场外基金代码' })
+      return
+    }
+    setSearching(true)
+    try {
+      const result = await fetchEtfMapping(code)
+      if (result?.exchangeCode) {
+        setDraft((d) => ({
+          ...d,
+          otcName: d.otcName || result.otcName || code,
+          exchangeCode: result.exchangeCode,
+          exchangeName: result.exchangeName || result.exchangeCode,
+        }))
+        setCandidates([])
+        toast({ type: 'success', message: `自动匹配到：${result.exchangeCode} ${result.exchangeName}` })
+      } else {
+        toast({ type: 'info', message: '未自动匹配到，可手动填写或搜索' })
+      }
+    } catch {
+      toast({ type: 'error', message: '自动匹配失败，请手动填写' })
+    }
+    setSearching(false)
+  }, [draft.otcCode])
+
+  const handleSave = () => {
+    if (!draft.otcCode.trim()) { toast({ type: 'warning', message: '场外基金代码必填' }); return }
+    if (!draft.exchangeCode.trim()) { toast({ type: 'warning', message: '场内 ETF 代码必填' }); return }
+    const payload: EtfMapping = {
+      otcCode: draft.otcCode.trim(),
+      otcName: draft.otcName.trim() || draft.otcCode.trim(),
+      exchangeCode: draft.exchangeCode.trim(),
+      exchangeName: draft.exchangeName.trim() || draft.exchangeCode.trim(),
+    }
+    if (editIndex === null) {
+      addEtfMapping(payload.otcCode, payload.otcName, payload.exchangeCode, payload.exchangeName)
+      toast({ type: 'success', message: '已新增 ETF 映射' })
+    } else {
+      updateEtfMapping(editIndex, payload)
+      toast({ type: 'success', message: '已更新 ETF 映射' })
+    }
+    closeDialog()
+  }
+
+  const handleDelete = (index: number) => {
+    const m = etfMappings[index]
+    if (!m) return
+    removeEtfMapping(index)
+    toast({ type: 'success', message: `已删除映射：${m.otcCode} → ${m.exchangeCode}` })
+  }
+
+  const handleRefresh = async (index: number) => {
+    const m = etfMappings[index]
+    if (!m) return
+    setRefreshing(index)
+    try {
+      const result = await fetchEtfMapping(m.otcCode)
+      if (result?.exchangeCode) {
+        updateEtfMapping(index, {
+          otcCode: result.otcCode || m.otcCode,
+          otcName: result.otcName || m.otcName,
+          exchangeCode: result.exchangeCode,
+          exchangeName: result.exchangeName || result.exchangeCode,
+        })
+        toast({ type: 'success', message: `已刷新：${result.exchangeCode} ${result.exchangeName}` })
+      } else {
+        toast({ type: 'info', message: `${m.otcCode} 未找到可更新的场内 ETF` })
+      }
+    } catch {
+      toast({ type: 'error', message: `刷新失败：${m.otcCode}` })
+    }
+    setRefreshing(null)
+  }
+
+  const pickCandidate = (c: { exchangeCode: string; exchangeName: string }) => {
+    setDraft((d) => ({ ...d, exchangeCode: c.exchangeCode, exchangeName: c.exchangeName }))
+    setCandidates([])
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-base">场内 ETF 映射</CardTitle>
+            <CardDescription>场外基金与场内 ETF 的对应关系，用于实时行情与 K 线展示</CardDescription>
+          </div>
+          <Button size="sm" className="h-7 text-xs" onClick={openAdd}>
+            <Plus className="h-3 w-3 mr-1" />新增映射
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {etfMappings.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-6 text-center">
+            暂无映射。导入持仓或新增基金会自动建立，也可在此手动添加。
+          </p>
+        ) : (
+          <div className="border rounded-md overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[88px]">场外代码</TableHead>
+                  <TableHead>场外名称</TableHead>
+                  <TableHead className="w-[88px]">场内ETF</TableHead>
+                  <TableHead>场内名称</TableHead>
+                  <TableHead className="w-[120px] text-right">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {etfMappings.map((m, i) => (
+                  <TableRow key={`${m.otcCode}-${i}`}>
+                    <TableCell className="text-xs font-mono">{m.otcCode}</TableCell>
+                    <TableCell className="text-xs">{m.otcName}</TableCell>
+                    <TableCell className="text-xs font-mono">{m.exchangeCode}</TableCell>
+                    <TableCell className="text-xs">{m.exchangeName}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="重新查询"
+                          disabled={refreshing === i}
+                          onClick={() => handleRefresh(i)}
+                        >
+                          {refreshing === i
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <RefreshCw className="h-3.5 w-3.5" />}
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="编辑"
+                          onClick={() => openEdit(i)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                          title="删除"
+                          onClick={() => handleDelete(i)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) closeDialog() }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editIndex === null ? '新增 ETF 映射' : '编辑 ETF 映射'}</DialogTitle>
+            <DialogDescription>填写场外基金与其对应的场内 ETF 代码</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">场外基金代码 *</Label>
+                <Input
+                  value={draft.otcCode}
+                  onChange={(e) => setDraft((d) => ({ ...d, otcCode: e.target.value }))}
+                  placeholder="如 023765"
+                  className="text-xs font-mono h-8"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">场外基金名称</Label>
+                <Input
+                  value={draft.otcName}
+                  onChange={(e) => setDraft((d) => ({ ...d, otcName: e.target.value }))}
+                  placeholder="如 华夏中证5G通信主题ETF联接D"
+                  className="text-xs h-8"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">场内 ETF 代码 *</Label>
+                <Input
+                  value={draft.exchangeCode}
+                  onChange={(e) => setDraft((d) => ({ ...d, exchangeCode: e.target.value }))}
+                  placeholder="如 515050"
+                  className="text-xs font-mono h-8"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">场内 ETF 名称</Label>
+                <Input
+                  value={draft.exchangeName}
+                  onChange={(e) => setDraft((d) => ({ ...d, exchangeName: e.target.value }))}
+                  placeholder="如 通信ETF华夏"
+                  className="text-xs h-8"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="text-xs h-8" onClick={handleSearch} disabled={searching}>
+                {searching ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Search className="h-3 w-3 mr-1" />}
+                搜索场内ETF
+              </Button>
+              <Button variant="outline" size="sm" className="text-xs h-8" onClick={handleAutoMatch} disabled={searching}>
+                {searching ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                自动匹配
+              </Button>
+            </div>
+
+            {candidates.length > 0 && (
+              <div className="border rounded-md max-h-40 overflow-auto">
+                <p className="text-[10px] text-muted-foreground px-2 py-1">点击选择候选：</p>
+                {candidates.map((c) => (
+                  <button
+                    key={c.exchangeCode}
+                    type="button"
+                    onClick={() => pickCandidate(c)}
+                    className="w-full flex items-center justify-between px-2 py-1.5 text-xs hover:bg-muted/50 text-left"
+                  >
+                    <span className="font-mono">{c.exchangeCode}</span>
+                    <span className="truncate ml-2 flex-1">{c.exchangeName}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={closeDialog}>
+              <X className="h-3 w-3 mr-1" />取消
+            </Button>
+            <Button size="sm" onClick={handleSave}>
+              {editIndex === null ? '新增' : '保存'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  )
+}

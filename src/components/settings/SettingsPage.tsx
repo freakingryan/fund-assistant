@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity, Copy, Check, Trash2 } from 'lucide-react'
+import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity, Copy, Check, Trash2, Link2 } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
@@ -18,6 +18,7 @@ import { usePlansStore } from '@/stores/plans'
 import { testAIConnection } from '@/services/ai'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist, verifyGistToken } from '@/services/backup'
+import EtfMappingManager from '@/components/settings/EtfMappingManager'
 import { toast } from '@/components/ui/toast'
 import type { AIProvider } from '@/types'
 
@@ -172,6 +173,7 @@ export default function SettingsPage() {
           <TabsTrigger value="notifications" className="flex items-center gap-1 text-[10px] sm:text-xs"><BellRing className="h-3 w-3" /> 通知</TabsTrigger>
           <TabsTrigger value="appearance" className="flex items-center gap-1 text-[10px] sm:text-xs"><SunMoon className="h-3 w-3" /> 外观</TabsTrigger>
           <TabsTrigger value="backup" className="flex items-center gap-1 text-[10px] sm:text-xs"><Cloud className="h-3 w-3" /> 备份</TabsTrigger>
+          <TabsTrigger value="mappings" className="flex items-center gap-1 text-[10px] sm:text-xs"><Link2 className="h-3 w-3" /> 映射</TabsTrigger>
         </TabsList>
 
         {/* 数据源 */}
@@ -629,6 +631,11 @@ export default function SettingsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* 映射管理 */}
+        <TabsContent value="mappings">
+          <EtfMappingManager />
         </TabsContent>
       </Tabs>
 

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { db } from './db'
+import { deleteEtfMappingCache } from '@/services/klineCache'
 import type { UserSettings } from '@/types'
 
 const defaultSettings: UserSettings = {
@@ -31,6 +32,7 @@ interface SettingsState {
   updateStorage: (storage: Partial<UserSettings['storage']>) => Promise<void>
   updateNotifications: (notifications: Partial<UserSettings['notifications']>) => Promise<void>
   addEtfMapping: (otcCode: string, otcName: string, exchangeCode: string, exchangeName: string) => Promise<void>
+  updateEtfMapping: (index: number, mapping: { otcCode: string; otcName: string; exchangeCode: string; exchangeName: string }) => Promise<void>
   removeEtfMapping: (index: number) => Promise<void>
 }
 
@@ -93,8 +95,27 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ settings: updated })
   },
 
+  updateEtfMapping: async (index, mapping) => {
+    const current = get().settings
+    const list = current.etfMappings.slice()
+    if (index < 0 || index >= list.length) return
+    const prev = list[index]
+    if (prev.otcCode !== mapping.otcCode) {
+      // 场外代码变更 → 旧缓存失效
+      await deleteEtfMappingCache(prev.otcCode)
+    }
+    list[index] = { ...mapping }
+    const updated = { ...current, etfMappings: list }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
+    // 新代码若被其他位置引用，刷新其缓存
+    await deleteEtfMappingCache(mapping.otcCode)
+  },
+
   removeEtfMapping: async (index) => {
     const current = get().settings
+    const target = current.etfMappings[index]
+    if (target) await deleteEtfMappingCache(target.otcCode)
     const updated = { ...current, etfMappings: current.etfMappings.filter((_, i) => i !== index) }
     await db.settings.put({ ...updated, id: 'user-settings' })
     set({ settings: updated })
