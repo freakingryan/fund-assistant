@@ -9,7 +9,7 @@ import {
 } from '@/components/ui/dialog'
 import { toast } from '@/components/ui/toast'
 import { Plus, Loader2, Sparkles, ChevronDown, ChevronUp,
-  AlertCircle, X, Search,
+  AlertCircle, X, Search, CheckCircle,
 } from 'lucide-react'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
@@ -90,6 +90,10 @@ export default function AddFundDialog() {
   const [searchLoading, setSearchLoading] = useState(false)
   // ETF 映射查询结果：otcCode → { exchangeCode, exchangeName } | null（null=未找到）
   const [etfLookupResults, setEtfLookupResults] = useState<Map<string, { exchangeCode: string; exchangeName: string } | null>>(new Map())
+  // 手动补充 ETF 映射：otcCode → 用户输入 / 搜索结果 / 加载态
+  const [manualInput, setManualInput] = useState<Map<string, string>>(new Map())
+  const [manualResults, setManualResults] = useState<Map<string, { code: string; name: string }[]>>(new Map())
+  const [manualLoading, setManualLoading] = useState<Map<string, boolean>>(new Map())
 
   useEffect(() => {
     if (open) {
@@ -100,6 +104,9 @@ export default function AddFundDialog() {
       setSearchQuery('')
       setSearchResults([])
       setEtfLookupResults(new Map())
+      setManualInput(new Map())
+      setManualResults(new Map())
+      setManualLoading(new Map())
     }
   }, [open])
 
@@ -241,6 +248,38 @@ export default function AddFundDialog() {
       setError(String(err))
     }
     setQueryLoading(false)
+  }
+
+  // 手动搜索场内 ETF：用户输入代码或名称 → 搜索 stocks
+  const handleManualSearch = async (otcCode: string) => {
+    const term = (manualInput.get(otcCode) ?? '').trim()
+    if (!term) return
+    setManualLoading((prev) => new Map(prev).set(otcCode, true))
+    try {
+      const results = await dataSourceService.searchStocks(term)
+      const cleaned = results
+        .map((r) => ({ code: r.code.replace(/^(SZ|SH)/, ''), name: r.name }))
+        .filter((r) => r.code.length > 0)
+      setManualResults((prev) => new Map(prev).set(otcCode, cleaned))
+    } catch {
+      setManualResults((prev) => new Map(prev).set(otcCode, []))
+    } finally {
+      setManualLoading((prev) => new Map(prev).set(otcCode, false))
+    }
+  }
+
+  // 确认手动映射：写入 etfMappings（持久化）+ 本地缓存，并切换为已映射展示
+  const handleManualConfirm = async (otcCode: string, result: { code: string; name: string }) => {
+    const row = rows.find((r) => r.code.trim() === otcCode)
+    const otcName = row?.name?.trim() || otcCode
+    await addEtfMapping(otcCode, otcName, result.code, result.name)
+    await setEtfMappingCache(otcCode, {
+      otcCode, otcName, exchangeCode: result.code, exchangeName: result.name,
+    })
+    setEtfLookupResults((prev) => new Map(prev).set(otcCode, { exchangeCode: result.code, exchangeName: result.name }))
+    setManualInput((prev) => { const m = new Map(prev); m.delete(otcCode); return m })
+    setManualResults((prev) => { const m = new Map(prev); m.delete(otcCode); return m })
+    toast({ type: 'success', message: `已手动映射：${otcCode} → ${result.code} ${result.name}` })
   }
 
   const handleSubmit = async () => {
@@ -499,9 +538,44 @@ export default function AddFundDialog() {
                   const etf = etfLookupResults.get(row.code.trim())
                   if (etf === undefined) return null // 未查询
                   if (etf === null) return (
-                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />未找到场内 ETF 映射
-                    </p>
+                    <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 p-2.5 space-y-2">
+                      <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />未找到自动映射，可手动输入场内 ETF 代码/名称
+                      </p>
+                      <div className="flex gap-2">
+                        <Input
+                          value={manualInput.get(row.code.trim()) ?? ''}
+                          onChange={(e) => setManualInput((prev) => new Map(prev).set(row.code.trim(), e.target.value))}
+                          placeholder="输入场内 ETF 代码或名称"
+                          className="h-7 text-xs flex-1 font-mono"
+                        />
+                        <Button
+                          size="sm" variant="secondary" className="h-7 text-xs shrink-0"
+                          onClick={() => handleManualSearch(row.code.trim())}
+                          disabled={!!manualLoading.get(row.code.trim()) || !(manualInput.get(row.code.trim()) ?? '').trim()}
+                        >
+                          {manualLoading.get(row.code.trim()) ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
+                          搜索
+                        </Button>
+                      </div>
+                      {manualResults.get(row.code.trim())?.length ? (
+                        <div className="rounded border max-h-32 overflow-auto">
+                          {manualResults.get(row.code.trim())!.map((r) => (
+                            <button
+                              key={r.code}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 text-xs hover:bg-accent text-left cursor-pointer"
+                              onClick={() => handleManualConfirm(row.code.trim(), r)}
+                            >
+                              <span className="font-mono text-[10px] text-muted-foreground w-16 shrink-0">{r.code}</span>
+                              <span className="truncate flex-1">{r.name}</span>
+                              <CheckCircle className="h-3 w-3 shrink-0 text-green-600" />
+                            </button>
+                          ))}
+                        </div>
+                      ) : manualResults.get(row.code.trim()) && (
+                        <p className="text-[10px] text-muted-foreground">未搜到结果，请检查代码/名称</p>
+                      )}
+                    </div>
                   )
                   return (
                     <div className="rounded-md border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20 p-2.5 space-y-1.5">
