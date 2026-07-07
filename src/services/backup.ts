@@ -35,6 +35,10 @@ export async function exportAllData(): Promise<BackupData> {
       ...s,
       sync: { ...s.sync, gistToken: '', gistId: s.sync?.gistId || '' },
       aiConfigs: (s.aiConfigs || []).map((c: any) => ({ ...c, apiKey: '' })),
+      // Notion 集成密钥同样属于凭据，必须脱敏，否则会随 Gist 泄露
+      storage: s.storage?.type === 'notion' && s.storage.notion
+        ? { ...s.storage, notion: { ...s.storage.notion, token: '' } }
+        : s.storage,
     }))
 
   return {

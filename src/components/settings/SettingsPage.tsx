@@ -629,6 +629,23 @@ export default function SettingsPage() {
                   {syncResult.msg}
                 </p>
               )}
+
+              <Separator className="my-3" />
+              <div className="flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <Label className="text-xs">每日自动同步</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    {settings.sync.lastAutoPush
+                      ? `上次自动同步：${new Date(settings.sync.lastAutoPush).toLocaleString('zh-CN', { hour12: false })}`
+                      : '启用后每日自动推送到 Gist（需先配置 Token 与 Gist ID）'}
+                  </p>
+                </div>
+                <Switch
+                  checked={!!settings.sync.autoPush}
+                  disabled={!settings.sync.gistToken || !settings.sync.gistId}
+                  onCheckedChange={(v) => updateSettings({ sync: { ...settings.sync, autoPush: v } })}
+                />
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

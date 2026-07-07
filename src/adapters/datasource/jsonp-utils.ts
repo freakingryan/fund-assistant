@@ -65,15 +65,19 @@ function loadJsonp(code: string, timeout: number): Promise<any> {
  */
 export async function fetchFundGzJsonp(code: string, timeout = 10000): Promise<any> {
   if (isViteDev()) {
-    // 开发环境：通过 Vite proxy 用 fetch 获取（同源，无 CORS）
-    const res = await fetch(`/fundgz/js/${code}.js?rt=${Date.now()}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const text = await res.text()
-    const data = parseGzJsonp(text)
-    if (!data || data.fundcode !== code) throw new Error('数据解析失败')
-    return data
+    // 开发环境：优先走 Vite proxy（同源 fetch），但代理未配置/返回 404 时降级到 JSONP 绝对地址
+    try {
+      const res = await fetch(`/fundgz/js/${code}.js?rt=${Date.now()}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const text = await res.text()
+      const data = parseGzJsonp(text)
+      if (!data || data.fundcode !== code) throw new Error('数据解析失败')
+      return data
+    } catch {
+      // 代理不可用，落到下面的 JSONP 绝对地址加载
+    }
   }
-  // 生产环境：用 JSONP 方式加载
+  // 生产环境 / 代理不可用时：用 JSONP 方式加载（绝对地址，跨域无 CORS 问题）
   return loadJsonp(code, timeout)
 }
 
@@ -81,32 +85,28 @@ export async function fetchFundGzJsonp(code: string, timeout = 10000): Promise<a
  * 获取基金历史数据（净值走势、持仓等）。
  * 优先走 Vite proxy，降级到 <script> 标签加载。
  */
-export async function fetchFundPingZhongData(code: string, timeout = 15000): Promise<Record<string, any>> {
-  if (isViteDev()) {
-    // 开发环境：通过 Vite proxy 获取
-    const res = await fetch(`/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const text = await res.text()
-    // 用正则提取已知的全局变量赋值
-    const vars: Record<string, any> = {}
-    const extractVar = (name: string) => {
-      const re = new RegExp(`var ${name}\\s*=\\s*(\\[.+?\\]|\\{.+?\\});`, 's')
-      const m = text.match(re)
-      if (m) {
-        try { vars[name] = JSON.parse(m[1]) } catch { /* skip */ }
-      }
+/** 从 pingzhongdata JS 文本中用正则提取已知全局变量赋值 */
+function extractPingZhongVars(text: string): Record<string, any> {
+  const vars: Record<string, any> = {}
+  const names = [
+    'Data_netWorthTrend', 'Data_ACWorthTrend', 'Data_assetAllocation',
+    'Data_fundSharesPositions', 'Data_fluctuationScale', 'Data_holderStructure',
+    'Data_currentFundManager', 'Data_buySedemption', 'Data_performanceEvaluation',
+    'fS_name', 'fS_code', 'stockCodes', 'stockCodesNew',
+  ]
+  for (const name of names) {
+    const re = new RegExp(`var ${name}\\s*=\\s*(\\[.+?\\]|\\{.+?\\});`, 's')
+    const m = text.match(re)
+    if (m) {
+      try { vars[name] = JSON.parse(m[1]) } catch { /* skip */ }
     }
-    ;[
-      'Data_netWorthTrend', 'Data_ACWorthTrend', 'Data_assetAllocation',
-      'Data_fundSharesPositions', 'Data_fluctuationScale', 'Data_holderStructure',
-      'Data_currentFundManager', 'Data_buySedemption', 'Data_performanceEvaluation',
-      'fS_name', 'fS_code', 'stockCodes', 'stockCodesNew',
-    ].forEach(extractVar)
-    return vars
   }
+  return vars
+}
 
-  // 生产环境：用 <script> 标签加载
-  const vars: Record<string, any> = await new Promise((resolve, reject) => {
+/** 生产环境：用 <script> 标签加载 pingzhongdata（绝对地址，跨域无 CORS 问题） */
+function loadPingZhongData(code: string, timeout: number): Promise<Record<string, any>> {
+  return new Promise((resolve, reject) => {
     const el = document.createElement('script')
     el.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
     el.onload = () => {
@@ -136,7 +136,24 @@ export async function fetchFundPingZhongData(code: string, timeout = 15000): Pro
       }
     }, timeout)
   })
-  return vars
+}
+
+export async function fetchFundPingZhongData(code: string, timeout = 15000): Promise<Record<string, any>> {
+  if (isViteDev()) {
+    // 开发环境：优先走 Vite proxy；代理不可用则降级到 JSONP 绝对地址
+    try {
+      const res = await fetch(`/pingzhongdata/pingzhongdata/${code}.js?v=${Date.now()}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const text = await res.text()
+      const vars = extractPingZhongVars(text)
+      if (Object.keys(vars).length === 0) throw new Error('数据解析失败')
+      return vars
+    } catch {
+      // 代理不可用，落到下面的 JSONP 加载
+    }
+  }
+  // 生产环境 / 代理不可用时：用 <script> 标签加载
+  return loadPingZhongData(code, timeout)
 }
 
 /** 解析 fundf10 持仓明细 HTML 内容，返回前十大重仓股（含占净值比例） */
@@ -173,10 +190,15 @@ function parseFundHoldingsF10(text: string): { date: string; holdings: { code: s
  */
 export async function fetchFundHoldingsF10(code: string, _timeout = 15000): Promise<{ date: string; holdings: { code: string; name: string; ratio: number }[] } | null> {
   if (isViteDev()) {
-    const res = await fetch(`/fundf10/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    const text = await res.text()
-    return parseFundHoldingsF10(text)
+    // 开发环境：优先走 Vite proxy；代理不可用则降级到生产环境行为（返回 null 让调用方回退）
+    try {
+      const res = await fetch(`/fundf10/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const text = await res.text()
+      return parseFundHoldingsF10(text)
+    } catch {
+      // 代理不可用，落到下面的生产环境行为
+    }
   }
   // 生产环境：fundf10 暂不支持 CORS 且无 JSONP callback，返回 null 让调用方回退
   return null

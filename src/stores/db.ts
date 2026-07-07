@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
+import type { AppNotification, FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
 
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, 'id'>
@@ -7,6 +7,7 @@ export class FundAssistantDB extends Dexie {
   alerts!: EntityTable<PlanAlert, 'id'>
   settings!: EntityTable<UserSettings, 'id'>
   klineCache!: EntityTable<{ id: string; code: string; period: string; data: any[]; cachedAt: number }, 'id'>
+  notifications!: EntityTable<AppNotification, 'id'>
 
   constructor() {
     super('FundAssistantDB')
@@ -25,6 +26,11 @@ export class FundAssistantDB extends Dexie {
     // v3: klineCache — K 线数据本地缓存
     this.version(3).stores({
       klineCache: 'id, code, period, cachedAt',
+    })
+
+    // v4: notifications — 应用内通知（铃铛浮窗）
+    this.version(4).stores({
+      notifications: 'id, createdAt, read',
     })
   }
 }

@@ -19,6 +19,9 @@ const defaultSettings: UserSettings = {
   sync: {
     gistToken: '',
     gistId: '',
+    autoPush: true,
+    lastAutoPush: null,
+    lastAutoPushAttempt: null,
   },
 }
 

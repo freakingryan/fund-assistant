@@ -5,8 +5,9 @@
  * 安装：npm install stock-api
  * 文档：https://github.com/zhangxiangliang/stock-api
  *
- * 数据源优先级：
- * - ETF/股票 → stock-api（腾讯 → 新浪 → 东方财富 自动兜底）
+ * 数据源优先级（K 线）：
+ * - ETF/股票 → 腾讯 JSONP（主源）→ 东方财富 JSONP（兜底）→ 新浪 JSONP（兜底兜底）
+ *   三者任一带「熔断」机制：被拦截后冷却 2 分钟自动跳过，冷却结束自动重试恢复。
  * - 场外基金 → fundgz.1234567.com.cn（天天基金实时估算净值）
  *
  * 代码格式：SH510500（沪市）、SZ159558（深市）、HK02020（港股）、USDJI（美股）
@@ -52,6 +53,64 @@ function jsonpOnce(url: string, cbName: string, timeout: number): Promise<any> {
   })
 }
 
+// ── 新浪 JSONP 专用：响应形如 `var <varName>=(<data>);`，不是函数调用，
+//    而是在全局挂一个变量。脚本 onload 后直接读取该全局变量即可。无 CORS 问题。 ──
+function jsonpGlobalOnce(url: string, varName: string, timeout: number): Promise<any> {
+  return new Promise((resolve) => {
+    const script = document.createElement('script')
+    const cleanup = () => {
+      try { delete (window as any)[varName] } catch { /* ignore */ }
+      if (script.parentNode) script.parentNode.removeChild(script)
+    }
+    script.onload = () => {
+      const data = (window as any)[varName]
+      cleanup()
+      resolve(data ?? null)
+    }
+    script.onerror = () => { cleanup(); resolve(null) }
+    script.src = url
+    document.head.appendChild(script)
+    setTimeout(() => { cleanup(); resolve(null) }, timeout)
+  })
+}
+
+// ── K 线请求防护：内存缓存 + 去重 + 并发限流 + 重试 + 熔断，避免频繁/瞬时拦截 ──
+interface KlineCacheEntry { ts: number; data: KLineData[]; ttl: number }
+const klineCache = new Map<string, KlineCacheEntry>()
+const klineInFlight = new Map<string, Promise<KLineData[]>>()
+const KLINE_TTL_OK = 10 * 60 * 1000    // 有数据：缓存 10 分钟（日K 日内不变）
+const KLINE_TTL_EMPTY = 2 * 60 * 1000  // 空数据：缓存 2 分钟（避免瞬时拦截被长期缓存）
+const MAX_KLINE_CONCURRENCY = 3        // 同时最多 3 个在途 K 线请求，防突发被限流
+let klineActive = 0
+const klineWaiters: (() => void)[] = []
+function klineAcquire(): Promise<void> {
+  if (klineActive < MAX_KLINE_CONCURRENCY) {
+    klineActive++
+    return Promise.resolve()
+  }
+  return new Promise<void>((resolve) => klineWaiters.push(resolve))
+}
+function klineRelease() {
+  const next = klineWaiters.shift()
+  if (next) next() // 把令牌直接交给等待者（不再递减，等待者变为活跃）
+  else klineActive = Math.max(0, klineActive - 1)
+}
+
+// ── 源熔断：某数据源连续失败（被拦截/限流）后进入冷却期，期间直接跳过，
+//    避免对已知不可用的源反复打请求；冷却结束后自动重试，实现"被拦截后自动恢复"。 ──
+const sourceBrokenUntil = new Map<string, number>()
+const SOURCE_COOLDOWN = 2 * 60 * 1000 // 冷却时长：2 分钟
+function sourceIsBroken(label: string): boolean {
+  const until = sourceBrokenUntil.get(label)
+  return until !== undefined && Date.now() < until
+}
+function markSourceBroken(label: string) {
+  sourceBrokenUntil.set(label, Date.now() + SOURCE_COOLDOWN)
+}
+function markSourceOk(label: string) {
+  if (sourceBrokenUntil.has(label)) sourceBrokenUntil.delete(label)
+}
+
 async function searchStocksEastmoney(key: string): Promise<{ code: string; name: string }[]> {
   const keyword = (key || '').trim()
   if (keyword.length < 2) return []
@@ -83,27 +142,6 @@ async function searchStocksRobust(key: string): Promise<{ code: string; name: st
     if (em.length) push(em)
   } catch { /* ignore */ }
   return [...out.values()]
-}
-
-interface StockApiKline {
-  date?: string
-  open?: number
-  close?: number
-  high?: number
-  low?: number
-  volume?: number
-}
-
-/** 将 stock-api 返回的 K 线对象统一映射为内部 KLineData 结构 */
-function mapStockApiKline(k: StockApiKline): KLineData {
-  return {
-    date: k.date ?? '',
-    open: k.open ?? 0,
-    close: k.close ?? 0,
-    high: k.high ?? 0,
-    low: k.low ?? 0,
-    volume: k.volume ?? 0,
-  }
 }
 
 /**
@@ -288,8 +326,246 @@ export class StockApiAdapter implements FundDataSource {
   }
 
   /**
+   * 场内 ETF / 个股 K 线主源：腾讯财经 JSONP（web.ifzq.gtimg.cn）。
+   * 浏览器内以 <script> 标签加载，同源策略不限制（无 CORS 问题）。
+   * 接口异常时输出控制台日志便于调试。返回内部 KLineData[]；无数据 / 失败（含超时、拦截）时返回空数组。
+   */
+  async fetchKlineTencent(rawCode: string, count: number): Promise<KLineData[]> {
+    const norm = rawCode.replace(/^(sh|sz|bj|SH|SZ|BJ)/, '').trim()
+    if (!/^\d{6}$/.test(norm)) {
+      console.warn(`[K线] 腾讯源跳过非法代码: ${rawCode}`)
+      return []
+    }
+    // 推导腾讯市场前缀（sh/sz/bj 小写）
+    let prefix: string
+    if (/^(sz|SZ)/i.test(rawCode)) prefix = 'sz'
+    else if (/^(bj|BJ)/i.test(rawCode)) prefix = 'bj'
+    else {
+      const f = norm[0]
+      if (f === '0' || f === '1' || f === '2' || f === '3') prefix = 'sz'
+      else if (f === '8' || f === '4') prefix = 'bj'
+      else prefix = 'sh' // 5/6/9 开头 → 上交所
+    }
+    const symbol = `${prefix}${norm}`
+    const cbName = `__tencentKline_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    const url =
+      `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get` +
+      `?param=${symbol},day,,,${count},qfq&_var=${cbName}`
+    const data = await jsonpOnce(url, cbName, 12000)
+    // 超时/被拦截：jsonpOnce 返回 null → 抛错，由 doFetchExchangeKline 决定是否重试
+    if (!data) throw new Error(`[K线] 腾讯接口无响应(超时/拦截): ${symbol} (count=${count})`)
+    const node = data?.data?.[symbol]
+    const rows: any[] | undefined = node?.qfqday || node?.day
+    if (!Array.isArray(rows) || rows.length === 0) {
+      console.warn(`[K线] 腾讯返回空数据: ${symbol}（可能无日K/已退市）`)
+      return []
+    }
+    return rows.map((p: any[]) => {
+      const num = (s: any) => Number(s) || 0
+      // 腾讯列序：[date, open, close, high, low, volume]
+      return {
+        date: String(p[0] || ''),
+        open: num(p[1]),
+        close: num(p[2]),
+        high: num(p[3]),
+        low: num(p[4]),
+        volume: num(p[5]),
+      }
+    })
+  }
+
+  /**
+   * 场内 ETF / 个股 K 线兜底源：东方财富 K 线（JSONP，无 CORS）。
+   * 仅在腾讯源无数据时调用；接口异常时输出控制台日志便于调试。
+   */
+  async fetchKlineEastmoney(rawCode: string, count: number): Promise<KLineData[]> {
+    const code = rawCode.replace(/^(sh|sz|SH|SZ)/, '').trim()
+    if (!/^\d{6}$/.test(code)) return []
+    let market: number // 默认上交所(1)；深交所(0)
+    if (/^(sz|SZ)/i.test(rawCode)) market = 0
+    else if (/^(sh|SH)/i.test(rawCode)) market = 1
+    else {
+      const f = code[0]
+      // 0/1/2/3 开头多为深交所（含 15/16 ETF）；5/6/9 开头多为上交所（51/56/58 ETF、60 个股）
+      market = f === '0' || f === '1' || f === '2' || f === '3' ? 0 : 1
+    }
+    const secid = `${market}.${code}`
+    const cbName = `__emKlineCb_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    const url =
+      `https://push2his.eastmoney.com/api/qt/stock/kline/get` +
+      `?fields1=f1,f2,f3,f4,f5,f6` +
+      `&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61` +
+      `&klt=101&fqt=1&secid=${secid}&end=20500101&lmt=${count}&cb=${cbName}`
+    const data = await jsonpOnce(url, cbName, 10000)
+    // 超时/被拦截：jsonpOnce 返回 null → 抛错，由 doFetchExchangeKline 决定是否重试
+    if (!data) throw new Error(`[K线] 东方财富接口无响应(超时/拦截): ${secid}`)
+    const klines: string[] | undefined = data?.data?.klines
+    if (!Array.isArray(klines) || klines.length === 0) {
+      console.warn(`[K线] 东方财富返回空数据: ${secid}（可能无日K/已退市）`)
+      return []
+    }
+    return klines.map((line: string) => {
+      const p = line.split(',')
+      const num = (s: string) => Number(s) || 0
+      // p: date, open, close, high, low, volume, amount, 振幅, 涨跌幅, 涨跌额, 换手率
+      return {
+        date: p[0] || '',
+        open: num(p[1]),
+        close: num(p[2]),
+        high: num(p[3]),
+        low: num(p[4]),
+        volume: num(p[5]),
+      }
+    })
+  }
+
+  /**
+   * 场内 ETF / 个股 K 线第三兜底源：新浪财经 JSONP（jsonp_v2.php）。
+   * 注意：stock-api 库原本用的 json_v2.php 是裸 JSON、浏览器 fetch 直连受 CORS
+   * 限制会失败；此处改用 jsonp_v2.php（响应形如 `var <cb>=(<array>);`），通过
+   * <script> 标签加载，无 CORS 问题，可作为腾讯/东财都被拦截时的兜底。
+   * 接口异常时输出控制台日志便于调试。
+   */
+  async fetchKlineSina(rawCode: string, count: number): Promise<KLineData[]> {
+    const norm = rawCode.replace(/^(sh|sz|bj|SH|SZ|BJ)/, '').trim()
+    if (!/^\d{6}$/.test(norm)) {
+      console.warn(`[K线] 新浪源跳过非法代码: ${rawCode}`)
+      return []
+    }
+    // 推导新浪市场前缀（sh/sz/bj 小写）
+    let prefix: string
+    if (/^(sz|SZ)/i.test(rawCode)) prefix = 'sz'
+    else if (/^(bj|BJ)/i.test(rawCode)) prefix = 'bj'
+    else {
+      const f = norm[0]
+      if (f === '0' || f === '1' || f === '2' || f === '3') prefix = 'sz'
+      else if (f === '8' || f === '4') prefix = 'bj'
+      else prefix = 'sh' // 5/6/9 开头 → 上交所
+    }
+    const symbol = `${prefix}${norm}`
+    const varName = `___sina_kline_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    const url =
+      `https://money.finance.sina.com.cn/quotes_service/api/jsonp_v2.php/var%20${varName}=` +
+      `/CN_MarketData.getKLineData?symbol=${symbol}&scale=240&ma=no&datalen=${count}`
+    const data = await jsonpGlobalOnce(url, varName, 12000)
+    // 超时/被拦截：jsonpGlobalOnce 返回 null → 抛错，由 doFetchExchangeKline 决定是否重试/熔断
+    if (!data) throw new Error(`[K线] 新浪接口无响应(超时/拦截): ${symbol} (count=${count})`)
+    // 新浪返回可能是数组，或 {day:[...]}，统一归一化
+    const rows: any[] = Array.isArray(data) ? data : (data?.day || [])
+    if (!Array.isArray(rows) || rows.length === 0) {
+      console.warn(`[K线] 新浪返回空数据: ${symbol}（可能无日K/已退市）`)
+      return []
+    }
+    return rows.map((p: any) => {
+      const num = (s: any) => Number(s) || 0
+      // 新浪字段（字符串）：day/open/high/low/close/volume
+      return {
+        date: String(p.day || ''),
+        open: num(p.open),
+        close: num(p.close),
+        high: num(p.high),
+        low: num(p.low),
+        volume: num(p.volume),
+      }
+    })
+  }
+
+  /**
+   * 场内 ETF / 个股 K 线统一入口：腾讯主源 + 东方财富兜底 + 新浪兜底。
+   * 接口异常均输出控制台日志便于调试。
+   */
+  /**
+   * 场内 ETF / 个股 K 线统一入口：腾讯主源 + 东方财富兜底 + 新浪兜底。
+   * 带三层防护避免被接口限流/拦截：
+   *  1) 内存缓存（日K 日内不变，避免重复请求）
+   *  2) 同 code+count 请求去重（并发只打一次）
+   *  3) 并发限流（最多 3 个在途请求，防突发）
+   */
+  async fetchExchangeKline(rawCode: string, count: number): Promise<KLineData[]> {
+    const norm = rawCode.replace(/^(sh|sz|bj|SH|SZ|BJ)/, '').trim()
+    if (!/^\d{6}$/.test(norm)) return []
+    const key = `kline:${norm}:${count}`
+
+    // 1) 命中新鲜缓存直接返回（日K 日内不变，避免重复请求被限流）
+    const cached = klineCache.get(key)
+    if (cached && Date.now() - cached.ts < cached.ttl) return cached.data
+
+    // 2) 同一 code+count 正在请求中 → 复用同一 Promise（去重，避免并发重复打接口）
+    const inflight = klineInFlight.get(key)
+    if (inflight) return inflight
+
+    // 3) 并发限流 + 实际拉取
+    const task = (async () => {
+      await klineAcquire()
+      try {
+        return await this.doFetchExchangeKline(rawCode, count)
+      } finally {
+        klineRelease()
+      }
+    })()
+    klineInFlight.set(key, task)
+    try {
+      const data = await task
+      // 非空结果缓存 10 分钟；空结果缓存 2 分钟（避免瞬时拦截被长期缓存成空白）
+      klineCache.set(key, {
+        ts: Date.now(),
+        data,
+        ttl: data.length > 0 ? KLINE_TTL_OK : KLINE_TTL_EMPTY,
+      })
+      return data
+    } finally {
+      klineInFlight.delete(key)
+    }
+  }
+
+  /**
+   * 实际拉取：依次尝试 腾讯 → 东方财富 → 新浪，每个源瞬时失败重试 1 次。
+   * - 某源返回有数据 → 直接返回，并清除该源熔断标记。
+   * - 某源返回空数据（真实无日K）→ 继续尝试下一源（不熔断，可能是该源缺这条）。
+   * - 某源连续失败（超时/拦截）→ 熔断该源（冷却 2 分钟），转下一源；
+   *   冷却结束后下次请求会自动重试该源，实现「被拦截后自动恢复」。
+   */
+  private async doFetchExchangeKline(rawCode: string, count: number): Promise<KLineData[]> {
+    const sources: { label: string; fetch: () => Promise<KLineData[]> }[] = [
+      { label: '腾讯', fetch: () => this.fetchKlineTencent(rawCode, count) },
+      { label: '东方财富', fetch: () => this.fetchKlineEastmoney(rawCode, count) },
+      { label: '新浪', fetch: () => this.fetchKlineSina(rawCode, count) },
+    ]
+    for (const src of sources) {
+      // 熔断冷却期内直接跳过，避免对已知被拦截的源反复打请求
+      if (sourceIsBroken(src.label)) {
+        console.info(`[K线] ${src.label}源处于熔断冷却期，跳过: ${rawCode}`)
+        continue
+      }
+      let result: KLineData[] | null = null
+      let errored = false
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          result = await src.fetch()
+          break
+        } catch (e) {
+          if (attempt === 0) {
+            console.warn(`[K线] ${src.label}瞬时失败，重试: ${rawCode}`)
+            await sleep(600)
+            continue
+          }
+          console.error(`[K线] ${src.label}源持续失败，转下一源: ${rawCode}`, e)
+          errored = true
+        }
+      }
+      if (result && result.length > 0) {
+        markSourceOk(src.label)
+        return result
+      }
+      // 空数据或出错：尝试下一源；仅「出错」才熔断（空数据不惩罚）
+      if (errored) markSourceBroken(src.label)
+    }
+    return []
+  }
+
+  /**
    * 净值走势 K 线
-   * - 场内 ETF → stock-api（腾讯/新浪/东方财富自动兜底）
+   * - 场内 ETF → 腾讯 K 线（JSONP，无 CORS）+ 东方财富兜底 + 新浪兜底
    * - 场外基金 → fund.eastmoney.com/pingzhongdata/{code}.js（历史净值）
    */
   async fetchKLine(code: string, period = '3m'): Promise<KLineData[]> {
@@ -317,71 +593,45 @@ export class StockApiAdapter implements FundDataSource {
             }
           })
         }
-      } catch { /* fallback */ }
+      } catch (e) {
+        console.error(`[K线] 场外基金净值走势获取失败: ${code}`, e)
+      }
       return []
     }
 
-    // 场内 ETF：通过 stock-api 获取
+    // 场内 ETF：腾讯 K 线（JSONP，无 CORS）+ 东方财富兜底 + 新浪兜底
     try {
-      const s = await ensureStocks()
-      const apiCode = toApiCode(code)
-      const count = periodToCount(period)
-      const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
-
-      if (klines.length > 0) {
-        return klines.map(mapStockApiKline)
-      }
-    } catch { /* fallback */ }
-    return []
+      return await this.fetchExchangeKline(code, periodToCount(period))
+    } catch (e) {
+      console.error(`[K线] 场内K线获取失败: ${code}`, e)
+      return []
+    }
   }
 
   /**
    * 场内 ETF 真实 K 线（OHLC + 成交量）
-   * 通过 stocks.tencent.getKlines 获取最可靠的 K 线数据
+   * 腾讯 JSONP 主源 + 东方财富兜底 + 新浪兜底（无 CORS，替代 stock-api 直连新浪）
    */
   async fetchEtfKLine(code: string, period = '3m'): Promise<KLineData[]> {
     try {
-      const s = await ensureStocks()
-      const apiCode = toApiCode(code)
-      const count = periodToCount(period)
-
-      // 优先使用腾讯数据源（最稳定）
-      const klines = await s.tencent.getKlines(apiCode, { period: 'day', count })
-
-      if (klines.length > 0) {
-        return klines.map(mapStockApiKline)
-      }
-    } catch { /* fallback to auto */ }
-
-    // 腾讯失败，走 auto 兜底
-    try {
-      const s = await ensureStocks()
-      const apiCode = toApiCode(code)
-      const count = periodToCount(period)
-      const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
-
-      if (klines.length > 0) {
-        return klines.map(mapStockApiKline)
-      }
-    } catch { /* fallback */ }
-    return []
+      return await this.fetchExchangeKline(code, periodToCount(period))
+    } catch (e) {
+      console.error(`[K线] ETF K线获取失败: ${code}`, e)
+      return []
+    }
   }
 
   /**
    * 个股真实 K 线（OHLC + 成交量）
-   * 通过 stock-api 获取，支持沪深/北交所/港股个股
+   * 腾讯 JSONP 主源 + 东方财富兜底 + 新浪兜底，支持沪深/北交所/港股个股
    */
   async fetchStockKLine(code: string, period = '3m'): Promise<KLineData[]> {
     try {
-      const s = await ensureStocks()
-      const apiCode = toStockApiCode(code)
-      const count = periodToCount(period)
-      const klines = await s.auto.getKlines(apiCode, { period: 'day', count })
-      if (klines.length > 0) {
-        return klines.map(mapStockApiKline)
-      }
-    } catch { /* fallback */ }
-    return []
+      return await this.fetchExchangeKline(code, periodToCount(period))
+    } catch (e) {
+      console.error(`[K线] 个股K线获取失败: ${code}`, e)
+      return []
+    }
   }
 
   /**
@@ -488,7 +738,7 @@ export class StockApiAdapter implements FundDataSource {
    * 查询场外基金对应的场内 ETF 代码
    * 通过 stock-api 搜索匹配（根据基金名称关键词找到对应 ETF）
    */
-  async queryEtfMapping(otcCode: string): Promise<{
+  async queryEtfMapping(otcCode: string, providedName?: string): Promise<{
     otcCode: string
     otcName: string
     exchangeCode: string
@@ -496,12 +746,23 @@ export class StockApiAdapter implements FundDataSource {
   } | null> {
     // 空码/非法码（截图导入常缺代码）无法映射，直接返回 null
     if (!otcCode || !/^\d{6}$/.test(otcCode)) return null
-    try {
-      // 通过 fundgz 获取基金名称
-      const fundData = await fetchFundGzJsonp(otcCode)
-      if (!fundData?.name) return null
-      const otcName: string = fundData.name
+    // 优先使用调用方传入的持仓名称：添加基金时已取过一次并保存在本地，
+    // 批量补全 / 重新查询时也已从 holdings / etfMappings 传入。
+    // 本地明明有名称，无需再多此一举地请求 fundgz（且其 dev proxy 路径在
+    // 用户环境下会 404，曾导致整条映射逻辑直接失败）。
+    let otcName: string = providedName?.trim() || ''
+    // 仅当没有任何名称可用时，才回退到 fundgz 获取（部分基金无每日估值会失败）
+    if (!otcName) {
+      try {
+        const fundData = await fetchFundGzJsonp(otcCode)
+        otcName = fundData?.name || ''
+      } catch {
+        /* 取不到名称则不依赖 fundgz，后续若无名称则直接 return null */
+      }
+    }
+    if (!otcName) return null
 
+    try {
       // 统一清洗：去掉 ETF/联接/指数/发起式/QDII，并去掉尾部份额类别字母（A/B/C/D/E/F/H/I/Y）
       // 例："华夏中证5G通信主题ETF联接D" → "华夏中证5G通信主题"
       const stripNoise = (name: string) =>
@@ -516,6 +777,9 @@ export class StockApiAdapter implements FundDataSource {
       const stripShareClass = (x: string) => x.replace(/[ABCDEFHIY]$/i, '').trim()
       const coreName = stripShareClass(stripNoise(otcName))
       const keyword = coreName
+      // 去掉市场前缀后的核心主题词，用于生成「2字滑动窗口 + ETF」短词
+      // 例："5G通信主题" → 滑窗生成 "通信ETF"，可命中场内简称「通信ETF华夏」
+      const noMarketCore = keyword.replace(/^(上证|深证|沪深|中证|创业板|科创板)/, '').trim()
 
       const s = await ensureStocks()
 
@@ -670,7 +934,9 @@ export class StockApiAdapter implements FundDataSource {
         const etf = [...allEtfs.values()][0]
         return { otcCode, otcName, exchangeCode: etf.code, exchangeName: etf.name }
       }
-    } catch { return null }
+    } catch {
+      return null
+    }
   }
 
   /**

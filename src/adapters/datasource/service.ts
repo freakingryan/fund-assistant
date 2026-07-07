@@ -65,8 +65,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.fetchKLine !== 'function') return null
-        const fn = a.fetchKLine
-        return () => fn(code, period)
+        return () => a.fetchKLine(code, period)
       },
       (data) => data.length > 0
     )) ?? []
@@ -80,8 +79,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.fetchEtfKLine !== 'function') return null
-        const fn = a.fetchEtfKLine
-        return () => fn(code, period)
+        return () => a.fetchEtfKLine(code, period)
       },
       (data) => data.length > 0
     )) ?? []
@@ -95,8 +93,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.fetchStockKLine !== 'function') return null
-        const fn = a.fetchStockKLine
-        return () => fn(code, period)
+        return () => a.fetchStockKLine(code, period)
       },
       (data) => data.length > 0
     )) ?? []
@@ -109,8 +106,7 @@ class DataSourceService implements FundDataSource {
   async fetchStockQuote(code: string): Promise<FundQuote | null> {
     return this.tryFirst((a) => {
       if (typeof a.fetchStockQuote !== 'function') return null
-      const fn = a.fetchStockQuote
-      return () => fn(code)
+      return () => a.fetchStockQuote(code)
     })
   }
 
@@ -120,8 +116,7 @@ class DataSourceService implements FundDataSource {
   async fetchFundPortfolio(fundCode: string): Promise<FundPortfolio | null> {
     return this.tryFirst((a) => {
       if (typeof a.fetchFundPortfolio !== 'function') return null
-      const fn = a.fetchFundPortfolio
-      return () => fn(fundCode)
+      return () => a.fetchFundPortfolio(fundCode)
     })
   }
 
@@ -131,8 +126,7 @@ class DataSourceService implements FundDataSource {
   async queryEtfMapping(otcCode: string): Promise<EtfMapping | null> {
     return this.tryFirst((a) => {
       if (typeof a.queryEtfMapping !== 'function') return null
-      const fn = a.queryEtfMapping
-      return () => fn(otcCode)
+      return () => a.queryEtfMapping(otcCode)
     })
   }
 
@@ -144,8 +138,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.searchStocks !== 'function') return null
-        const fn = a.searchStocks
-        return () => fn(key)
+        return () => a.searchStocks(key)
       },
       (data) => data.length > 0
     )) ?? []
@@ -203,8 +196,7 @@ class DataSourceService implements FundDataSource {
   async checkHealth(): Promise<DatasourceHealth> {
     const result = await this.tryFirst((a) => {
       if (typeof a.checkHealth !== 'function') return null
-      const fn = a.checkHealth
-      return () => fn()
+      return () => a.checkHealth()
     })
     if (result) return result
     return {

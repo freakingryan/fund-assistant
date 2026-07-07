@@ -286,42 +286,6 @@ export async function fetchFundInfoByCodes(codes: string[]): Promise<
  * 查询场外基金对应的场内 ETF 代码
  * 优先级：数据源匹配 → AI 查询
  */
-export async function fetchEtfMapping(otcCode: string): Promise<{
-  otcCode: string
-  otcName: string
-  exchangeCode: string
-  exchangeName: string
-} | null> {
-  // 1) 先尝试数据源适配器
-  try {
-    const result = await dataSourceService.queryEtfMapping(otcCode)
-    if (result) return result
-  } catch { /* fallback to AI */ }
-
-  // 2) AI 查询（可能受 CORS 限制）
-  const ai = getDefaultAI()
-  if (!ai) return null
-
-  const prompt = `请查询场外基金 "${otcCode}" 对应的场内 ETF 信息。如果该基金有对应的场内 ETF 可交易品种，返回严格 JSON：
-{
-  "otcCode": "${otcCode}",
-  "otcName": "场外基金全称",
-  "exchangeCode": "对应场内 ETF 代码，如 512880",
-  "exchangeName": "对应场内 ETF 名称"
-}
-如果找不到对应场内 ETF，返回 null。只返回 JSON，不要其他内容。`
-
-  try {
-    const response = await callAI(ai, [{ role: 'user', content: prompt }])
-    const jsonMatch = response.match(/\{[\s\S]*\}/)
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0])
-      if (result && result.exchangeCode) return result
-    }
-  } catch { /* fallback */ }
-  return null
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -334,26 +298,126 @@ export interface EtfMappingResult {
 }
 
 /**
- * 批量查询场外基金对应的场内 ETF 映射
+ * 单只基金查询：数据源优先，失败再用单只 AI 兜底。
+ * 适用「重新查询」「手动添加」等单条场景。
+ * 批量场景请用 fetchEtfMappings（统一批量 AI 兜底，性能更好）。
+ */
+export async function fetchEtfMapping(
+  otcCode: string,
+  otcName?: string,
+): Promise<{
+  otcCode: string
+  otcName: string
+  exchangeCode: string
+  exchangeName: string
+} | null> {
+  // 1) 先尝试数据源适配器（fundgz 取不到名时用传入的 otcName 作为搜索种子）
+  try {
+    const result = await dataSourceService.queryEtfMapping(otcCode, otcName)
+    if (result) return result
+  } catch { /* fallback to AI */ }
+
+  // 2) 单只 AI 兜底
+  try {
+    const aiResult = await fetchEtfMappingViaAI(otcCode, otcName)
+    if (aiResult) return aiResult
+  } catch { /* ignore */ }
+
+  console.info(`[ETF映射] 未找到场内ETF映射: ${otcCode}${otcName ? ' ' + otcName : ''}`)
+  return null
+}
+
+/** 单只基金 AI 查询场内 ETF 映射 */
+async function fetchEtfMappingViaAI(
+  otcCode: string,
+  otcName?: string,
+): Promise<{ otcCode: string; otcName: string; exchangeCode: string; exchangeName: string } | null> {
+  const ai = getDefaultAI()
+  if (!ai) return null
+  const prompt = `请查询场外基金 "${otcCode}"${otcName ? `（名称：${otcName}）` : ''} 对应的场内 ETF 信息。如果该基金有对应的场内可交易 ETF/LOF 品种，返回严格 JSON：
+{
+  "otcCode": "${otcCode}",
+  "otcName": "场外基金全称",
+  "exchangeCode": "对应场内 ETF 代码，如 512880",
+  "exchangeName": "对应场内 ETF 名称"
+}
+如果找不到对应场内 ETF，返回 null。只返回 JSON，不要其他内容。`
+  try {
+    const response = await callAI(ai, [{ role: 'user', content: prompt }])
+    const jsonMatch = response.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0])
+      if (result && result.exchangeCode) return result
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+/**
+ * 批量 AI 兜底：一次请求处理所有未命中的基金，性能远优于逐只调用 AI。
+ */
+async function fetchEtfMappingsViaAI(
+  codes: string[],
+  names: Record<string, string>,
+): Promise<EtfMappingResult[]> {
+  const ai = getDefaultAI()
+  if (!ai || codes.length === 0) return []
+  const items = codes.map((c) => ({ code: c, name: names[c] || '' }))
+  const prompt = `你是中国基金市场专家。下面给出若干场外开放式基金（code=代码，name=名称）。
+请为每一个能找到"对应场内可交易 ETF/LOF"品种的，返回一条映射记录；找不到的不要返回。
+场内品种通常指跟踪同一指数的场内 ETF（如场外联接基金对应的标的 ETF）。
+严格只返回一个 JSON 数组，不要任何其他文字：
+[
+  {"otcCode":"023765","otcName":"华夏中证5G通信主题ETF联接D","exchangeCode":"515050","exchangeName":"通信ETF华夏"}
+]
+待查询列表：
+${JSON.stringify(items)}`
+  try {
+    const response = await callAI(ai, [{ role: 'user', content: prompt }])
+    const arrMatch = response.match(/\[[\s\S]*\]/)
+    if (!arrMatch) return []
+    const arr = JSON.parse(arrMatch[0])
+    if (!Array.isArray(arr)) return []
+    const validCodes = new Set(codes)
+    return arr
+      .filter((r: any) => r && r.exchangeCode && validCodes.has(String(r.otcCode)))
+      .map((r: any) => ({
+        otcCode: String(r.otcCode),
+        otcName: String(r.otcName || names[r.otcCode] || ''),
+        exchangeCode: String(r.exchangeCode),
+        exchangeName: String(r.exchangeName || ''),
+      }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 批量查询场外基金对应的场内 ETF 映射。
  *
- * 说明：底层数据源（东方财富/新浪/腾讯）的搜索接口均为「按关键词单查」，
- * 没有真正的批量端点。为规避连续请求被限流（429），此处对每只基金
- * **串行处理并在彼此之间加间隔**，而非并发爆发。
+ * 流程：
+ * 1) 先用数据源适配器逐只查询（搜索接口为「按关键词单查」、无批量端点，故串行 + 间隔规避限流）；
+ * 2) 收集数据源未命中的基金，发起【一次批量 AI 调用】作为兜底（性能更好）。
  *
  * @param codes   场外基金代码列表
+ * @param opts.names  代码→名称 映射（fundgz 取不到名时作为搜索种子，也用于 AI 提示）
  * @param opts.onProgress 每处理完一只回调 (done, total)
- * @returns found 已匹配到的映射；missing 未匹配到的代码
  */
 export async function fetchEtfMappings(
   codes: string[],
-  opts: { onProgress?: (done: number, total: number) => void } = {},
+  opts: {
+    onProgress?: (done: number, total: number) => void
+    names?: Record<string, string>
+  } = {},
 ): Promise<{ found: EtfMappingResult[]; missing: string[] }> {
+  const names = opts.names || {}
   const found: EtfMappingResult[] = []
   const missing: string[] = []
   let done = 0
+  // 1) 数据源逐只查询（不在此处逐只调 AI，AI 集中批量兜底）
   for (const code of codes) {
     try {
-      const r = await fetchEtfMapping(code)
+      const r = await dataSourceService.queryEtfMapping(code, names[code])
       if (r?.exchangeCode) found.push(r as EtfMappingResult)
       else missing.push(code)
     } catch {
@@ -362,6 +426,18 @@ export async function fetchEtfMappings(
     done++
     opts.onProgress?.(done, codes.length)
     if (done < codes.length) await sleep(200)
+  }
+  // 2) 批量 AI 兜底：一次请求处理所有未命中
+  if (missing.length > 0) {
+    const aiResults = await fetchEtfMappingsViaAI(missing, names)
+    const have = new Set(found.map((f) => f.otcCode))
+    for (const r of aiResults) {
+      if (!have.has(r.otcCode)) {
+        found.push(r)
+        have.add(r.otcCode)
+      }
+    }
+    return { found, missing: missing.filter((c) => !have.has(c)) }
   }
   return { found, missing }
 }

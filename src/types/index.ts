@@ -180,10 +180,26 @@ export interface UserSettings {
     schedule: string  // cron expression
   }
   etfMappings: EtfMapping[]
-  sync: {
-    gistToken: string     // GitHub Personal Access Token
-    gistId: string        // 已创建的 Gist ID，首次推送后自动保存
-  }
+  sync: SyncConfig
+}
+
+/** GitHub Gist 同步配置 */
+export interface SyncConfig {
+  gistToken: string     // GitHub Personal Access Token
+  gistId: string        // 已创建的 Gist ID，首次推送后自动保存
+  autoPush?: boolean    // 是否启用每日自动推送（默认开启）
+  lastAutoPush?: number | null      // 上次成功自动推送的时间戳
+  lastAutoPushAttempt?: number | null // 上次尝试（含失败）时间戳，用于失败退避
+}
+
+/** 应用内通知（展示于右上角铃铛浮窗） */
+export interface AppNotification {
+  id: string
+  type: 'success' | 'error' | 'warning' | 'info'
+  title: string
+  body?: string
+  createdAt: number
+  read: boolean
 }
 
 // ============= Prompt 相关 =============

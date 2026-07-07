@@ -255,7 +255,9 @@ export default function ImportDialog() {
 
     setResolvingEtfs(true)
     try {
-      const { found, missing } = await fetchEtfMappings(candidates)
+      const names: Record<string, string> = {}
+      for (const r of imported) if (r.code) names[r.code] = r.name
+      const { found, missing } = await fetchEtfMappings(candidates, { names })
       for (const m of found) {
         await addEtfMapping(m.otcCode, m.otcName, m.exchangeCode, m.exchangeName)
       }

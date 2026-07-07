@@ -4,6 +4,8 @@ import { useEffect, useState, Component } from 'react'
 import { useHoldingsStore } from './stores/holdings'
 import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
+import { useNotificationsStore } from './stores/notifications'
+import { runDailyGistPush } from './services/autoSync'
 import ToastContainer from './components/ui/toast'
 import InstallPrompt from './components/layout/InstallPrompt'
 import { AlertCircle } from 'lucide-react'
@@ -66,10 +68,23 @@ export default function App() {
 
   // 初始化数据
   useEffect(() => {
-    loadSettings()
-    loadHoldings()
-    loadPlan()
+    const init = async () => {
+      await loadSettings()
+      loadHoldings()
+      loadPlan()
+      await useNotificationsStore.getState().loadNotifications()
+      runDailyGistPush()
+    }
+    init()
   }, [loadSettings, loadHoldings, loadPlan])
+
+  // 每日自动同步：每 6 小时复查一次（长会话跨过 24h 窗口也能触发，间隔与失败退避对齐）
+  useEffect(() => {
+    const timer = setInterval(() => {
+      runDailyGistPush()
+    }, 6 * 60 * 60 * 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   return (
     <ErrorBoundary>
