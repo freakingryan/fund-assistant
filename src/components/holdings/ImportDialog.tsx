@@ -13,10 +13,10 @@ import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, Loader2, Camera } fr
 import Papa from 'papaparse'
 import * as XLSX from 'xlsx'
 import { useHoldingsStore } from '@/stores/holdings'
+import { useSettingsStore } from '@/stores/settings'
 import { toast } from '@/components/ui/toast'
 import { autoClassify } from '@/lib/classification'
-import { extractFundInfoFromImage } from '@/services/ai'
-import { getDefaultAI } from '@/services/ai'
+import { extractFundInfoFromImage, getDefaultAI, fetchEtfMapping } from '@/services/ai'
 import { fetchFundCodeByName } from '@/adapters/datasource/jsonp-utils'
 import { fetchFundQuoteWithFallback } from '@/adapters/datasource/stock-api'
 import type { Market, FundType, FundSector } from '@/types'
@@ -118,7 +118,9 @@ export default function ImportDialog() {
   const [revalidating, setRevalidating] = useState(false)
   const [onlyValid, setOnlyValid] = useState(true)
   const [importedOnce, setImportedOnce] = useState(false)
+  const [resolvingEtfs, setResolvingEtfs] = useState(false)
   const importHoldings = useHoldingsStore((s) => s.importHoldings)
+  const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
 
   useEffect(() => {
     if (open) setAiConfigured(!!getDefaultAI())
@@ -228,6 +230,69 @@ export default function ImportDialog() {
     setRows((prev) => { const next = [...prev]; next[index] = { ...next[index], [field]: value }; return next })
   }
 
+  /**
+   * 导入后自动补全场内 ETF 映射（非阻塞后台执行，复用 fetchEtfMapping 的「数据源→AI」链路）。
+   * - 跳过场内 ETF 代码本身（51/159/56/58/16 开头）与已有映射的基金，避免重复写入；
+   * - 限制并发为 3，规避数据源限流；
+   * - 失败不影响已完成的导入，仅对未找到的做 toast 提示。
+   */
+  const autoResolveEtfMappings = useCallback(async (imported: { code: string; name: string }[]) => {
+    const existing = new Set(useSettingsStore.getState().etfMappings.map((m) => m.otcCode))
+    const seen = new Set<string>()
+    const candidates = imported
+      .filter(
+        (r) =>
+          r.code &&
+          !existing.has(r.code) &&
+          !/^(51|159|56|58|16)/.test(r.code) &&
+          !seen.has(r.code),
+      )
+      .map((r) => {
+        seen.add(r.code)
+        return { otcCode: r.code, otcName: r.name }
+      })
+    if (candidates.length === 0) return
+
+    setResolvingEtfs(true)
+    try {
+      let resolved = 0
+      let failed = 0
+      const CONC = 3
+      for (let i = 0; i < candidates.length; i += CONC) {
+        const batch = candidates.slice(i, i + CONC)
+        const results = await Promise.all(
+          batch.map(async (c) => {
+            try {
+              return await fetchEtfMapping(c.otcCode)
+            } catch {
+              return null
+            }
+          }),
+        )
+        for (const m of results) {
+          if (m?.exchangeCode) {
+            await addEtfMapping(m.otcCode, m.otcName, m.exchangeCode, m.exchangeName)
+            resolved++
+          } else {
+            failed++
+          }
+        }
+      }
+      if (resolved > 0) {
+        toast({
+          type: 'success',
+          message: `已自动建立 ${resolved} 条 ETF 映射${
+            failed > 0 ? `，${failed} 条未找到（可到基金详情手动添加）` : ''
+          }`,
+        })
+      }
+    } catch {
+      /* 映射补全失败不影响已完成的导入 */
+    } finally {
+      setResolvingEtfs(false)
+    }
+  }, [addEtfMapping])
+
   const handleImport = useCallback(async () => {
     setImporting(true)
     try {
@@ -250,6 +315,8 @@ export default function ImportDialog() {
         notes: r.notes,
       }))
       const result = await importHoldings(records)
+      // 后台自动补全 ETF 映射（非阻塞，不拖慢导入完成）
+      void autoResolveEtfMappings(records)
       const parts: string[] = []
       if (result.added) parts.push(`新增 ${result.added}`)
       if (result.updated) parts.push(`更新 ${result.updated}`)
@@ -269,7 +336,7 @@ export default function ImportDialog() {
     } finally {
       setImporting(false)
     }
-  }, [rows, onlyValid, importHoldings])
+  }, [rows, onlyValid, importHoldings, autoResolveEtfMappings])
 
   /** 待核对基金置顶展示，并保留原始索引供 updateRow 使用 */
   const displayRows = useMemo(
@@ -301,6 +368,7 @@ export default function ImportDialog() {
     if (!open) {
       setRows([]); setErrors([]); setStep('upload')
       setOnlyValid(true); setRevalidating(false); setImportedOnce(false)
+      setResolvingEtfs(false)
     }
   }, [open])
 
@@ -500,8 +568,14 @@ export default function ImportDialog() {
           <div className="text-center py-6 space-y-3">
             <CheckCircle className="h-12 w-12 mx-auto text-green-500" />
             <p className="text-lg font-semibold">导入成功</p>
-            <p className="text-sm text-muted-foreground">已导入 {rows.length} 条持仓记录</p>
-            <Button onClick={reset}>完成</Button>
+            {resolvingEtfs ? (
+              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />正在自动补全 ETF 映射…
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">已导入 {rows.length} 条持仓记录</p>
+            )}
+            <Button onClick={reset} disabled={resolvingEtfs}>完成</Button>
           </div>
         )}
       </DialogContent>
