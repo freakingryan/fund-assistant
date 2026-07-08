@@ -1,8 +1,9 @@
 /**
  * K 线后台预热（Warm Cache）
  *
- * 应用打开（或标签页重新可见）时，静默预取「有 ETF 映射的基金」的 K 线数据，
- * 存入与详情页共用的 IndexedDB 缓存，使进入详情页 / 切换基金时无需等待加载。
+ * 应用打开（或标签页重新可见）时，静默预取「有 ETF 映射且基金名称含 ETF/指数」的
+ * 场内真实 K 线数据，存入与详情页共用的 IndexedDB 缓存，使详情页切换「场内ETF真实K线」
+ * 时无需等待加载。纯场外主动基金不预取（无真实 K 线意义，且默认展示净值走势）。
  *
  * 防护（与详情页请求共用同一套机制，绝不重复打接口、不触发限流）：
  *  - 每只基金先查缓存「是否存在 + 最后更新时间」，新鲜则跳过；
@@ -65,9 +66,12 @@ export async function warmKlineCache(opts?: { force?: boolean }): Promise<void> 
         cacheKey: h.code,
         fetch: () => dataSourceService.fetchKLine(h.code, WARM_PERIOD),
       })
-      // 2) 场内 ETF 真实 K 线（仅当有映射）
+      // 2) 场内 ETF 真实 K 线：仅当基金名称含「ETF/指数」且有映射时才后台预热。
+      //    纯场外主动基金无真实 K 线意义，避免无谓打接口 / 触发限流；
+      //    命中详情页「场内ETF真实K线」开关时即瞬时命中缓存。
+      const isKlineFund = /etf/i.test(h.name || '') || (h.name || '').includes('指数')
       const etfCode = mappings.find((m) => m.otcCode === h.code)?.exchangeCode
-      if (etfCode && /^\d{6}$/.test(etfCode)) {
+      if (isKlineFund && etfCode && /^\d{6}$/.test(etfCode)) {
         tasks.push({
           label: `ETF ${etfCode}`,
           cacheKey: `etf_${etfCode}`,

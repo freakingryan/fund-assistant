@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Loader2 } from 'lucide-react'
 import CandlestickChart from '@/components/dashboard/CandlestickChart'
 import { RefreshButton } from '@/components/ui/refresh-button'
@@ -30,6 +29,8 @@ interface Props {
   onCandleClick?: (index: number | null) => void
   useEtfKline?: boolean
   setUseEtfKline?: (v: boolean) => void
+  /** 真实 K 线获取失败提示（接口冷却/网络异常）；展示在卡片内，避免开关被静默切回造成困惑 */
+  etfKlineError?: string | null
   /** 个股模式：始终渲染蜡烛图，隐藏 ETF 映射面板与净值/ETF 切换开关 */
   isStock?: boolean
   period: string
@@ -51,6 +52,7 @@ export default function KlineChartCard({
   showMA, setShowMA, showBollinger, setShowBollinger,
   refreshing, handleRefreshKline,
   klineDetectedPatterns, onHover,
+  etfKlineError = null,
 }: Props) {
   const [klineIndicatorInfoOpen, setKlineIndicatorInfoOpen] = useState(false)
 
@@ -78,19 +80,19 @@ export default function KlineChartCard({
     ? !!klineData[0]?.volume
     : (useEtfKline && !!etfCode && !!klineData[0]?.volume)
 
+  // 卡片标题：按实际展示内容动态命名，避免「K 线走势」误标净值走势
+  const chartTitle = isStock
+    ? 'K 线走势'
+    : showCandlestick
+      ? '场内 ETF 真实 K 线'
+      : '基金净值走势'
+
   return (
     <Card>
       <CardHeader className="pb-2">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
           <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <CardTitle className="text-sm">K 线走势</CardTitle>
-              {etfCode && (
-                <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">
-                  实时
-                </Badge>
-              )}
-            </div>
+            <CardTitle className="text-sm">{chartTitle}</CardTitle>
             {etfCode && (
               <div className="flex items-center gap-2 flex-wrap text-xs">
                 <span className="text-muted-foreground">场内映射行情</span>
@@ -109,7 +111,9 @@ export default function KlineChartCard({
               </div>
             )}
             {klineUpdateTime && (
-              <span className="text-[10px] text-muted-foreground">K 线更新于 {klineUpdateTime}</span>
+              <span className="text-[10px] text-muted-foreground">
+                {showCandlestick ? 'K 线' : '净值'}更新于 {klineUpdateTime}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -150,6 +154,11 @@ export default function KlineChartCard({
         </div>
       </CardHeader>
       <CardContent className="relative">
+        {etfKlineError && useEtfKline && !showCandlestick && (
+          <div className="mb-3 text-[10px] text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/40 border border-orange-200 dark:border-orange-900 rounded p-1.5 leading-relaxed">
+            {etfKlineError}
+          </div>
+        )}
         {etfCode && (
           <div className="flex items-center gap-2 mb-3">
             <Switch id="etf-kline" checked={useEtfKline} onCheckedChange={setUseEtfKline} />
@@ -221,18 +230,23 @@ export default function KlineChartCard({
             )}
           </>
         ) : (
-          <div className="flex items-center justify-center h-[200px]">
-            {klineData.length > 0 ? (
-              <svg width={NAV_CHART_WIDTH} height={NAV_CHART_HEIGHT} className="overflow-visible">
-                <polyline
-                  points={navLinePoints}
-                  fill="none" stroke="#3b82f6" strokeWidth={2}
-                />
-              </svg>
-            ) : (
+          klineData.length > 0 ? (
+            <svg
+              viewBox={`0 0 ${NAV_CHART_WIDTH} ${NAV_CHART_HEIGHT}`}
+              width="100%" height={NAV_CHART_HEIGHT}
+              preserveAspectRatio="none"
+              className="block"
+            >
+              <polyline
+                points={navLinePoints}
+                fill="none" stroke="#3b82f6" strokeWidth={2} vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+          ) : (
+            <div className="flex items-center justify-center h-[200px]">
               <p className="text-xs text-muted-foreground">暂无数据</p>
-            )}
-          </div>
+            </div>
+          )
         )}
       </CardContent>
     </Card>

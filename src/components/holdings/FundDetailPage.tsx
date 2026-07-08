@@ -64,7 +64,8 @@ export default function FundDetailPage() {
   const [klineLoading, setKlineLoading] = useState(false)
   const [klineUpdateTime, setKlineUpdateTime] = useState<string | null>(null)
   const [klineRefreshKey, setKlineRefreshKey] = useState(0)
-  const [useEtfKline, setUseEtfKline] = useState(true)
+  // 默认展示「基金净值走势」，而非「场内 ETF 真实 K 线」；用户可手动切换
+  const [useEtfKline, setUseEtfKline] = useState(false)
   const [showMA, setShowMA] = useState(true)
   const [showBollinger, setShowBollinger] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -81,6 +82,8 @@ export default function FundDetailPage() {
   const [klineAnalysis, setKlineAnalysis] = useState<KlineAnalysisResult | null>(null)
   const [klineAnalyzing, setKlineAnalyzing] = useState(false)
   const [klineAnalysisError, setKlineAnalysisError] = useState<string | null>(null)
+  // 真实 K 线获取失败提示（接口冷却/网络异常）：保留用户切换意图，回退净值走势并提示，不静默切回开关
+  const [etfKlineError, setEtfKlineError] = useState<string | null>(null)
   const [signalResult, setSignalResult] = useState<SignalResult | null>(null)
   const [showSignalDetail, setShowSignalDetail] = useState(false)
   const [hoveredKlineIndex, setHoveredKlineIndex] = useState<number | null>(null)
@@ -108,9 +111,9 @@ export default function FundDetailPage() {
     return m?.exchangeCode || null
   }, [fund, etfMappings])
 
-  // 是否正在展示「场内 ETF 真实 K 线」：用于联动形态分析 / 评分说明。
-  // 若 ETF 真实 K 线获取失败，加载逻辑会自动把 useEtfKline 置为 false，故此处与开关状态一致。
-  const isRealKline = useEtfKline && !!etfCode
+  // 是否正在展示「场内 ETF 真实 K 线」：以**实际载入的 K 线数据**为准（含真实 OHLC/成交量），
+  // 而非仅靠开关意图——避免切换过程中旧的净值数据（无 OHLC）被误判为真实 K 线（全是十字星）。
+  const isRealKline = useEtfKline && !!etfCode && klineData.length > 0 && (klineData[0]?.volume ?? 0) > 0
 
   useEffect(() => { loadHoldings() }, [loadHoldings])
   useEffect(() => { loadAlerts() }, [loadAlerts])
@@ -165,12 +168,12 @@ export default function FundDetailPage() {
       ])
       if (!cancelled) {
         if (useEtfKline && cached?.length) {
-          clearTimeout(timer); setKlineData(cached); setKlineLoading(false)
+          clearTimeout(timer); setKlineData(cached); setKlineLoading(false); setEtfKlineError(null)
           getKlineCacheTime(etfCacheKey, period).then((ts) => ts && setKlineUpdateTime(formatCacheTime(ts)))
           return
         }
         if (!useEtfKline && navCached?.length) {
-          clearTimeout(timer); setKlineData(navCached); setKlineLoading(false)
+          clearTimeout(timer); setKlineData(navCached); setKlineLoading(false); setEtfKlineError(null)
           getKlineCacheTime(navCacheKey, period).then((ts) => ts && setKlineUpdateTime(formatCacheTime(ts)))
           return
         }
@@ -182,12 +185,22 @@ export default function FundDetailPage() {
       if (!cancelled) {
         if (etfData.length > 0) setKlineCache(etfCacheKey, period, etfData)
         if (navData.length > 0) setKlineCache(navCacheKey, period, navData)
-        clearTimeout(timer)
-        // 场内 ETF 真实 K 线获取失败 → 自动切换为「基金净值走势」，保证开关状态与实际展示一致
-        const useEtf = useEtfKline && etfData.length > 0
-        if (!useEtf && useEtfKline) setUseEtfKline(false)
-        setKlineData(useEtf ? etfData : navData)
-        setKlineLoading(false)
+        clearTimeout(timer); setKlineLoading(false)
+        if (useEtfKline) {
+          if (etfData.length > 0) {
+            // 真实 K 线载入成功：展示真实 K 线，保留开关为开启
+            setKlineData(etfData)
+            setEtfKlineError(null)
+          } else {
+            // 真实 K 线获取失败（接口冷却/网络异常）：保留用户切换意图（开关不静默切回），
+            // 回退展示净值走势并提示原因，避免「点一下立即跳回」造成困惑
+            setKlineData(navData.length > 0 ? navData : [])
+            setEtfKlineError('真实 K 线获取失败（接口冷却或网络异常），已显示净值走势，可稍后重试')
+          }
+        } else {
+          setKlineData(navData)
+          setEtfKlineError(null)
+        }
       }
     }
     load()
@@ -420,6 +433,7 @@ export default function FundDetailPage() {
             klineDetectedPatterns={klineDetectedPatterns} onHover={setHoveredKlineIndex}
             externalHighlightIndex={effectiveKlineHighlight}
             onCandleClick={handlePatternClick}
+            etfKlineError={etfKlineError}
           />
           <KlinePatternCard
             klineData={klineData} klineDetectedPatterns={klineDetectedPatterns} klinePatterns={klinePatterns}
@@ -430,6 +444,10 @@ export default function FundDetailPage() {
             onPatternSelect={handlePatternClick}
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}
             isRealKline={isRealKline}
+            etfCode={etfCode}
+            loading={useEtfKline && klineLoading}
+            etfKlineError={etfKlineError}
+            onSwitchToRealKline={() => { setEtfKlineError(null); setKlineRefreshKey((k) => k + 1); setUseEtfKline(true) }}
           />
           <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
         </div>
