@@ -21,6 +21,7 @@ import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
 import { TechnicalIndicatorsPanel } from '@/components/holdings/TechnicalIndicatorsPanel'
+import { DecisionAdvisorCard } from '@/components/holdings/DecisionAdvisorCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { pnlColor, formatSigned } from '@/lib/format'
 import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from '@/lib/labels'
@@ -450,8 +451,16 @@ export default function FundDetailPage() {
             etfKlineError={etfKlineError}
             onSwitchToRealKline={() => { setEtfKlineError(null); setKlineRefreshKey((k) => k + 1); setUseEtfKline(true) }}
           />
-          <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
-          <TechnicalIndicatorsPanel klines={klineData} />
+          <DecisionAdvisorCard klines={klineData} patterns={klineDetectedPatterns} signalResult={signalResult} isRealKline={isRealKline} />
+          <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
+              <span className="inline-block transition-transform group-open:rotate-90">▶</span>分析明细（综合评分 / 技术指标 / 形态）
+            </summary>
+            <div className="mt-3 space-y-4">
+              <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
+              <TechnicalIndicatorsPanel klines={klineData} />
+            </div>
+          </details>
         </div>
 
         {/* Right Column */}
