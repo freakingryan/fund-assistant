@@ -13,6 +13,7 @@ import { RefreshButton } from '@/components/ui/refresh-button'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
+import { TechnicalIndicatorsPanel } from '@/components/holdings/TechnicalIndicatorsPanel'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
@@ -245,6 +246,7 @@ export default function StockDetailPage() {
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}
           />
           <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} />
+          <TechnicalIndicatorsPanel klines={klineData} />
         </div>
 
         {/* 右列：说明 */}

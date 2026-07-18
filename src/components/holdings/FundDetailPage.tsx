@@ -20,6 +20,7 @@ import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
+import { TechnicalIndicatorsPanel } from '@/components/holdings/TechnicalIndicatorsPanel'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { pnlColor, formatSigned } from '@/lib/format'
 import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from '@/lib/labels'
@@ -450,6 +451,7 @@ export default function FundDetailPage() {
             onSwitchToRealKline={() => { setEtfKlineError(null); setKlineRefreshKey((k) => k + 1); setUseEtfKline(true) }}
           />
           <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
+          <TechnicalIndicatorsPanel klines={klineData} />
         </div>
 
         {/* Right Column */}
