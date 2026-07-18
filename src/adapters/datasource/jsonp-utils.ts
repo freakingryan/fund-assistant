@@ -10,14 +10,14 @@
  * 返回空对象由调用方回退。
  */
 
-// ── 工具函数 ─────────────────────────────────────
-
-/** 判断是否在 Vite dev server 下运行（fundf10 的 HTML 抓取仍依赖 Vite proxy） */
-function isViteDev(): boolean {
-  return typeof window !== 'undefined' &&
-    (!!window.location.port && window.location.port !== '8080') &&
-    window.location.protocol !== 'file:'
-}
+// ── 东方财富代理（Cloudflare Worker，可选）─────────
+// 本地网络（含代理）无法访问 *.eastmoney.com 时，配置此 Worker URL，由部署在
+// Cloudflare 边缘的 Worker 服务端请求东财并转发，绕开本地网络阻断。
+// 未配置时回退为直连东财（仅在本地网络可达东财时可用，如开发机挂着可用代理）。
+const FUND_WORKER_URL: string | undefined = (import.meta.env as any).VITE_FUND_WORKER_URL
+const EM_BASE = FUND_WORKER_URL || 'https://fund.eastmoney.com'
+const FUNDGZ_BASE = FUND_WORKER_URL || 'https://fundgz.1234567.com.cn'
+const FUNDSUGGEST_BASE = FUND_WORKER_URL || 'https://fundsuggest.eastmoney.com'
 
 // ── JSONP 回调 ─────────────────────────────────────
 type Resolver = (data: any) => void
@@ -42,7 +42,7 @@ function loadJsonp(code: string, timeout: number): Promise<any> {
     ensureGlobalCallback()
     pending.set(code, resolve)
     const el = document.createElement('script')
-    el.src = `https://fundgz.1234567.com.cn/js/${code}.js?rt=${Date.now()}`
+    el.src = `${FUNDGZ_BASE}/js/${code}.js?rt=${Date.now()}`
     el.onerror = () => { pending.delete(code); reject(new Error('JSONP 加载失败')) }
     document.head.appendChild(el)
     setTimeout(() => {
@@ -68,7 +68,7 @@ export async function fetchFundGzJsonp(code: string, timeout = 10000): Promise<a
 function loadPingZhongData(code: string, timeout: number): Promise<Record<string, any>> {
   return new Promise((resolve, reject) => {
     const el = document.createElement('script')
-    el.src = `https://fund.eastmoney.com/pingzhongdata/${code}.js?v=${Date.now()}`
+    el.src = `${EM_BASE}/pingzhongdata/${code}.js?v=${Date.now()}`
     el.onload = () => {
       const result: Record<string, any> = {}
       const known = [
@@ -105,8 +105,10 @@ export async function fetchFundPingZhongData(code: string, timeout = 15000): Pro
   return loadPingZhongData(code, timeout)
 }
 
-/** 解析 fundf10 持仓明细 HTML 内容，返回前十大重仓股（含占净值比例） */
-function parseFundHoldingsF10(text: string): { date: string; holdings: { code: string; name: string; ratio: number }[] } | null {
+type FundHoldingsF10 = { date: string; holdings: { code: string; name: string; ratio: number }[] }
+
+/** 解析 fundf10 持仓明细 raw JS 文本（`var apidata={content:"...",...}`），返回前十大重仓股。 */
+function parseFundHoldingsF10(text: string): FundHoldingsF10 | null {
   // 提取 apidata 的 content 字符串（处理 JS 字符串转义）
   const contentMatch = text.match(/content:\s*"((?:\\.|[^"\\])*)"/s)
   if (!contentMatch) return null
@@ -135,21 +137,29 @@ function parseFundHoldingsF10(text: string): { date: string; holdings: { code: s
 
 /**
  * 从天天基金 F10 获取基金前十大重仓股明细（含占净值比例）。
- * 开发环境走 Vite proxy，生产环境暂返回 null（由调用方回退）。
+ *
+ * ⚠️ 特殊限制：`FundArchivesDatas.aspx` **强制校验 Referer 必须是 *.eastmoney.com**（实测：
+ * 无 Referer / 跨域 Referer 一律 404），且无 CORS 头、无 JSONP callback。浏览器 JS **无法伪造
+ * 跨域 Referer**，故 `<script>`/`fetch` 均无法在纯前端直取。唯一出路是**服务端代理设置 Referer**：
+ *  - 开发环境：走 Vite dev proxy（`vite.config.ts` 的 `/fundf10`，已注入 eastmoney Referer）。
+ *  - 生产环境（纯静态如 GitHub Pages）：无代理 → 返回 null 由调用方优雅降级；
+ *    如需生产可用，须部署边缘代理（Cloudflare Worker 等）设置 Referer 转发。
  */
-export async function fetchFundHoldingsF10(code: string, _timeout = 15000): Promise<{ date: string; holdings: { code: string; name: string; ratio: number }[] } | null> {
-  if (isViteDev()) {
-    // 开发环境：优先走 Vite proxy；代理不可用则降级到生产环境行为（返回 null 让调用方回退）
-    try {
+export async function fetchFundHoldingsF10(code: string, _timeout = 15000): Promise<FundHoldingsF10 | null> {
+  try {
+    if (import.meta.env.DEV) {
+      // 开发环境：走 Vite dev proxy（vite.config.ts 的 /fundf10，已注入 eastmoney Referer）
       const res = await fetch(`/fundf10/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const text = await res.text()
-      return parseFundHoldingsF10(text)
-    } catch {
-      // 代理不可用，落到下面的生产环境行为
+      if (res.ok) return parseFundHoldingsF10(await res.text())
+    } else if (FUND_WORKER_URL) {
+      // 生产环境：走 Cloudflare Worker 代理（注入 eastmoney Referer），避免本地网络对东财的阻断
+      const res = await fetch(`${FUND_WORKER_URL}/fundf10/FundArchivesDatas.aspx?type=jjcc&code=${code}&topline=10`)
+      if (res.ok) return parseFundHoldingsF10(await res.text())
     }
+  } catch {
+    // Worker 不可用 / 东财不可达 → 落到降级
   }
-  // 生产环境：fundf10 暂不支持 CORS 且无 JSONP callback，返回 null 让调用方回退
+  // 生产环境未配置 Worker：fundf10 需 eastmoney Referer，纯前端无法伪造 → 返回 null 让调用方回退
   return null
 }
 
@@ -190,7 +200,7 @@ export async function fetchFundCodeByName(name: string, timeout = 10000): Promis
       resolve(null)
     }
     script.onerror = () => { cleanup(); resolve(null) }
-    script.src = `https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
+    script.src = `${FUNDSUGGEST_BASE}/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
     document.head.appendChild(script)
     setTimeout(() => { cleanup(); resolve(null) }, timeout)
   })

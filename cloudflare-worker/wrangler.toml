@@ -1,0 +1,8 @@
+name = "fund-eastmoney-proxy"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# 可选：绑定你自己的域名（需在 Cloudflare 托管该域）
+# routes = [
+#   { pattern = "fund-proxy.your-domain.com", custom_domain = true }
+# ]

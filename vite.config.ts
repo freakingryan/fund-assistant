@@ -8,11 +8,14 @@ export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : '/fund-assistant/',
   server: {
     proxy: {
-      // 开发模式下代理基金 F10 持仓明细 HTML（fundf10.eastmoney.com 无 CORS，且无 JSONP callback）。
-      // 注：fundgz / pingzhongdata 已统一用 <script> JSONP 加载，跨域不受 CORS 限制，无需代理。
+      // 基金 F10 持仓明细（fundf10.eastmoney.com）：无 CORS、无 JSONP callback，
+      // 且强制校验 Referer 必须为 *.eastmoney.com（浏览器 JS 无法伪造跨域 Referer）。
+      // 故仅能经服务端代理转发并注入 eastmoney Referer；生产（纯静态）无此代理，调用方降级。
+      // 注：fundgz / pingzhongdata / fundsuggest 均不校验 Referer，已用 <script> JSONP 直取，无需代理。
       '/fundf10': {
         target: 'https://fundf10.eastmoney.com',
         changeOrigin: true,
+        headers: { Referer: 'https://fundf10.eastmoney.com/' },
         rewrite: (path) => path.replace(/^\/fundf10/, ''),
       },
     },

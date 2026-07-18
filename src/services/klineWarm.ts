@@ -7,16 +7,15 @@
  *
  * 防护（与详情页请求共用同一套机制，绝不重复打接口、不触发限流）：
  *  - 每只基金先查缓存「是否存在 + 最后更新时间」，新鲜则跳过；
- *  - 复用 dataSourceService.fetchKLine / fetchEtfKLine，其内部已带
- *    内存缓存 + 同码去重 + 并发限流(3) + 源熔断，天然防拦截/限额；
- *  - 额外在两条预取之间加小幅间隔，进一步平滑突发请求；
+ *  - 复用 dataSourceService.fetchKLine / fetchEtfKLine；
+ *    K 线请求现已统一走 stock-sdk（经 `sdk.kline.cn` 直连东财 push2his），
+ *    其自带指数退避重试、AbortController 超时、多 host CDN 兜底、令牌桶限流、熔断，
+ *    天然防拦截/限额，无需应用层再维护熔断冷却；
+ *  - 额外在两条预取之间加小幅间隔（ISSUE_GAP_MS），进一步平滑突发请求；
  *  - 离线（navigator.onLine === false）时直接跳过，避免无意义失败；
- *  - 若场内 K 线三源全部进入「熔断冷却期」，整轮预取暂停，
- *    等冷却结束后再继续（避免对已知不可用的源反复打请求）；
  *  - 受设置项 preloadKline 开关控制（默认开启）。
  */
 import { dataSourceService } from '@/adapters/datasource/service'
-import { getKlineCooldownInfo } from '@/adapters/datasource/stock-api'
 import { useHoldingsStore } from '@/stores/holdings'
 import { useSettingsStore } from '@/stores/settings'
 import { getKlineCacheTime, setKlineCache } from '@/services/klineCache'
@@ -83,8 +82,6 @@ export async function warmKlineCache(opts?: { force?: boolean }): Promise<void> 
     let fetched = 0
     let skipped = 0
     let failed = 0
-    // 熔断冷却期：整轮预取最多暂停等待一次，避免三源全熔断时反复打接口、也避免无限挂起
-    let cooldownPauseUsed = false
     for (const t of tasks) {
       try {
         // 先检查缓存是否存在 + 最后更新时间；新鲜则跳过（避免无谓请求/触发限流）
@@ -92,31 +89,6 @@ export async function warmKlineCache(opts?: { force?: boolean }): Promise<void> 
         if (fresh !== null && !opts?.force) {
           skipped++
           continue
-        }
-
-        // 熔断冷却期保护：仅场内 ETF 真实 K 线（etf_ 键）依赖三源；
-        // 若三源全部处于冷却期，则整轮暂停预取，等最早冷却结束再继续，
-        // 与详情页「源熔断后自动恢复」机制呼应，避免对已知不可用的源反复打请求。
-        if (t.cacheKey.startsWith('etf_') && !cooldownPauseUsed) {
-          const cd = getKlineCooldownInfo()
-          if (cd.allBroken && cd.earliestResumeAt) {
-            const wait = cd.earliestResumeAt - Date.now()
-            if (wait > 0) {
-              console.info(
-                `[K线预热] 场内K线三源处于熔断冷却期，暂停预取 ${Math.ceil(wait / 1000)}s，冷却结束后继续...`,
-              )
-              await sleep(wait)
-              cooldownPauseUsed = true
-              // 冷却结束重新校验本任务缓存（可能被详情页/其它途径在等待期间命中），新鲜则跳过
-              const fresh2 = await getKlineCacheTime(t.cacheKey, WARM_PERIOD)
-              if (fresh2 !== null && !opts?.force) {
-                skipped++
-                await sleep(ISSUE_GAP_MS)
-                continue
-              }
-              // 仍不新鲜 → 冷却已结束，下方 fetch 会重新尝试三源（可能恢复）
-            }
-          }
         }
 
         const data = await t.fetch()
