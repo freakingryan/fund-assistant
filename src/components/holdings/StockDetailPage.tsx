@@ -13,6 +13,8 @@ import { RefreshButton } from '@/components/ui/refresh-button'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
+import { TechnicalIndicatorsPanel } from '@/components/holdings/TechnicalIndicatorsPanel'
+import { DecisionAdvisorCard } from '@/components/holdings/DecisionAdvisorCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
@@ -244,7 +246,16 @@ export default function StockDetailPage() {
             onPatternSelect={handlePatternClick}
             onAnalyzeKline={handleAnalyzeKline} onGenerateKlinePrompt={handleGenerateKlinePrompt}
           />
-          <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} />
+          <DecisionAdvisorCard klines={klineData} patterns={klineDetectedPatterns} signalResult={signalResult} />
+          <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
+              <span className="inline-block transition-transform group-open:rotate-90">▶</span>分析明细（综合评分 / 技术指标 / 形态）
+            </summary>
+            <div className="mt-3 space-y-4">
+              <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} />
+              <TechnicalIndicatorsPanel klines={klineData} />
+            </div>
+          </details>
         </div>
 
         {/* 右列：说明 */}

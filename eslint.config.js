@@ -44,6 +44,10 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
       // 临时降级: TanStack Table useReactTable 等三方库不兼容 React Compiler
       'react-hooks/incompatible-library': 'warn',
+      // 防止局部变量遮蔽导入/外层同名符号（如 const x 与 import x 同名），
+      // 否则闭包同步调用会触发 TDZ 运行时崩溃（Cannot access before initialization）。
+      // 这是本次「isOnExchangeEtfFund 被本地 useMemo 遮蔽」事故的同类防护。
+      '@typescript-eslint/no-shadow': 'error',
     },
   },
 ])

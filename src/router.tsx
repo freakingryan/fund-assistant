@@ -9,6 +9,7 @@ import PlansPage from '@/components/plans/PlansPage'
 import PromptsPage from '@/components/prompts/PromptsPage'
 import NotificationsPage from '@/components/settings/NotificationsPage'
 import SettingsPage from '@/components/settings/SettingsPage'
+import BacktestPage from '@/components/backtest/BacktestPage'
 
 export const router = createBrowserRouter(
   [
@@ -24,6 +25,7 @@ export const router = createBrowserRouter(
         { path: 'plans', element: <PlansPage /> },
         { path: 'prompts', element: <PromptsPage /> },
         { path: 'notifications', element: <NotificationsPage /> },
+        { path: 'backtest', element: <BacktestPage /> },
         { path: 'settings', element: <SettingsPage /> },
       ],
     },

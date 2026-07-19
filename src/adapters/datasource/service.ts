@@ -1,6 +1,6 @@
 import type { DatasourceHealth, EtfMapping, FundPortfolio, FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
-import { stockApiAdapter } from './stock-api'
+import { stockSdkAdapter } from './stockSdkAdapter'
 import { eastMoneyAdapter } from './eastmoney'
 import { fetchFundGzJsonp } from './jsonp-utils'
 
@@ -11,10 +11,11 @@ class DataSourceService implements FundDataSource {
   private getAdapters(): FundDataSource[] {
     const adapters: FundDataSource[] = []
 
-    // 1. stock-api（纯前端，零后端依赖，腾讯/新浪/东方财富自动兜底）
-    adapters.push(stockApiAdapter)
+    // 1. stock-sdk（迁移目标，单一真相来源；P1 起真实 K 线走 SDK 原生实现，
+    //    其余方法暂委托 stock-api，待 P2~P4 逐步替换为 SDK 原生实现）
+    adapters.push(stockSdkAdapter)
 
-    // 2. 东方财富 JSONP（免费，无需配置）
+    // 2. 东方财富 JSONP（免费，无需配置；作为 fundgz 类接口的兜底）
     adapters.push(eastMoneyAdapter)
 
     return adapters
@@ -31,15 +32,15 @@ class DataSourceService implements FundDataSource {
    * @param accept   判断结果是否可用的断言，默认「非空即接受」
    */
   private async tryFirst<R>(
-    makeCall: (a: FundDataSource) => (() => Promise<R>) | null,
+    makeCall: (a: FundDataSource) => Promise<R> | null,
     accept: (r: R) => boolean = (r) => r !== null && r !== undefined
   ): Promise<R | null> {
     for (const a of this.getAdapters()) {
-      const call = makeCall(a)
-      if (!call) continue
       try {
-        const r = await call()
-        if (accept(r)) return r
+        // 在调用点同一作用域内做 typeof 守卫，保证可选方法被收窄为非 undefined，
+        // 避免闭包跨作用域丢失收窄（原 `() => a.method()` 写法会触发 TS2722）。
+        const r = await makeCall(a)
+        if (r != null && accept(r)) return r
       } catch { /* try next adapter */ }
     }
     return null
@@ -47,7 +48,7 @@ class DataSourceService implements FundDataSource {
 
   async fetchFundInfo(code: string): Promise<{ name: string; type: string }> {
     const result = await this.tryFirst(
-      (a) => () => a.fetchFundInfo(code),
+      (a) => a.fetchFundInfo(code),
       (r) => !!r && r.name !== code
     )
     return result ?? { name: code, type: 'stock' }
@@ -56,7 +57,7 @@ class DataSourceService implements FundDataSource {
   async fetchQuotes(codes: string[]): Promise<FundQuote[]> {
     if (codes.length === 0) return []
     return (await this.tryFirst(
-      (a) => () => a.fetchQuotes(codes),
+      (a) => a.fetchQuotes(codes),
       (data) => data.length > 0 && data.some((q) => q.nav !== 1 || q.dailyChange !== 0)
     )) ?? []
   }
@@ -65,7 +66,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.fetchKLine !== 'function') return null
-        return () => a.fetchKLine(code, period)
+        return a.fetchKLine(code, period)
       },
       (data) => data.length > 0
     )) ?? []
@@ -79,7 +80,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.fetchEtfKLine !== 'function') return null
-        return () => a.fetchEtfKLine(code, period)
+        return a.fetchEtfKLine(code, period)
       },
       (data) => data.length > 0
     )) ?? []
@@ -93,7 +94,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.fetchStockKLine !== 'function') return null
-        return () => a.fetchStockKLine(code, period)
+        return a.fetchStockKLine(code, period)
       },
       (data) => data.length > 0
     )) ?? []
@@ -106,7 +107,7 @@ class DataSourceService implements FundDataSource {
   async fetchStockQuote(code: string): Promise<FundQuote | null> {
     return this.tryFirst((a) => {
       if (typeof a.fetchStockQuote !== 'function') return null
-      return () => a.fetchStockQuote(code)
+      return a.fetchStockQuote(code)
     })
   }
 
@@ -116,7 +117,7 @@ class DataSourceService implements FundDataSource {
   async fetchFundPortfolio(fundCode: string): Promise<FundPortfolio | null> {
     return this.tryFirst((a) => {
       if (typeof a.fetchFundPortfolio !== 'function') return null
-      return () => a.fetchFundPortfolio(fundCode)
+      return a.fetchFundPortfolio(fundCode)
     })
   }
 
@@ -126,7 +127,7 @@ class DataSourceService implements FundDataSource {
   async queryEtfMapping(otcCode: string): Promise<EtfMapping | null> {
     return this.tryFirst((a) => {
       if (typeof a.queryEtfMapping !== 'function') return null
-      return () => a.queryEtfMapping(otcCode)
+      return a.queryEtfMapping(otcCode)
     })
   }
 
@@ -138,7 +139,7 @@ class DataSourceService implements FundDataSource {
     return (await this.tryFirst(
       (a) => {
         if (typeof a.searchStocks !== 'function') return null
-        return () => a.searchStocks(key)
+        return a.searchStocks(key)
       },
       (data) => data.length > 0
     )) ?? []
@@ -196,7 +197,7 @@ class DataSourceService implements FundDataSource {
   async checkHealth(): Promise<DatasourceHealth> {
     const result = await this.tryFirst((a) => {
       if (typeof a.checkHealth !== 'function') return null
-      return () => a.checkHealth()
+      return a.checkHealth()
     })
     if (result) return result
     return {

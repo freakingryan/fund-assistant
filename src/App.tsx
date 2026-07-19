@@ -6,7 +6,7 @@ import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
 import { useNotificationsStore } from './stores/notifications'
 import { runDailyGistPush } from './services/autoSync'
-import { warmKlineCache } from './services/klineWarm'
+import { captureDailySnapshots, reconcileSnapshots } from './services/backtest/decisionSnapshot'
 import ToastContainer from './components/ui/toast'
 import InstallPrompt from './components/layout/InstallPrompt'
 import { AlertCircle } from 'lucide-react'
@@ -75,8 +75,9 @@ export default function App() {
       loadPlan()
       await useNotificationsStore.getState().loadNotifications()
       runDailyGistPush()
-      // 后台预热有映射 ETF 的 K 线缓存，使进入详情页/切换基金时无需漫长加载
-      warmKlineCache()
+      // 评分回测：收盘后自动补采当日快照 + 回填次日涨跌（幂等，门禁内置）
+      captureDailySnapshots().catch((e) => console.warn('[backtest] 自动采集失败', e))
+      reconcileSnapshots().catch((e) => console.warn('[backtest] 自动回填失败', e))
     }
     init()
   }, [loadSettings, loadHoldings, loadPlan])
@@ -89,21 +90,13 @@ export default function App() {
     return () => clearInterval(timer)
   }, [])
 
-  // K 线后台预热：每 20 分钟复查一次（< 交易时段内 30min TTL，能及时刷新盘中变动）
+  // 评分回测：每 30 分钟复查一次采集/回填（仅收盘后/已有次日数据时生效，幂等）
   useEffect(() => {
     const timer = setInterval(() => {
-      warmKlineCache()
-    }, 20 * 60 * 1000)
+      captureDailySnapshots().catch((e) => console.warn('[backtest] 定时采集失败', e))
+      reconcileSnapshots().catch((e) => console.warn('[backtest] 定时回填失败', e))
+    }, 30 * 60 * 1000)
     return () => clearInterval(timer)
-  }, [])
-
-  // 标签页重新可见时（用户切回应用）立即预热一次
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') warmKlineCache()
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   return (

@@ -42,50 +42,48 @@
 - 支持诊断/调仓/K 线增强三种专业模板
 - 与投资计划联动（调仓模板自动包含触发规则信息）
 
-### 🔌 多数据源（自动降级）
-| 数据源 | 配置要求 | 支持功能 |
-|--------|---------|---------|
-| **stock-api** | 内置（npm 依赖），零配置 | 股票/ETF **实时行情**、**场内 ETF K 线**（OHLC+成交量）、基金实时估算净值、股票搜索、自动 **腾讯 → 东方财富 → 新浪 三级兜底（含熔断自动恢复）** |
-| **东方财富 fundgz** | 内置，零配置 | 场外基金 **实时估算净值**（盘中 gsz + 盘后 dwjz） |
-| **东方财富 pingzhongdata** | 内置，零配置 | 基金 **历史净值走势**、**重仓股穿透**、资产配置、基金经理等完整数据 |
-| **Tushare Pro** | 注册 tushare.pro 获取 Token | 基金基本信息、实时净值、历史净值 |
+### 🔌 数据源架构（双第三方库结合，零自管取数逻辑）
 
-> **零后端、零配置**：所有股票/ETF/基金数据均在前端浏览器中直接获取（腾讯接口 + fundgz JSONP + pingzhongdata），无需运行任何额外服务。
+数据获取已迁移到两个第三方库，**移除了项目自维护的 fetch / JSONP / 重试 / 限流 / 熔断代码**——重试、限流、超时、多源兜底全部交给两库各自的内部治理：
 
-### 🛰️ K 线 / 行情数据源详解（腾讯 → 东方财富 → 新浪 + 熔断自动恢复）
+| 库 | 覆盖域 | 支持功能 | 底层源 |
+|--------|---------|---------|---------|
+| **stock-api**（v2.7，内置零配置） | 股票域 | 股票/ETF **实时行情**、**场内 ETF / 个股 K 线**（OHLC+成交量）、股票/ETF **搜索** | 腾讯 `web.ifzq.gtimg.cn` / `qt.gtimg.cn`（默认腾讯→新浪→东财，浏览器构建自带 JSONP 兜底绕开 CORS） |
+| **stock-sdk**（v2.4，内置零配置） | 基金域 | 基金 **净值历史**、**估值**、**基金行情**、**F10 重仓**、**基金信息** | 东方财富 `fund.eastmoney.com/pingzhongdata`、`fundgz.1234567.com.cn` |
 
-所有股票 / ETF 行情与 K 线均通过**浏览器 `<script>` 标签 JSONP** 方式直接请求，不依赖任何后端，也不存在 CORS 跨域问题（JSONP 不受同源策略限制）。
+**双库重叠项（K 线 / 股票行情 / 股票搜索）优先级**：`stock-api`（主，用户网络可达的腾讯源）→ `stock-sdk`（兜底），由极薄的 `withCrossLibFallback` helper 仅做 try/catch 编排。**基金域接口 `stock-api` 无覆盖，直连 `stock-sdk`**，并保留旧的东方财富 fundgz / pingzhongdata JSONP 作为兜底（东财恢复 / 开 VPN 即自动复活）。
 
-**为什么用 JSONP 而不是 fetch？**
-- 腾讯、东方财富、新浪的行情接口本身**不返回 `Access-Control-Allow-Origin` 响应头**，浏览器内用 `fetch` / `XMLHttpRequest` 直连会被同源策略拦截（`net::ERR_FAILED` / CORS 报错）。
-- 因此一律改用 JSONP（动态插入 `<script>`），绕开 CORS。
+> **零后端、零配置**：所有数据均在浏览器前端直接获取，无需运行任何额外服务。
+>
+> ⚠️ **网络前提**：`stock-sdk` 全部基金接口底层走**东方财富**。若你的网络无法访问东方财富（`push2his` / `pingzhongdata` / `fundf10`），则基金净值历史 / 持仓将暂不可用（K 线 / 股票行情 / 搜索走腾讯源不受影响）；此为网络可达性问题，非代码问题，恢复访问后自动复活。
 
-**三级兜底顺序（任一源成功即返回）：**
+### 🛰️ K 线 / 行情数据源详解（两库内部治理，非自管）
 
-| 优先级 | 数据源 | 接口 | 说明 |
+股票 / ETF 的 K 线、实时行情、搜索全部通过 **`stock-api`** 库获取；基金净值 / 估值 / F10 通过 **`stock-sdk`** 库获取。**项目本身不再实现任何 fetch / JSONP / 重试 / 限流 / 熔断逻辑**——这些请求治理全部由两个库各自的内部实现负责。
+
+**为什么改用第三方库（而非自维护 JSONP）？**
+- 历史实现里 K 线走自写的 `<script>` JSONP + 三源兜底 + 手写熔断/限流。JSONP 的硬伤是**看不到 HTTP 状态码**，无法区分「被限流 429」和「网络错误」，只能盲目重试 → 越重试越被限流（恶性循环）。
+- `stock-api` 用 `fetch` 直连、能感知状态码，内置 `retries` + `AbortController` 干净超时 + 多源兜底（默认 `腾讯 → 新浪 → 东财`）；浏览器构建**自带 JSONP 适配**，腾讯源不开放 CORS 时自动降级。K 线主源 `web.ifzq.gtimg.cn` 在国内网络可达。
+- `stock-sdk` 同样用 `fetch` 直连，能对 429/5xx 做指数退避 + jitter 重试、令牌桶限流、多 host 兜底、熔断，覆盖基金全维度。
+
+**双库分工与重叠兜底：**
+
+| 域 | 主库 | 覆盖 | 重叠兜底 |
 |--------|--------|------|------|
-| 1（主源） | **腾讯财经** | `web.ifzq.gtimg.cn/appstock/app/fqkline/get` | 数据最全、覆盖沪深，JSONP 回调形式 |
-| 2（兜底） | **东方财富** | `push2his.eastmoney.com/api/qt/stock/kline/get` | 腾讯无数据时补位 |
-| 3（兜底兜底） | **新浪财经** | `money.finance.sina.com.cn/.../jsonp_v2.php/CN_MarketData.getKLineData` | 前两者均被拦截时兜底 |
+| 股票域 | **stock-api** | K 线 / 股票·ETF 行情 / 搜索 | 失败时回退 **stock-sdk** 对应方法（`withCrossLibFallback` 极薄 try/catch 编排） |
+| 基金域 | **stock-sdk** | 净值历史 / 估值 / 基金行情 / F10 / 信息 | stock-api 无基金能力，回退**旧东财 fundgz / pingzhongdata JSONP** |
 
-> ⚠️ **关于新浪接口的一个坑**：早期 `stock-api` 库默认走新浪 `json_v2.php`，那是**裸 JSON**（`fetch` 直连），必然被 CORS 拦截、看起来"完全不可用"。但其实新浪另有 `jsonp_v2.php` 接口（返回形如 `var cb=([...]);`），改用 `<script>` 加载**完全可用**（已实测 HTTP 200 正常返回 OHLC）。本项目已接入该接口作为第三档兜底——并非"删掉就废了"，而是之前用错了入口。
+> ⚠️ **场外→场内 ETF 映射**是两库均不提供的能力，保留项目自有的一小段启发式逻辑（非网络请求）。
 
-**被拦截 / 限流怎么办？（四层防护 + 熔断）**
+**如果看到 K 线 / 净值空白：**
+- 股票 / ETF K 线走腾讯源，通常可达；偶发失败由 `stock-api` 内部重试 + 多源兜底自动处理，多刷新即可。
+- 基金净值历史 / 估值 / 搜索走东方财富（`pingzhongdata` / `fundgz` / `fundsuggest`，均**不校验 Referer**）：若你的网络无法访问东方财富，将暂时空白（属网络可达性问题）；**恢复访问 / 开 VPN / 开 Clash 系统代理后自动复活**（这些接口用 `<script>` JSONP 由浏览器直发，请求会走系统代理）。
 
-浏览器发出的请求来自**你本机 IP**。腾讯 / 东方财富对高频或异常流量会做**临时限流 / 拦截**（表现：`ERR_EMPTY_RESPONSE`、超时），这是**临时性的**，通常冷却**数小时到一天**会自动恢复，并非接口挂掉——服务器侧实测腾讯 / 新浪均正常，被拦的只是你本机 IP。
+> ⚠️ **基金持仓明细（F10）的特殊限制**：`fundf10.eastmoney.com` **强制校验 Referer 必须为 `*.eastmoney.com`**，且无 CORS、无 JSONP callback。浏览器 JS 无法伪造跨域 Referer，因此 **纯静态生产环境（如 GitHub Pages）无法直接获取持仓明细**——即使开了代理、东财可达也不行（Referer 反爬与网络无关）。
+> - **开发环境**：由 Vite dev proxy 注入 eastmoney Referer 转发，东财可达（或开 Clash **TUN 模式**让 Node 请求也走代理）时正常显示。
+> - **生产环境**：持仓明细优雅降级（返回空）；如需生产可用，须自行部署边缘代理（Cloudflare Worker / Vercel Edge Function）转发并设置 Referer。
 
-为此实现了多层防护：
-1. **内存缓存** — 日 K 日内不变，成功结果缓存 10 分钟、空结果缓存 2 分钟，避免重复请求。
-2. **并发去重** — 同一「代码 + 周期」在途只发一次请求。
-3. **并发限流** — 信号量控制最多 3 个在途 K 线请求，防突发打爆。
-4. **瞬时失败重试** — 超时 / 拦截重试 1 次（间隔 600ms）后转下一源。
-5. **源熔断（自动恢复）** — 某源连续失败即进入 **2 分钟冷却期**，期间直接跳过该源、走下一档；冷却结束自动重试。所以"明天恢复了"会**自动生效**，无需任何改动。
-
-**如果看到 K 线空白 / 报错：**
-- 多刷新几次：被限流的源会在 2 分钟后熔断跳过，新浪兜底会顶上。
-- 若长时间全空白：大概率是本机 IP 被三家同时限流，等冷却（或切换网络，如手机热点）即可恢复；届时熔断冷却结束会自动重新启用各源。
-
-**📦 K 线缓存过期策略（交易时段感知）：**
+**📦 K 线缓存过期策略（交易时段感知，项目自有缓存层保留）：**
 - **交易时段内**（9:30–11:30 / 13:00–15:00，周一至周五）：缓存较短 TTL（默认 30 分钟，受周期上限约束，1m 更短），使当日 K 线能反映盘中变动。
 - **交易时段外**（收盘后 / 非交易日 / 周末）：缓存使用「距离下一交易时段开盘」的长 TTL，**收盘价一旦确定便不再变化，缓存基本不失效**，直到次日开盘才刷新——既省请求又保证数据正确。
 - 缓存存于 IndexedDB，刷新 / 重开应用后仍然命中。
@@ -135,7 +133,7 @@
 | 图表 | Recharts + 纯 SVG | v3 |
 | 表格 | TanStack Table | v8 |
 | CSV/Excel | PapaParse / xlsx | — |
-| **数据源** | **stock-api**（股票/ETF 实时行情，零后端） | v2.7 |
+| **数据源** | **stock-api**（股票域：K线/行情/搜索） + **stock-sdk**（基金域：净值/估值/F10） | v2.7 + v2.4 |
 | 代码质量 | ESLint + TypeScript | v10 + v6 |
 | CI/CD | GitHub Actions (quality + deploy) | — |
 
@@ -168,16 +166,9 @@ npm run preview      # 本地预览构建结果
 npm run lint         # ESLint 代码检查
 ```
 
-### 配置数据源（可选）
+### 数据源（零配置）
 
-应用默认使用 **stock-api** + **东方财富 fundgz/pingzhongdata** 获取全部数据，零配置即用。
-
-如需切换到 Tushare：
-
-| 数据源 | 设置步骤 |
-|--------|---------|
-| **stock-api + 东方财富** | 内置，零配置。股票/ETF 使用腾讯接口（东方财富、新浪兜底），基金净值使用 fundgz JSONP，历史数据使用 pingzhongdata |
-| **Tushare** | 设置 → 数据源 → 选择 Tushare → 填写 Token（[注册](https://tushare.pro)） |
+应用内置 **stock-api**（股票域：K线/行情/搜索，腾讯源）+ **stock-sdk**（基金域：净值/估值/F10，东方财富源）两个第三方库，零配置即用，无需任何 Token。请求的重试 / 限流 / 超时 / 多源兜底全部由两库内部治理，项目不再自维护 fetch/JSONP 逻辑。
 
 ### 配置 AI（可选）
 
@@ -248,7 +239,8 @@ fund-assistant/
 │   ├── stores/            # Zustand stores: holdings, plans, settings + Dexie db
 │   ├── services/          # ai.ts, backup.ts, klineCache.ts, klinePatterns.ts, klineAnalysis.ts
 │   │                      # technicalIndicators.ts, signalEngine.ts, notification.ts, prompt.ts
-│   ├── adapters/datasource/ # base.ts + stock-api.ts + tushare.ts + eastmoney.ts + jsonp-utils.ts + service.ts
+│   ├── adapters/datasource/ # base.ts（接口）+ stockSdkAdapter.ts（统一适配器：stock-api 股票域 + stock-sdk 基金域）
+│   │                        # + crossLibFallback.ts（极薄跨库兜底）+ stock-api.ts / eastmoney.ts / jsonp-utils.ts（东财 fundgz/pingzhongdata 兜底）+ service.ts
 │   ├── lib/               # classification.ts, utils.ts
 │   └── types/             # index.ts（全部 TS 类型定义）
 ```
@@ -261,8 +253,10 @@ fund-assistant/
 | `ERESOLVE` 依赖冲突 | 使用 `npm install --force` |
 | 端口被占用 | Vite 自动切换到下一个可用端口 |
 | 数据存在哪里？ | 浏览器 IndexedDB，清除浏览器数据会丢失 |
-| 需要数据库或后端？ | 不需要，纯前端应用。股票/ETF 使用 stock-api 直接在浏览器请求腾讯接口，基金数据使用 fundgz JSONP + pingzhongdata |
-| ETF K 线显示空白？ | 已接入 **腾讯 → 东方财富 → 新浪** 三级兜底 + 源熔断：前源被限流 / 拦截时新浪会顶上；空白多为本机 IP 被限流（临时，数小时~1 天恢复），刷新或切换网络即可 |
+| 需要数据库或后端？ | 不需要，纯前端应用。股票/ETF 走 **stock-api**（腾讯源），基金净值/估值/F10 走 **stock-sdk**（东方财富源），请求治理由两库内部负责 |
+| ETF K 线显示空白？ | K 线走腾讯源，偶发失败由 stock-api 内部重试 + 多源兜底自动处理，刷新即可；若长时间空白多为本机 IP 被临时限流（数小时~1 天恢复）或网络受限，切换网络即可 |
+| 基金净值/估值/搜索空白？ | 走东方财富（不校验 Referer）：网络不可达时暂时空白，恢复访问 / 开 VPN / 开 Clash 系统代理后自动复活 |
+| 基金持仓明细（F10）空白？ | `fundf10` 强制校验 eastmoney Referer，浏览器无法伪造 → **纯静态生产（GitHub Pages）无法直接取**，即使开代理也不行；开发环境走 Vite proxy 注入 Referer 可用；生产可用需自建边缘代理（Cloudflare Worker）转发设 Referer |
 
 ## 部署
 

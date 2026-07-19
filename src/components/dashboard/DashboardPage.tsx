@@ -21,6 +21,7 @@ import { RefreshButton } from '@/components/ui/refresh-button'
 import { toast } from '@/components/ui/toast'
 import { getKlineCache, setKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
 import RealtimePanel from './RealtimePanel'
+import BacktestSummaryCard from './BacktestSummaryCard'
 
 const TYPE_COLORS: Record<string, string> = {
   stock: '#ef4444', mixed: '#f97316', bond: '#22c55e', index: '#3b82f6',
@@ -52,7 +53,7 @@ export default function DashboardPage() {
   // 当前选中基金的场内 ETF 映射代码
   const etfCode = useMemo(() => {
     if (!selectedFund) return null
-    const m = etfMappings.find((m) => m.otcCode === selectedFund.code)
+    const m = etfMappings.find((mapping) => mapping.otcCode === selectedFund.code)
     return m?.exchangeCode || null
   }, [selectedFund, etfMappings])
 
@@ -154,7 +155,7 @@ export default function DashboardPage() {
     // C2 fix: 确保 totalValue > 0 才计算，正确换算为百分比
     const todayChange = totalValue > 0 && quotes.length > 0
       ? holdings.reduce((s, h) => {
-          const q = quotes.find((q) => q.code === h.code)
+          const q = quotes.find((quote) => quote.code === h.code)
           return s + (q ? calcValue(h) * q.dailyChange / 100 : 0)
         }, 0) / totalValue * 100
       : 0
@@ -283,6 +284,8 @@ export default function DashboardPage() {
             <p className="text-xl font-bold tracking-tight whitespace-nowrap">{holdings.length}<span className="text-xs text-muted-foreground font-normal ml-1">只</span></p>
           </CardContent>
         </Card>
+
+        <BacktestSummaryCard />
       </div>
 
       {/* 实时持仓概览 */}

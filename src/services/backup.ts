@@ -5,6 +5,7 @@
 
 import { db } from '@/stores/db'
 import type { FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
+import type { ScoreSnapshot } from '@/services/backtest/types'
 
 /** 备份/同步的 JSON 数据格式 */
 export interface BackupData {
@@ -15,6 +16,7 @@ export interface BackupData {
   plans: InvestmentPlan[]
   alerts: PlanAlert[]
   settings: UserSettings[]
+  scoreSnapshots: ScoreSnapshot[]
 }
 
 const CURRENT_VERSION = 1
@@ -23,11 +25,12 @@ const CURRENT_VERSION = 1
  * 从 IndexedDB 导出所有数据（排除敏感字段，防止 GitHub 自动吊销 Token）
  */
 export async function exportAllData(): Promise<BackupData> {
-  const [holdings, plans, alerts, settings] = await Promise.all([
+  const [holdings, plans, alerts, settings, scoreSnapshots] = await Promise.all([
     db.holdings.toArray(),
     db.plans.toArray(),
     db.alerts.toArray(),
     db.settings.toArray(),
+    db.scoreSnapshots.toArray(),
   ])
 
   // 清除敏感字段：Token、API Key 等（推送到 Gist 时如包含 Token 会被 GitHub 自动吊销）
@@ -49,6 +52,7 @@ export async function exportAllData(): Promise<BackupData> {
     plans,
     alerts,
     settings: sanitizedSettings,
+    scoreSnapshots,
   }
 }
 
@@ -60,13 +64,14 @@ export async function importAllData(backup: BackupData): Promise<void> {
     throw new Error('数据格式不匹配，不是本应用导出的数据')
   }
 
-  await db.transaction('rw', db.holdings, db.plans, db.alerts, db.settings, async () => {
+  await db.transaction('rw', db.holdings, db.plans, db.alerts, db.settings, db.scoreSnapshots, async () => {
     // 清空旧数据
     await Promise.all([
       db.holdings.clear(),
       db.plans.clear(),
       db.alerts.clear(),
       db.settings.clear(),
+      db.scoreSnapshots.clear(),
     ])
 
     // 写入新数据
@@ -74,6 +79,7 @@ export async function importAllData(backup: BackupData): Promise<void> {
     if (backup.plans.length > 0) await db.plans.bulkAdd(backup.plans)
     if (backup.alerts.length > 0) await db.alerts.bulkAdd(backup.alerts)
     if (backup.settings.length > 0) await db.settings.bulkAdd(backup.settings)
+    if (backup.scoreSnapshots?.length > 0) await db.scoreSnapshots.bulkAdd(backup.scoreSnapshots)
   })
 }
 

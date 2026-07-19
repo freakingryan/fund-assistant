@@ -12,117 +12,35 @@ interface Props {
   isRealKline?: boolean
 }
 
-/** 根据评分和指标生成调仓建议 */
-function buildAdvice(signalResult: SignalResult): { label: string; color: string; details: string[] } {
-  const score = signalResult.totalScore
-  const rsiC = signalResult.contributions.find((c) => c.key === 'rsi')
-  const bollC = signalResult.contributions.find((c) => c.key === 'bollinger')
-  const maC = signalResult.contributions.find((c) => c.key === 'maTrend')
-  const macdC = signalResult.contributions.find((c) => c.key === 'macdCross')
-  const volC = signalResult.contributions.find((c) => c.key === 'volume')
-
-  const isOverheat = (rsiC && rsiC.score <= -4) || (bollC && bollC.score <= -3)
-  const isOversold = (rsiC && rsiC.score >= 4) || (bollC && bollC.score >= 3)
-  const trendUp = (maC && maC.score >= 5) || (macdC && macdC.score >= 5)
-  const trendDown = (maC && maC.score <= -5) || (macdC && macdC.score <= -5)
-  const volSurge = volC && volC.score >= 3
-  const volShrink = volC && volC.score <= -2
-
-  const details: string[] = []
-
-  if (score >= 60 && isOverheat) {
-    details.push('评分虽高但 RSI/BOLL 提示过热，建议观望或分批止盈')
-  } else if (score >= 60) {
-    details.push('多头趋势强劲，可持有或分批止盈锁定利润')
-  } else if (score >= 20 && isOversold) {
-    details.push('趋势偏多 + 超卖信号，较好的补仓窗口')
-  } else if (score >= 20) {
-    details.push('趋势温和偏多，适合小额定投或分批建仓')
-  } else if (score > -20) {
-    details.push('多空信号不明确，建议等待方向确认后再操作')
-  } else if (score > -60 && isOversold) {
-    details.push('偏空但已出现超卖信号，观望等待企稳')
-  } else if (score > -60) {
-    details.push('偏空趋势，不建议补仓，已有仓位可考虑减仓')
-  } else {
-    details.push('强烈看空信号，减仓避险为主')
-  }
-
-  if (trendUp && isOversold) {
-    details.push('📌 MA/MACD 偏多 + 超卖 = 趋势向上的回调买入机会')
-  }
-  if (trendDown && isOverheat) {
-    details.push('📌 MA/MACD 偏空 + 超买 = 趋势向下的反弹减仓机会')
-  }
-  if (volSurge && score > 0) {
-    details.push('📌 成交量放大配合多头信号，上涨有量能支持')
-  }
-  if (volShrink && score < 0) {
-    details.push('📌 缩量下跌，抛压减弱，可能接近底部')
-  }
-
-  if (details.length === 0) details.push('信号混杂，建议结合其他信息综合判断')
-
-  let label: string
-  let color: string
-  if (score >= 60) { label = '持有/分批止盈'; color = 'text-up' }
-  else if (score >= 20) { label = '适合补仓/定投'; color = 'text-up' }
-  else if (score > -20) { label = '观望等待'; color = 'text-muted-foreground' }
-  else if (score > -60) { label = '减仓/观望'; color = 'text-down' }
-  else { label = '减仓避险'; color = 'text-down' }
-
-  return { label, color, details }
-}
-
+/**
+ * 分项评分明细 — 原为独立的「综合评分」卡，现已降级为
+ * 「智能决策建议」的底层分项输入展示。最终结论以决策卡为准，
+ * 此处不再展示头条总分（避免与决策卡 0-100 评分重复/冲突）。
+ */
 export default function SignalScoreCard({ signalResult, showSignalDetail, setShowSignalDetail, isRealKline = true }: Props) {
   const [showRef, setShowRef] = useState(false)
   if (!signalResult) return null
-  const advice = buildAdvice(signalResult)
 
   return (
     <Card className="card-hover">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-1.5">
-          <TrendingUp className="h-3.5 w-3.5 text-primary" />综合评分
+          <TrendingUp className="h-3.5 w-3.5 text-primary" />分项评分明细
+          <span className="text-[10px] font-normal text-muted-foreground/60 ml-auto">决策引擎底层输入</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
         {!isRealKline && (
           <p className="text-[10px] text-muted-foreground/70 mb-2 flex items-center gap-1">
             <CircleSlash className="h-3 w-3 shrink-0" />
-            评分基于基金净值走势（无成交量与 K 线形态信号，置信度较低，仅供参考）
+            基于基金净值走势（无成交量与 K 线形态信号，置信度较低）
           </p>
         )}
-        {/* 主评分 + 方向 */}
-        <div className="flex items-center gap-2 mb-1">
-          <div className={`text-base font-bold px-2 py-0.5 rounded ${
-            signalResult.direction === 'strong_bullish' || signalResult.direction === 'bullish'
-              ? 'bg-up/10 text-up'
-              : signalResult.direction === 'strong_bearish' || signalResult.direction === 'bearish'
-                ? 'bg-down/10 text-down'
-                : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
-          }`}>
-            {signalResult.totalScore >= 0 ? '+' : ''}{signalResult.totalScore}
-          </div>
-          <span className={`text-sm font-bold ${
-            signalResult.direction.startsWith('strong_bullish') || signalResult.direction === 'bullish'
-              ? 'text-up' : signalResult.direction.startsWith('strong_bearish') || signalResult.direction === 'bearish'
-                ? 'text-down' : 'text-muted-foreground'
-          }`}>
-            {signalResult.directionLabel}
-          </span>
-        </div>
-        {/* 进度条 */}
-        <div className="w-full h-2 bg-muted/40 rounded-full overflow-hidden mb-2">
-          <div className="h-full rounded-full transition-all" style={{
-            width: `${Math.abs(signalResult.totalScore)}%`,
-            marginLeft: signalResult.totalScore < 0 ? `${(100 + signalResult.totalScore)}%` : '50%',
-            background: signalResult.totalScore >= 0
-              ? 'linear-gradient(90deg, #f87171, #ef4444)'
-              : 'linear-gradient(90deg, #34d399, #10b981)',
-          }} />
-        </div>
-        {/* 关键指标一览 */}
+        <p className="text-[10px] text-muted-foreground/70 mb-2 leading-relaxed">
+          以下为综合评分引擎的 6 个分项信号，已作为底层输入融合进上方「智能决策建议」的最终结论。
+        </p>
+
+        {/* 关键指标一览（与决策结论保持一致的分项视角） */}
         {(() => {
           const rsiC = signalResult.contributions.find((c) => c.key === 'rsi')
           const macdC = signalResult.contributions.find((c) => c.key === 'macdCross')
@@ -132,30 +50,30 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
           return (
             <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2">
               {rsiC && (
-                <span className={`text-[11px] font-medium ${rsiC.score >= 4 ? 'text-green-500' : rsiC.score <= -4 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] font-medium ${rsiC.score >= 4 ? 'text-up' : rsiC.score <= -4 ? 'text-down' : 'text-muted-foreground'}`}>
                   RSI {rsiC.detail.replace(/^RSI[^0-9]*/i, '').split(/[^\d.]/)[0] || ''}
                   <span className="text-[10px] text-muted-foreground/60 ml-0.5">
-                    {rsiC.score >= 4 ? '⬆超卖' : rsiC.score <= -4 ? '⬇超买' : ''}
+                    {rsiC.score >= 4 ? '超卖' : rsiC.score <= -4 ? '超买' : ''}
                   </span>
                 </span>
               )}
               {macdC && (
-                <span className={`text-[11px] font-medium ${macdC.score >= 5 ? 'text-red-500' : macdC.score <= -5 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] font-medium ${macdC.score >= 5 ? 'text-up' : macdC.score <= -5 ? 'text-down' : 'text-muted-foreground'}`}>
                   MACD {macdC.detail.includes('金叉') ? '↑金叉' : macdC.detail.includes('死叉') ? '↓死叉' : macdC.detail.includes('上方') ? '↗偏多' : '↘偏空'}
                 </span>
               )}
               {maC && (
-                <span className={`text-[11px] font-medium ${maC.score >= 5 ? 'text-red-500' : maC.score <= -5 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] font-medium ${maC.score >= 5 ? 'text-up' : maC.score <= -5 ? 'text-down' : 'text-muted-foreground'}`}>
                   MA {maC.detail.includes('多头') ? '↑多头' : maC.detail.includes('空头') ? '↓空头' : '↔交叉'}
                 </span>
               )}
               {bollC && (
-                <span className={`text-[11px] font-medium ${bollC.score >= 3 ? 'text-red-500' : bollC.score <= -3 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] font-medium ${bollC.score >= 3 ? 'text-up' : bollC.score <= -3 ? 'text-down' : 'text-muted-foreground'}`}>
                   BOLL {bollC.detail.includes('收窄') ? '⟷变盘' : bollC.detail.includes('上轨') ? '⬇超买' : bollC.detail.includes('下轨') ? '⬆支撑' : '中性'}
                 </span>
               )}
               {volC && (
-                <span className={`text-[11px] font-medium ${volC.score >= 3 ? 'text-red-500' : 'text-muted-foreground'}`}>
+                <span className={`text-[11px] font-medium ${volC.score >= 3 ? 'text-up' : 'text-muted-foreground'}`}>
                   量 {volC.detail.includes('激增') ? '🔥异动' : volC.detail.includes('放大') ? '📈放量' : volC.detail.includes('萎缩') ? '📉缩量' : '正常'}
                 </span>
               )}
@@ -163,29 +81,18 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
           )
         })()}
 
-        {/* 调仓建议 */}
-        <div className="mb-2 p-2 rounded bg-muted/15 space-y-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-muted-foreground">操作建议：</span>
-            <span className={`text-xs font-bold ${advice.color}`}>{advice.label}</span>
-          </div>
-          {advice.details.map((d, i) => (
-            <p key={i} className="text-[10px] text-muted-foreground leading-relaxed">{d}</p>
-          ))}
-        </div>
-
-        {/* 展开详情 */}
+        {/* 展开：6 个分项贡献明细 */}
         <button onClick={() => setShowSignalDetail(!showSignalDetail)}
           className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <span className={`inline-block transition-transform ${showSignalDetail ? 'rotate-90' : ''}`}>▶</span>
-          评分详情（权重可调）
+          评分分项（权重可调）
         </button>
         {showSignalDetail && (
           <div className="mt-1.5 space-y-1">
             {signalResult.contributions.map((c) => (
               <div key={c.key} className="flex items-center gap-2 text-[10px] px-1.5 py-1 rounded bg-muted/20">
-                <span className={`shrink-0 w-5 text-center font-mono text-[9px] font-bold ${c.score > 0 ? 'text-red-500' : c.score < 0 ? 'text-green-500' : 'text-muted-foreground'}`}>
+                <span className={`shrink-0 w-5 text-center font-mono text-[9px] font-bold ${c.score > 0 ? 'text-up' : c.score < 0 ? 'text-down' : 'text-muted-foreground'}`}>
                   {c.score > 0 ? '+' : ''}{c.score}
                 </span>
                 <span className="shrink-0 font-medium text-muted-foreground w-16">{c.label}</span>
@@ -194,7 +101,7 @@ export default function SignalScoreCard({ signalResult, showSignalDetail, setSho
               </div>
             ))}
             <p className="text-[9px] text-muted-foreground/40 mt-0.5">
-              评分范围 -100~+100 · 权重合计 {(Object.values(DEFAULT_WEIGHTS) as number[]).reduce((a, b) => a + b, 0)}% · 支持 AI 自动优化
+              旧引擎评分范围 -100~+100 · 权重合计 {(Object.values(DEFAULT_WEIGHTS) as number[]).reduce((a, b) => a + b, 0)}% · 已融合进决策引擎
             </p>
           </div>
         )}

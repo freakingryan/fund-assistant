@@ -130,15 +130,15 @@ export default function ImportDialog() {
    * 并发校验每只基金代码能否取到行情（带净值兜底）。
    * 取不到（代码缺失 / 识别有误 / 无数据源覆盖）的标记 needsCodeCheck。
    */
-  const validateRows = useCallback(async (rows: ParsedRow[]): Promise<ParsedRow[]> => {
+  const validateRows = useCallback(async (inputRows: ParsedRow[]): Promise<ParsedRow[]> => {
     const results = await Promise.allSettled(
-      rows.map((r) =>
+      inputRows.map((r) =>
         r.code
           ? fetchFundQuoteWithFallback(r.code).then((q) => !!q)
           : Promise.resolve(false)
       )
     )
-    return rows.map((r, i) => ({
+    return inputRows.map((r, i) => ({
       ...r,
       needsCodeCheck: !(results[i].status === 'fulfilled' && results[i].value),
     }))

@@ -25,7 +25,7 @@ function currency(v: number): string {
 
 function holdingTable(selected: FundHolding[], quotes: FundQuote[]): string {
   const rows = selected.map((h) => {
-    const q = quotes.find((q) => q.code === h.code)
+    const q = quotes.find((quote) => quote.code === h.code)
     const nav = q?.nav || 0
     const costValue = h.costNAV && h.shares ? h.costNAV * h.shares : (h.holdingAmount ? h.holdingAmount - (h.holdingProfit ?? 0) : 0)
     const currentValue = h.holdingAmount || (h.costNAV && h.shares ? h.costNAV * h.shares : 0)
@@ -143,7 +143,7 @@ function klineEnhancedPrompt(
     etfSection = '\n### 场外↔场内 ETF 映射\n\n'
     etfSection += '场外代码 | 场外名称 | 场内代码 | 场内名称\n--- | --- | --- | ---\n'
     for (const h of mappedFunds) {
-      const m = etfMappings.find((m) => m.otcCode === h.code)
+      const m = etfMappings.find((mapping) => mapping.otcCode === h.code)
       if (m) {
         etfSection += `${m.otcCode} | ${m.otcName} | ${m.exchangeCode} | ${m.exchangeName}\n`
       }

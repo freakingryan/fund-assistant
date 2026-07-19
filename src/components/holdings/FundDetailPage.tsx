@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useHoldingsStore } from '@/stores/holdings'
 import { usePlansStore } from '@/stores/plans'
@@ -15,13 +15,18 @@ import { Textarea } from '@/components/ui/textarea'
 import SearchableSelect from '@/components/ui/searchable-select'
 import { Loader2, Sparkles, ArrowLeft, Copy, CheckCircle, FileText, Pencil, TrendingUp, Wallet, ChevronRight } from 'lucide-react'
 import { RefreshButton } from '@/components/ui/refresh-button'
+import { toast } from '@/components/ui/toast'
 import EditFundDialog from '@/components/holdings/EditFundDialog'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import KlineChartCard from '@/components/holdings/KlineChartCard'
 import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
+import { TechnicalIndicatorsPanel } from '@/components/holdings/TechnicalIndicatorsPanel'
+import { DecisionAdvisorCard } from '@/components/holdings/DecisionAdvisorCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
+import { captureSnapshotForFund } from '@/services/backtest/decisionSnapshot'
 import { pnlColor, formatSigned } from '@/lib/format'
+import { isOnExchangeEtfFund } from '@/lib/fundCategory'
 import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from '@/lib/labels'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import { analyzeKline } from '@/services/klineAnalysis'
@@ -64,8 +69,16 @@ export default function FundDetailPage() {
   const [klineLoading, setKlineLoading] = useState(false)
   const [klineUpdateTime, setKlineUpdateTime] = useState<string | null>(null)
   const [klineRefreshKey, setKlineRefreshKey] = useState(0)
+  // 「场内 ETF 类」基金（名称含 etf/ETF/指数）默认优先展示「场内 ETF 真实 K 线」，
+  // 其余基金默认展示「基金净值走势」；用户仍可在卡片内手动切换。
+  const fundIsOnExchangeEtf = useMemo(
+    () => (fund ? isOnExchangeEtfFund(fund.name) : false),
+    [fund],
+  )
   // 默认展示「基金净值走势」，而非「场内 ETF 真实 K 线」；用户可手动切换
   const [useEtfKline, setUseEtfKline] = useState(false)
+  // 每支基金仅在其首次加载时套用一次默认（避免覆盖用户在本次浏览中的手动切换）
+  const defaultAppliedFor = useRef<string | null>(null)
   const [showMA, setShowMA] = useState(true)
   const [showBollinger, setShowBollinger] = useState(false)
   const [prompt, setPrompt] = useState('')
@@ -74,6 +87,7 @@ export default function FundDetailPage() {
   const [refreshing, setRefreshing] = useState({ kline: false, portfolio: false, quotes: false })
   const [editOpen, setEditOpen] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
+  const [capturingScore, setCapturingScore] = useState(false)
   const [portfolio, setPortfolio] = useState<{ date: string; holdings: { code: string; name: string; ratio: number; value: number }[] } | null>(null)
   const [portfolioLoading, setPortfolioLoading] = useState(false)
   const [portfolioRefreshKey, setPortfolioRefreshKey] = useState(0)
@@ -107,9 +121,18 @@ export default function FundDetailPage() {
 
   const etfCode = useMemo(() => {
     if (!fund) return null
-    const m = etfMappings.find((m) => m.otcCode === fund.code)
+    const m = etfMappings.find((mapping) => mapping.otcCode === fund.code)
     return m?.exchangeCode || null
   }, [fund, etfMappings])
+
+  // 进入「场内 ETF 类」且已有映射的基金时，默认套用一次真实 K 线展示；
+  // 用 ref 记录已套用过的 fund.id，避免后续渲染/用户手动切换被覆盖。
+  useEffect(() => {
+    if (!fund) return
+    if (defaultAppliedFor.current === fund.id) return
+    defaultAppliedFor.current = fund.id
+    setUseEtfKline(fundIsOnExchangeEtf && !!etfCode)
+  }, [fund?.id, fundIsOnExchangeEtf, etfCode])
 
   // 是否正在展示「场内 ETF 真实 K 线」：以**实际载入的 K 线数据**为准（含真实 OHLC/成交量），
   // 而非仅靠开关意图——避免切换过程中旧的净值数据（无 OHLC）被误判为真实 K 线（全是十字星）。
@@ -151,6 +174,23 @@ export default function FundDetailPage() {
     await refreshQuotes()
     setRefreshing((s) => ({ ...s, quotes: false }))
   }, [fund, refreshQuotes])
+
+  // 记录今日评分快照（单基金），供回测验证使用
+  const handleCaptureScore = useCallback(async () => {
+    if (!fund) return
+    setCapturingScore(true)
+    try {
+      const snap = await captureSnapshotForFund(fund, etfMappings)
+      if (snap) {
+        toast({ type: 'success', message: `已记录 ${fund.name || fund.code} 今日评分（${snap.score}）` })
+      } else {
+        toast({ type: 'error', message: '无法获取 K 线数据（纯净值基金需部署 Cloudflare Worker）' })
+      }
+    } catch {
+      toast({ type: 'error', message: '评分快照记录失败' })
+    }
+    setCapturingScore(false)
+  }, [fund, etfMappings])
 
   // ─── K 线数据加载 ─────────────────────────────
   useEffect(() => {
@@ -324,6 +364,7 @@ export default function FundDetailPage() {
             <Badge variant="secondary" className="text-[10px]">{MARKET_LABELS[fund.market] || fund.market}</Badge>
             <Badge variant="outline" className="text-[10px]">{TYPE_LABELS[fund.type] || fund.type}</Badge>
             <Badge variant="outline" className="text-[10px]">{SECTOR_LABELS[fund.sector] || fund.sector}</Badge>
+            {fundIsOnExchangeEtf && <Badge variant="outline" className="text-[10px]">场内ETF类</Badge>}
             {etfCode && <Badge className="text-[10px] bg-primary/10 text-primary border-primary/20">ETF {etfCode}</Badge>}
           </div>
         </div>
@@ -351,6 +392,9 @@ export default function FundDetailPage() {
               <RefreshButton onClick={handleRefreshQuotes} loading={refreshing.quotes} title="刷新行情" label="刷新行情" />
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setAdjustOpen(true)}>
                 <TrendingUp className="h-3 w-3 mr-1 text-green-500" />调仓
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleCaptureScore} disabled={capturingScore}>
+                {capturingScore ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <><CheckCircle className="h-3 w-3 mr-1" />记录今日评分</>}
               </Button>
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setEditOpen(true)}>
                 <Pencil className="h-3 w-3 mr-1" />编辑
@@ -449,7 +493,16 @@ export default function FundDetailPage() {
             etfKlineError={etfKlineError}
             onSwitchToRealKline={() => { setEtfKlineError(null); setKlineRefreshKey((k) => k + 1); setUseEtfKline(true) }}
           />
-          <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
+          <DecisionAdvisorCard klines={klineData} patterns={klineDetectedPatterns} signalResult={signalResult} isRealKline={isRealKline} />
+          <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
+              <span className="inline-block transition-transform group-open:rotate-90">▶</span>分析明细（综合评分 / 技术指标 / 形态）
+            </summary>
+            <div className="mt-3 space-y-4">
+              <SignalScoreCard signalResult={signalResult} showSignalDetail={showSignalDetail} setShowSignalDetail={setShowSignalDetail} isRealKline={isRealKline} />
+              <TechnicalIndicatorsPanel klines={klineData} />
+            </div>
+          </details>
         </div>
 
         {/* Right Column */}

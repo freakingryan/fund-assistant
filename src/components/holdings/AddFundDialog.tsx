@@ -190,8 +190,8 @@ export default function AddFundDialog() {
   // 查询 ETF 映射（仅映射，不补全基金信息）
   const handleEtfMappingLookup = async () => {
     const codesFromRows = rows.map((r) => r.code.trim()).filter(Boolean)
-    const searchCode = /^\d{6}$/.test(searchQuery.trim()) ? searchQuery.trim() : ''
-    const allCodes = [...new Set([...codesFromRows, ...(searchCode ? [searchCode] : [])])]
+    const localSearchCode = /^\d{6}$/.test(searchQuery.trim()) ? searchQuery.trim() : ''
+    const allCodes = [...new Set([...codesFromRows, ...(localSearchCode ? [localSearchCode] : [])])]
 
     if (allCodes.length === 0) { setError('请先输入或搜索基金代码'); return }
     setQueryLoading(true); setError('')

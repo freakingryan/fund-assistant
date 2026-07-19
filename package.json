@@ -7,7 +7,8 @@
     "dev": "NODE_OPTIONS=\"\" npx vite --host 0.0.0.0 --port 5173",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepare": "husky"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.13",
@@ -36,6 +37,7 @@
     "react-router-dom": "^7.17.0",
     "recharts": "^3.8.1",
     "stock-api": "^2.7.3",
+    "stock-sdk": "^2.4.0",
     "tailwind-merge": "^3.6.0",
     "xlsx": "^0.18.5",
     "zustand": "^5.0.14"
@@ -54,6 +56,7 @@
     "eslint-plugin-react-refresh": "^0.5.2",
     "eslint-plugin-unused-imports": "^4.4.1",
     "globals": "^17.6.0",
+    "husky": "^9.1.7",
     "postcss": "^8.5.15",
     "tailwindcss": "^4.3.1",
     "typescript": "~6.0.2",

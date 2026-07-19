@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { AppNotification, FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
+import type { ScoreSnapshot } from '@/services/backtest/types'
 
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, 'id'>
@@ -8,6 +9,7 @@ export class FundAssistantDB extends Dexie {
   settings!: EntityTable<UserSettings, 'id'>
   klineCache!: EntityTable<{ id: string; code: string; period: string; data: any[]; cachedAt: number }, 'id'>
   notifications!: EntityTable<AppNotification, 'id'>
+  scoreSnapshots!: EntityTable<ScoreSnapshot, 'id'>
 
   constructor() {
     super('FundAssistantDB')
@@ -31,6 +33,11 @@ export class FundAssistantDB extends Dexie {
     // v4: notifications — 应用内通知（铃铛浮窗）
     this.version(4).stores({
       notifications: 'id, createdAt, read',
+    })
+
+    // v5: scoreSnapshots — 每日收盘评分快照（回测验证）
+    this.version(5).stores({
+      scoreSnapshots: 'id, fundCode, date, asOfDate, recommendation, outcome',
     })
   }
 }
