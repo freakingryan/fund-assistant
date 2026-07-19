@@ -1,11 +1,15 @@
 import { useState, useCallback, useMemo } from 'react'
 import {
-  Plus, Trash2, Pencil, Search, RefreshCw, Loader2, X, Wand2,
+  Plus, Trash2, Pencil, Search, RefreshCw, Loader2, X, Wand2, AlertTriangle,
 } from 'lucide-react'
 import { useSettingsStore } from '@/stores/settings'
 import { useHoldingsStore } from '@/stores/holdings'
 import { dataSourceService } from '@/adapters/datasource/service'
-import { fetchEtfMapping, fetchEtfMappings } from '@/services/ai'
+import { fetchEtfMapping, fetchEtfMappings, recommendEtfMappingFix } from '@/services/ai'
+import type { EtfMappingRecommendation } from '@/services/ai'
+import { detectBrokenEtfMappings } from '@/services/etfMappingHealth'
+import type { EtfMappingHealth } from '@/services/etfMappingHealth'
+import { useEtfHealthStore } from '@/stores/etfHealth'
 import { toast } from '@/components/ui/toast'
 import {
   Card, CardContent, CardHeader, CardTitle, CardDescription,
@@ -46,6 +50,19 @@ function isActiveRow(r: Row): boolean {
   return !isOnExchangeEtfFund(r.name)
 }
 
+function ruleLabel(rule: EtfMappingRecommendation['rule']): string {
+  switch (rule) {
+    case 'same_company_same_index':
+      return '同公司同指数'
+    case 'same_index_diff_company':
+      return '同指数跨公司'
+    case 'theme_related':
+      return '仅主题相关'
+    default:
+      return '未知'
+  }
+}
+
 export default function EtfMappingManager() {
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
   const addEtfMapping = useSettingsStore((s) => s.addEtfMapping)
@@ -61,6 +78,16 @@ export default function EtfMappingManager() {
   const [refreshing, setRefreshing] = useState<number | null>(null)
   const [batchRunning, setBatchRunning] = useState(false)
   const [batchProgress, setBatchProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
+
+  // ETF 映射健康检测 + AI 推荐修复
+  const [health, setHealth] = useState<EtfMappingHealth[] | null>(null)
+  const [detecting, setDetecting] = useState(false)
+  const [detectProgress, setDetectProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
+  const [recommendations, setRecommendations] = useState<EtfMappingRecommendation[]>([])
+  const [recommending, setRecommending] = useState(false)
+  const [recProgress, setRecProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [editRecs, setEditRecs] = useState<Record<string, { code: string; name: string }>>({})
 
   // 合并：所有持仓（附其映射状态）+ 持仓中不存在的孤儿映射
   const rows = useMemo<Row[]>(() => {
@@ -276,6 +303,137 @@ export default function EtfMappingManager() {
     setCandidates([])
   }
 
+  const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
+
+  // 检测「K 线端点取数失败」的映射（映射错误）；正常项走缓存、不重复检测
+  const handleDetect = useCallback(async () => {
+    if (etfMappings.length === 0) {
+      toast({ type: 'info', message: '暂无映射可检测' })
+      return
+    }
+    setDetecting(true)
+    setDetectProgress({ done: 0, total: etfMappings.length })
+    try {
+      const result = await detectBrokenEtfMappings(etfMappings, {
+        onProgress: (d, t) => setDetectProgress({ done: d, total: t }),
+      })
+      setHealth(result.all)
+      if (result.broken.length === 0) {
+        toast({ type: 'success', message: `检测完成：全部 ${result.healthy.length} 条映射 K 线均可正常取数` })
+      } else {
+        toast({ type: 'warning', message: `检测到 ${result.broken.length} 条映射 K 线取数失败` })
+      }
+    } catch {
+      toast({ type: 'error', message: '检测失败' })
+    } finally {
+      setDetecting(false)
+    }
+  }, [etfMappings])
+
+  // 对检测到的错误映射，逐条调用 AI 推荐修正项（R1-R4 + 流动性预排序 + K 线验证）
+  const handleAiFix = useCallback(async () => {
+    const brokenList = (health ? health.filter((h) => !h.ok) : []).map((h) => ({
+      otcCode: h.otcCode,
+      otcName: h.otcName,
+      exchangeCode: h.exchangeCode,
+      exchangeName: h.exchangeName,
+    }))
+    if (brokenList.length === 0) {
+      toast({ type: 'info', message: '没有检测到错误的映射，无需修复' })
+      return
+    }
+    setRecommending(true)
+    setRecProgress({ done: 0, total: brokenList.length })
+    const recs: EtfMappingRecommendation[] = []
+    for (let i = 0; i < brokenList.length; i++) {
+      const rec = await recommendEtfMappingFix(brokenList[i])
+      if (rec) recs.push(rec)
+      setRecProgress({ done: i + 1, total: brokenList.length })
+      await wait(300)
+    }
+    setRecommendations(recs)
+    setEditRecs(
+      Object.fromEntries(
+        recs.map((r) => [r.otcCode, { code: r.recommendedExchangeCode, name: r.recommendedExchangeName }]),
+      ),
+    )
+    setRecommending(false)
+    setReviewOpen(true)
+    const failed = brokenList.length - recs.length
+    toast({
+      type: recs.length > 0 ? 'success' : 'error',
+      message: `AI 推荐完成：${recs.length} 条有建议${failed > 0 ? `，${failed} 条 AI 未给出` : ''}`,
+    })
+  }, [health])
+
+  const handleApplyRec = (otcCode: string) => {
+    const edit = editRecs[otcCode]
+    const rec = recommendations.find((r) => r.otcCode === otcCode)
+    if (!edit || !rec) return
+    const idx = etfMappings.findIndex((m) => m.otcCode === otcCode)
+    if (idx < 0) {
+      toast({ type: 'error', message: `未找到映射 ${otcCode}` })
+      return
+    }
+    updateEtfMapping(idx, {
+      otcCode,
+      otcName: rec.otcName,
+      exchangeCode: edit.code.trim(),
+      exchangeName: edit.name.trim() || edit.code.trim(),
+    })
+    // 仅当 AI 验证通过才记为健康；否则保留为错误待复查
+    useEtfHealthStore.getState().set(edit.code.trim(), rec.verified)
+    setHealth((prev) =>
+      prev
+        ? prev.map((h) =>
+            h.otcCode === otcCode
+              ? { ...h, exchangeCode: edit.code.trim(), exchangeName: edit.name.trim(), ok: rec.verified }
+              : h,
+          )
+        : prev,
+    )
+    toast({ type: 'success', message: `已更新 ${otcCode} → ${edit.code.trim()}` })
+  }
+
+  const handleApplyAll = () => {
+    const otcCodes = Object.keys(editRecs)
+    if (otcCodes.length === 0) return
+    let applied = 0
+    for (const otcCode of otcCodes) {
+      const edit = editRecs[otcCode]
+      const rec = recommendations.find((r) => r.otcCode === otcCode)
+      const idx = etfMappings.findIndex((m) => m.otcCode === otcCode)
+      if (!edit || !rec || idx < 0) continue
+      updateEtfMapping(idx, {
+        otcCode,
+        otcName: rec.otcName,
+        exchangeCode: edit.code.trim(),
+        exchangeName: edit.name.trim() || edit.code.trim(),
+      })
+      useEtfHealthStore.getState().set(edit.code.trim(), rec.verified)
+      applied++
+    }
+    setHealth((prev) =>
+      prev
+        ? prev.map((h) => {
+            const edit = editRecs[h.otcCode]
+            const rec = recommendations.find((r) => r.otcCode === h.otcCode)
+            return edit && rec
+              ? { ...h, exchangeCode: edit.code.trim(), exchangeName: edit.name.trim(), ok: rec.verified }
+              : h
+          })
+        : prev,
+    )
+    setReviewOpen(false)
+    toast({ type: 'success', message: `已应用 ${applied} 条推荐映射` })
+  }
+
+  // 检测结果为「K 线失败」的 exchangeCode 集合，用于表格红标
+  const brokenCodes = useMemo(
+    () => new Set((health || []).filter((h) => !h.ok).map((h) => h.exchangeCode)),
+    [health],
+  )
+
   const renderRow = (r: Row) => {
     const isEtf = r.kind !== 'orphan' && EXCHANGE_ETF_PREFIX.test(r.code)
     const isMapped = !!r.mapping
@@ -296,7 +454,9 @@ export default function EtfMappingManager() {
           {isEtf
             ? <Badge variant="secondary" className="text-[10px] text-muted-foreground">无需映射</Badge>
             : isMapped
-              ? <Badge variant="secondary" className="text-[10px] text-green-600">已映射</Badge>
+              ? brokenCodes.has(r.mapping.exchangeCode)
+                ? <Badge variant="destructive" className="text-[10px]">K线失败</Badge>
+                : <Badge variant="secondary" className="text-[10px] text-green-600">已映射</Badge>
               : <Badge variant="destructive" className="text-[10px]">未映射</Badge>}
         </TableCell>
         <TableCell>
@@ -368,6 +528,26 @@ export default function EtfMappingManager() {
                 ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />补全中 {batchProgress.done}/{batchProgress.total}</>
                 : <><Wand2 className="h-3 w-3 mr-1" />批量补全未映射{unmappedCount > 0 ? ` (${unmappedCount})` : ''}</>}
             </Button>
+            <Button
+              size="sm" className="h-7 text-xs"
+              variant="outline"
+              onClick={handleDetect}
+              disabled={detecting || etfMappings.length === 0}
+            >
+              {detecting
+                ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />检测中 {detectProgress.done}/{detectProgress.total}</>
+                : <><AlertTriangle className="h-3 w-3 mr-1" />检测错误映射</>}
+            </Button>
+            <Button
+              size="sm" className="h-7 text-xs"
+              variant="outline"
+              onClick={handleAiFix}
+              disabled={recommending || detecting || (health ? health.filter((h) => !h.ok).length === 0 : true)}
+            >
+              {recommending
+                ? <><Loader2 className="h-3 w-3 animate-spin mr-1" />推荐中 {recProgress.done}/{recProgress.total}</>
+                : <><Wand2 className="h-3 w-3 mr-1" />AI 推荐修复</>}
+            </Button>
             <Button size="sm" className="h-7 text-xs" onClick={openAdd}>
               <Plus className="h-3 w-3 mr-1" />新增映射
             </Button>
@@ -375,6 +555,15 @@ export default function EtfMappingManager() {
         </div>
       </CardHeader>
       <CardContent>
+        {health && health.some((h) => !h.ok) && (
+          <div className="mb-3 flex items-center gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              检测到 {health.filter((h) => !h.ok).length} 条映射 K 线取数失败（已在表格中红标「K线失败」）。
+              可点上方「AI 推荐修复」生成修正建议，审阅后应用。
+            </span>
+          </div>
+        )}
         {rows.length === 0 ? (
           <p className="text-xs text-muted-foreground py-6 text-center">
             暂无持仓，也无映射。导入持仓或新增基金会自动建立映射，也可在此手动添加。
@@ -495,6 +684,100 @@ export default function EtfMappingManager() {
             </Button>
             <Button size="sm" onClick={handleSave}>
               {editIndex === null ? '新增' : '保存'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reviewOpen} onOpenChange={(v) => { if (!v) setReviewOpen(false) }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>AI 推荐修复 ETF 映射（请审阅后应用）</DialogTitle>
+            <DialogDescription>
+              以下为检测到的错误映射及 AI 推荐修正项（按 R1 同公司同指数 → R2 同指数跨公司 → R3 仅主题相关 排序，并经 K 线端点验证）。
+              确认无误后点「应用」；可手动修改推荐代码/名称。
+            </DialogDescription>
+          </DialogHeader>
+
+          {recommendations.length === 0 ? (
+            <p className="text-xs text-muted-foreground py-6 text-center">
+              AI 未给出任何推荐（可能所有错误项都未匹配到合适的场内 ETF）。可手动编辑映射。
+            </p>
+          ) : (
+            <div className="border rounded-md overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[64px]">场外码</TableHead>
+                    <TableHead>场外名称</TableHead>
+                    <TableHead className="w-[78px]">当前(错误)</TableHead>
+                    <TableHead className="w-[104px]">推荐代码</TableHead>
+                    <TableHead>推荐名称</TableHead>
+                    <TableHead className="w-[96px]">规则/置信</TableHead>
+                    <TableHead className="w-[64px]">验证</TableHead>
+                    <TableHead className="w-[64px]">操作</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recommendations.map((r) => {
+                    const edit = editRecs[r.otcCode] || {
+                      code: r.recommendedExchangeCode,
+                      name: r.recommendedExchangeName,
+                    }
+                    return (
+                      <TableRow key={r.otcCode}>
+                        <TableCell className="text-xs font-mono">{r.otcCode}</TableCell>
+                        <TableCell className="text-xs">{r.otcName}</TableCell>
+                        <TableCell className="text-xs font-mono text-destructive">{r.currentExchangeCode}</TableCell>
+                        <TableCell>
+                          <Input
+                            value={edit.code}
+                            onChange={(e) =>
+                              setEditRecs((prev) => ({ ...prev, [r.otcCode]: { ...edit, code: e.target.value } }))
+                            }
+                            className="text-xs font-mono h-7 w-[92px]"
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={edit.name}
+                            onChange={(e) =>
+                              setEditRecs((prev) => ({ ...prev, [r.otcCode]: { ...edit, name: e.target.value } }))
+                            }
+                            className="text-xs h-7"
+                          />
+                        </TableCell>
+                        <TableCell className="text-[10px]">
+                          <div>{ruleLabel(r.rule)}</div>
+                          <div className="text-muted-foreground">置信 {(r.confidence * 100).toFixed(0)}%</div>
+                          {r.reason && (
+                            <div className="text-muted-foreground mt-0.5 max-w-[140px] leading-tight">{r.reason}</div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {r.verified
+                            ? <Badge variant="secondary" className="text-[10px] text-green-600">已验证</Badge>
+                            : <Badge variant="destructive" className="text-[10px]">未验证</Badge>}
+                        </TableCell>
+                        <TableCell>
+                          <Button size="sm" className="h-7 text-xs" onClick={() => handleApplyRec(r.otcCode)}>
+                            应用
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={() => setReviewOpen(false)}>
+              <X className="h-3 w-3 mr-1" />取消
+            </Button>
+            <Button size="sm" onClick={handleApplyAll} disabled={recommendations.length === 0}>
+              全部应用
             </Button>
           </div>
         </DialogContent>

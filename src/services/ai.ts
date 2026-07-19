@@ -442,6 +442,172 @@ export async function fetchEtfMappings(
   return { found, missing }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ETF 映射「修正」推荐：用于修复已配置但 K 线取数失败的映射
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface EtfMappingRecommendation {
+  otcCode: string
+  otcName: string
+  currentExchangeCode: string
+  currentExchangeName: string
+  recommendedExchangeCode: string
+  recommendedExchangeName: string
+  rule: 'same_company_same_index' | 'same_index_diff_company' | 'theme_related' | 'unknown'
+  reason: string
+  confidence: number // 0-1
+  verified: boolean // 推荐的 exchangeCode 经 K 线端点验证可取到有效数据
+  candidates?: { code: string; name: string; liquidity?: number }[]
+}
+
+const SIX_DIGIT = /^\d{6}$/
+// 基金公司字号（用于 R1「同公司」判定）；越长越优先匹配
+const COMPANY_PREFIXES = [
+  '西藏东财', '天弘', '华夏', '易方达', '广发', '南方', '富国', '嘉实', '博时', '招商',
+  '工银', '交银', '景顺', '汇添富', '鹏华', '国泰', '东财', '万家', '国联安', '银河',
+  '银华', '长信', '前海开源', '申万菱信', '信达澳亚', '中欧', '兴全', '兴证全球', '华宝',
+  '华安', '大成', '融通', '诺安', '建信', '中银', '国投瑞银', '泰康', '平安', '方正富邦',
+  '永赢', '财通', '创金合信', '华泰柏瑞', '国寿安保', '西部利得', '德邦', '中庚', '安信',
+  '诺德', '金鹰', '中海', '浙商', '北信瑞丰', '东兴', '华富', '长盛', '宝盈', '天治',
+  '民生加银', '弘毅远方', '圆信永丰', '华润元大', '新疆前海', '红土创新', '泰信', '益民',
+]
+const NAME_SUFFIXES = [
+  '发起式', '发起', 'ETF', '联接', '指数', '主题', '分级', 'LOF', '量化', '增强',
+  '收益', '证券', '投资基金', '混合型', '股票型', '债券型', '基金',
+  'A', 'B', 'C', 'D', 'E', 'I', 'O', 'F', 'H', 'R', 'Y',
+]
+
+/** 从场外基金名提取「主题/指数」关键词，用于腾讯搜索候选场内 ETF */
+function extractThemeKeyword(name: string): string {
+  let s = name || ''
+  for (const p of COMPANY_PREFIXES) {
+    if (s.startsWith(p)) { s = s.slice(p.length); break }
+  }
+  for (const suf of NAME_SUFFIXES) s = s.split(suf).join('')
+  s = s.replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '')
+  return s.trim() || name
+}
+
+/**
+ * 为「已配置但 K 线取数失败」的 ETF 映射推荐修正项。
+ *
+ * 流程：
+ * 1) 腾讯 searchStocks 搜候选场内 ETF → 取 K 线成交量作为流动性代理 → 按流动性从高到低排序；
+ * 2) 注入 R1-R4 规则让 LLM 终审，返回 recommendedExchangeCode/name/rule/reason/confidence；
+ * 3) 用 fetchEtfKLine 验证推荐码可取到有效数据 → verified。
+ *
+ * 注意：直接走 AI 规则路径（不再查数据源，因为当前映射已疑似错误）。
+ */
+export async function recommendEtfMappingFix(
+  mapping: { otcCode: string; otcName: string; exchangeCode: string; exchangeName: string },
+): Promise<EtfMappingRecommendation | null> {
+  const ai = getDefaultAI()
+  if (!ai) return null
+
+  // 1) 候选：腾讯搜索 + 流动性预排序（R2 代理）
+  const keyword = extractThemeKeyword(mapping.otcName)
+  let candidates: { code: string; name: string; liquidity?: number }[]
+  try {
+    const raw = await dataSourceService.searchStocks(keyword)
+    const filtered = (raw || [])
+      .map((r: { code?: string | number; name?: string }) => ({
+        code: String(r.code || '').replace(/^(SZ|SH)/i, ''),
+        name: String(r.name || ''),
+      }))
+      .filter(
+        (r) =>
+          SIX_DIGIT.test(r.code) &&
+          /ETF|基金|LOF|指数|联接|篮|份额|主题/i.test(r.name),
+      )
+    const withLiquidity = await Promise.all(
+      filtered.slice(0, 10).map(async (r) => {
+        try {
+          const k = await dataSourceService.fetchEtfKLine(r.code, '3m')
+          const liquidity =
+            k && k.length > 0
+              ? k.reduce((sum: number, b: { volume?: number }) => sum + (b.volume || 0), 0) / k.length
+              : 0
+          return { code: r.code, name: r.name, liquidity }
+        } catch {
+          return { code: r.code, name: r.name, liquidity: 0 }
+        }
+      }),
+    )
+    candidates = withLiquidity.sort((a, b) => (b.liquidity || 0) - (a.liquidity || 0))
+  } catch {
+    candidates = []
+  }
+
+  // 2) 构造 prompt（注入规则 R1-R4 + 候选 + 现有错误映射）
+  const prompt = `你是中国基金市场专家，负责为「场外开放式基金」修正其「对应场内 ETF」映射（映射错误会导致 K 线图无数据）。
+
+场外基金：
+- 代码：${mapping.otcCode}
+- 名称：${mapping.otcName}
+- 当前(疑似错误)映射的场内ETF：${mapping.exchangeCode} ${mapping.exchangeName}
+
+候选场内ETF（已按近期流动性从高到低排序；code=代码 name=名称 liquidity=近期平均成交量，越大越代表规模/流动性高）：
+${JSON.stringify(candidates)}
+
+选择规则（严格按优先级）：
+R1 同公司同指数(最强)：候选中「基金公司相同」(场外基金名与ETF名含同一公司字号，如"天弘")且「跟踪同一指数/主题」(主题关键词重叠最高) → 首选。
+R2 同指数跨公司：若无同公司候选，选「跟踪同一指数」的场内ETF（主题关键词完全匹配），按 liquidity 排序取最靠前。
+R3 仅主题相关(兜底)：无同指数候选时，选主题关键词重叠最多者，同样按 liquidity 优先。
+R4 真实性：你选的 exchangeCode 必须对应一个真实可交易的场内ETF；若候选里没有合适的，可基于你的知识补充一个最合理的（但必须真实存在且能被行情接口取到数据）。
+
+只输出严格 JSON（不要其他文字）：
+{
+  "recommendedExchangeCode": "6位代码",
+  "recommendedExchangeName": "ETF名称",
+  "rule": "same_company_same_index|same_index_diff_company|theme_related|unknown",
+  "reason": "依据的规则与判断，中文，≤60字",
+  "confidence": 0.0-1.0
+}`
+
+  // 3) 调用 LLM
+  let parsed: {
+    recommendedExchangeCode?: string
+    recommendedExchangeName?: string
+    rule?: EtfMappingRecommendation['rule']
+    reason?: string
+    confidence?: number
+  } | null = null
+  try {
+    const response = await callAI(ai, [{ role: 'user', content: prompt }])
+    const m = response.match(/\{[\s\S]*\}/)
+    if (m) parsed = JSON.parse(m[0])
+  } catch {
+    parsed = null
+  }
+  if (!parsed || !parsed.recommendedExchangeCode) return null
+
+  const recommendedExchangeCode = String(parsed.recommendedExchangeCode).replace(/^(SZ|SH)/i, '')
+  const recommendedExchangeName = String(parsed.recommendedExchangeName || recommendedExchangeCode)
+
+  // 4) 验证 K 线端点
+  let verified: boolean
+  try {
+    const k = await dataSourceService.fetchEtfKLine(recommendedExchangeCode, '3m')
+    verified = Array.isArray(k) && k.length > 0
+  } catch {
+    verified = false
+  }
+
+  return {
+    otcCode: mapping.otcCode,
+    otcName: mapping.otcName,
+    currentExchangeCode: mapping.exchangeCode,
+    currentExchangeName: mapping.exchangeName,
+    recommendedExchangeCode,
+    recommendedExchangeName,
+    rule: parsed.rule || 'unknown',
+    reason: String(parsed.reason || ''),
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0,
+    verified,
+    candidates,
+  }
+}
+
 /**
  * 测试 AI API 联通性
  */
