@@ -1,9 +1,9 @@
 name: Code Quality
 
+# 质量检查在 push 到 main 时由 deploy.yml 的 quality 作业统一跑（并链式门禁部署）。
+# 本工作流仅用于 PR 评审反馈与手动触发，避免重复运行。
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
   workflow_dispatch:
 
