@@ -49,6 +49,18 @@ export interface CapitalFlowBreakdownItem {
   northboundDeltaPct: number | null
 }
 
+/** 板块赛道强度聚合明细（单只重仓股/ETF 的贡献） */
+export interface SectorStrengthBreakdownItem {
+  symbol: string
+  name?: string
+  /** 占净值权重（0-1） */
+  weight: number
+  /** 所属行业板块当日平均涨跌幅(%)，null 表示未取得 */
+  industryChangePercent: number | null
+  /** 所属概念（赛道）板块当日平均涨跌幅(%)，null 表示未取得 */
+  conceptChangePercent: number | null
+}
+
 /**
  * 单日评分快照（主键 id = `${fundCode}-${date}`）
  */
@@ -90,6 +102,12 @@ export interface ScoreSnapshot {
   northboundScore?: number | null
   /** 资金面聚合明细（每只重仓股/ETF 的贡献） */
   capitalBreakdown?: CapitalFlowBreakdownItem[] | null
+
+  // ── 板块赛道强度（东财增强，门控；enabled=false 时为 null） ──
+  /** 综合板块赛道分（0-100）：行业+概念加权，来自重仓股/ETF 所属板块当日强度 */
+  sectorScore?: number | null
+  /** 板块赛道聚合明细（每只重仓股/ETF 所属板块的涨跌幅贡献） */
+  sectorBreakdown?: SectorStrengthBreakdownItem[] | null
 
   // ── 次日回填 ──
   nextDate: string | null

@@ -8,7 +8,8 @@
  *
  * 采集门禁：自动采集仅在工作日收盘后（本地 > 15:00）触发；手动采集随时可用。
  * 数据来源：有场内 ETF 映射的基金走腾讯真实 K 线（用户网络可达）；
- *          纯净值基金走东财（当前被网络硬阻断，需部署 Cloudflare Worker 后才可取数）。
+ *          纯净值基金走东财净值历史（用户网络已实测可达，无需 Worker）。
+ *          资金面 / 板块赛道等增强维度走东财，受「东财资金面增强」开关门控。
  *
  * @module backtest/decisionSnapshot
  */
@@ -23,6 +24,7 @@ import { db } from '@/stores/db'
 import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding, KLineData } from '@/types'
 import type { CaptureFailure, CaptureReport, CaptureSource, Outcome, Recommendation, ScoreSnapshot, ValueSource } from './types'
 import { analyzeFundCapitalFlow } from '@/services/capitalFlowAnalysis'
+import { analyzeFundSectorStrength } from '@/services/sectorStrengthAnalysis'
 
 /** 采集/回填所用 K 线周期：3 个月，足够指标（BIAS 等）计算 */
 const SNAPSHOT_PERIOD = '3m'
@@ -93,6 +95,8 @@ export async function captureSnapshotForFund(
 
   // 资金面间接分析（东财增强，门控；enabled=false 时返回 null 且不发东财请求）
   const capital = await analyzeFundCapitalFlow(fund, etfMappings, eastmoneyConfig).catch(() => null)
+  // 板块赛道强度间接分析（同门控）
+  const sector = await analyzeFundSectorStrength(fund, etfMappings, eastmoneyConfig).catch(() => null)
 
   const last = klines[klines.length - 1]
   const closeValue = typeof last?.close === 'number' ? last.close : null
@@ -126,6 +130,8 @@ export async function captureSnapshotForFund(
     capitalScore: capital?.capitalScore ?? null,
     northboundScore: capital?.northboundScore ?? null,
     capitalBreakdown: capital?.breakdown ?? null,
+    sectorScore: sector?.combinedScore ?? null,
+    sectorBreakdown: sector?.breakdown ?? null,
     nextDate: null,
     nextValue: null,
     nextChangePct: null,

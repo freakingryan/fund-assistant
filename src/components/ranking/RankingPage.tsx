@@ -40,6 +40,13 @@ function capitalTone(v: number | null | undefined): Tone | null {
   return 'neutral'
 }
 
+function sectorTone(v: number | null | undefined): Tone | null {
+  if (v == null) return null
+  if (v >= 60) return 'up'
+  if (v < 45) return 'down'
+  return 'neutral'
+}
+
 function fmtPct(v: number | null): string {
   if (v == null) return '-'
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
@@ -56,7 +63,7 @@ export default function RankingPage() {
   const [allSnapshots, setAllSnapshots] = useState<ScoreSnapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [sortBy, setSortBy] = useState<'score' | 'capital'>('score')
+  const [sortBy, setSortBy] = useState<'score' | 'capital' | 'sector'>('score')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [report, setReport] = useState<CaptureReport | null>(null)
 
@@ -105,7 +112,8 @@ export default function RankingPage() {
   }, [allSnapshots, holdings, todayKey])
 
   // 排序：综合评分降序（买入红在前），资金面分作 tie-break；
-  // 切换为「资金面分」时，以 capitalScore 为主、score 为辅（null 沉底）。
+  // 切换为「资金面分」时，以 capitalScore 为主、score 为辅（null 沉底）；
+  // 切换为「赛道分」时，以 sectorScore 为主、score 为辅（null 沉底）。
   const ranked = useMemo(() => {
     const arr = [...latestByFund]
     if (sortBy === 'capital') {
@@ -113,6 +121,14 @@ export default function RankingPage() {
         const ca = a.capitalScore ?? -Infinity
         const cb = b.capitalScore ?? -Infinity
         if (cb !== ca) return cb - ca
+        return b.score - a.score
+      })
+    }
+    if (sortBy === 'sector') {
+      return arr.sort((a, b) => {
+        const sa = a.sectorScore ?? -Infinity
+        const sb = b.sectorScore ?? -Infinity
+        if (sb !== sa) return sb - sa
         return b.score - a.score
       })
     }
@@ -145,6 +161,7 @@ export default function RankingPage() {
   }, [ranked])
 
   const hasCapital = ranked.some((s) => s.capitalScore != null)
+  const hasSector = ranked.some((s) => s.sectorScore != null)
 
   // 未纳入评分的持仓：无快照 → 可能数据源不可达（东财净值 / 腾讯ETF K线）或尚未采集
   const missingFunds = useMemo(() => {
@@ -201,7 +218,7 @@ export default function RankingPage() {
     )
   }
 
-  const cols = hasCapital ? 8 : 7
+  const cols = 7 + (hasCapital ? 1 : 0) + (hasSector ? 1 : 0)
 
   return (
     <div className="space-y-6">
@@ -296,11 +313,14 @@ export default function RankingPage() {
           <SortBtn active={sortBy === 'capital'} onClick={() => setSortBy('capital')}>
             资金面分
           </SortBtn>
+          <SortBtn active={sortBy === 'sector'} onClick={() => setSortBy('sector')}>
+            赛道分
+          </SortBtn>
         </div>
-        {!hasCapital && (
+        {!hasCapital && !hasSector && (
           <p className="text-[11px] text-muted-foreground flex items-center gap-1">
             <Info className="h-3 w-3" />
-            资金面分为空，到「设置 → 数据源」开启东财增强后可纳入排序
+            资金面分 / 赛道分为空，到「设置 → 数据源」开启东财增强后可纳入排序
           </p>
         )}
       </div>
@@ -334,6 +354,7 @@ export default function RankingPage() {
                     <th className="text-right font-medium py-1.5 px-2">综合评分</th>
                     <th className="text-left font-medium py-1.5 px-2">评级</th>
                     {hasCapital && <th className="text-right font-medium py-1.5 px-2">资金面分</th>}
+                    {hasSector && <th className="text-right font-medium py-1.5 px-2">赛道分</th>}
                     <th className="text-right font-medium py-1.5 px-2 w-6" />
                   </tr>
                 </thead>
@@ -343,6 +364,7 @@ export default function RankingPage() {
                     const holding = holdingMap.get(s.fundCode)
                     const ret = calcReturnPct(s, holding)
                     const cap = capitalTone(s.capitalScore)
+                    const sec = sectorTone(s.sectorScore)
                     const isOpen = expanded === s.id
                     const jumpId = holding?.id
                     return (
@@ -435,6 +457,30 @@ export default function RankingPage() {
                               )}
                             </td>
                           )}
+                          {hasSector && (
+                            <td
+                              className={`py-2 px-2 text-right font-mono ${
+                                sec
+                                  ? sec === 'up'
+                                    ? 'text-up'
+                                    : sec === 'down'
+                                    ? 'text-down'
+                                    : 'text-amber-500'
+                                  : 'text-muted-foreground'
+                              }`}
+                            >
+                              {s.sectorScore == null ? (
+                                <span
+                                  title="赛道分需开启「东财资金面增强」（设置 → 数据源）；按重仓股/ETF 所属行业·概念板块当日强度加权"
+                                  className="cursor-help"
+                                >
+                                  —
+                                </span>
+                              ) : (
+                                s.sectorScore.toFixed(0)
+                              )}
+                            </td>
+                          )}
                           <td className="py-2 px-2 text-right text-muted-foreground">
                             <ChevronDown
                               className={`h-4 w-4 inline transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -473,7 +519,7 @@ function SourceBadge({ snap }: { snap: ScoreSnapshot }) {
     : 'text-amber-500 border-amber-500/30 bg-amber-500/10'
   const tip = isEtf
     ? '评分基于场内 ETF 真实 K 线（腾讯源，当前网络可达），指标置信度高'
-    : '评分基于东财净值历史；若东财不可达，该基金将无法评分（纯净值基金需部署 Cloudflare Worker 后才可取数）'
+    : '评分基于东财净值历史；你当前网络已实测可直连东财，纯净值基金可正常评分'
   return (
     <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${cls}`} title={tip}>
       {label}
@@ -523,6 +569,25 @@ function ReasonBlock({ snap }: { snap: ScoreSnapshot }) {
         <p className="text-[10px] text-amber-500">
           基于净值走势（无盘中区间），指标置信度较低，建议切换 ETF 真实 K 线复核。
         </p>
+      )}
+      {snap.sectorBreakdown && snap.sectorBreakdown.length > 0 && (
+        <div>
+          <div className="text-[11px] font-medium text-muted-foreground mb-1">板块赛道贡献（按重仓股权重）</div>
+          <div className="flex flex-wrap gap-1.5">
+            {snap.sectorBreakdown.map((b, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-border/40 bg-muted/40"
+                title={`行业 ${fmtPct(b.industryChangePercent)} · 概念 ${fmtPct(b.conceptChangePercent)}（权重 ${(b.weight * 100).toFixed(0)}%）`}
+              >
+                <span className="font-medium truncate max-w-[90px]">{b.name || b.symbol}</span>
+                <span className={b.industryChangePercent != null && b.industryChangePercent >= 0 ? 'text-up' : 'text-down'}>
+                  {fmtPct(b.industryChangePercent)}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )

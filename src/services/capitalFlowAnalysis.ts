@@ -20,8 +20,8 @@
  * @module capitalFlowAnalysis
  */
 
-import StockSDK from 'stock-sdk'
 import { dataSourceService } from '@/adapters/datasource/service'
+import { buildEastmoneySdk } from '@/services/eastmoneySdk'
 import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding } from '@/types'
 import type { CapitalFlowBreakdownItem } from '@/services/backtest/types'
 
@@ -36,27 +36,6 @@ export interface CapitalFlowResult {
   combinedScore: number | null
   breakdown: CapitalFlowBreakdownItem[]
   fetchedAt: number
-}
-
-const EASTMONEY_HOST_RE = /^https?:\/\/([^/?#]+\.)*eastmoney\.com/i
-
-/** 构建带可选 Worker 代理的 StockSDK 实例 */
-function buildCapitalFlowSdk(config: EastmoneyDataSourceConfig): StockSDK {
-  if (config.mode === 'proxy' && config.proxyUrl) {
-    const proxyBase = config.proxyUrl.replace(/\/+$/, '')
-    const proxyFetch: typeof fetch = async (input, init) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.href
-            : (input as Request).url
-      const rewritten = EASTMONEY_HOST_RE.test(url) ? url.replace(EASTMONEY_HOST_RE, proxyBase) : url
-      return fetch(rewritten, init)
-    }
-    return new StockSDK({ fetchImpl: proxyFetch } as any)
-  }
-  return new StockSDK()
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -110,7 +89,7 @@ export async function analyzeFundCapitalFlow(
   }
   if (units.length === 0) return null
 
-  const sdk = buildCapitalFlowSdk(config)
+  const sdk = buildEastmoneySdk(config)
   const breakdown: CapitalFlowBreakdownItem[] = []
 
   for (const unit of units) {
