@@ -30,5 +30,15 @@ if [ -n "$STAGED_FILES" ]; then
 fi
 echo "✅ [pre-commit] ESLint 检查通过"
 
+# 检查生产构建（与 CI 对齐，拦截会破坏构建的改动）
+echo "📦 [pre-commit] 生产构建检查..."
+NODE_OPTIONS="" npx vite build
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "❌ [pre-commit] 生产构建失败！请修复后重新提交。"
+  exit $EXIT_CODE
+fi
+echo "✅ [pre-commit] 生产构建通过"
+
 echo "🎉 [pre-commit] 全部检查通过，提交继续..."
 exit 0

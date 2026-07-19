@@ -161,7 +161,7 @@ export default function EditFundDialog({ fund, open, onOpenChange }: Props) {
           toast({ type: 'warning', message: `查询 ETF 映射失败：${code.trim()}` })
         }
       } else {
-        const m = etfMappings.find((m) => m.otcCode === code.trim())
+        const m = etfMappings.find((mapping) => mapping.otcCode === code.trim())
         if (m) {
           setExchangeCode(m.exchangeCode)
           setExchangeName(m.exchangeName)

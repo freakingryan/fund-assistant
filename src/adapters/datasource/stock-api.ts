@@ -580,7 +580,7 @@ export class StockApiAdapter implements FundDataSource {
         }
       }
 
-      const uniqueThematicKeywords = [...kwSet].filter((s) => s.length >= 2)
+      const uniqueThematicKeywords = [...kwSet].filter((kw) => kw.length >= 2)
 
       try {
         const stocksList = (await s.auto.getStocks(apiCodes)) as StockWithAmount[]

@@ -23,7 +23,6 @@ const defaultSettings: UserSettings = {
     lastAutoPush: null,
     lastAutoPushAttempt: null,
   },
-  preloadKline: true,
 }
 
 interface SettingsState {

@@ -21,14 +21,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import type { EtfMapping } from '@/types'
+import { isOnExchangeEtfFund } from '@/lib/fundCategory'
 
 // 场内 ETF 代码段（这类持仓本身就是可交易品种，无需再做场外→场内映射）
 const EXCHANGE_ETF_PREFIX = /^(51|159|56|58|16)/
 const OTC_CODE = /^\d{6}$/
-
-// 名称含 ETF 或 指数 视为被动/指数型；两者皆无为主动型，
-// 主动型不参与批量补全、统一排在表格末尾。
-const NAME_PASS = /ETF|指数/
 
 interface Draft {
   otcCode: string
@@ -43,9 +40,10 @@ type Row =
   | { kind: 'holding'; code: string; name: string; mapping: EtfMapping | null; mappingIndex: number | null }
   | { kind: 'orphan'; code: string; name: string; mapping: EtfMapping; mappingIndex: number }
 
-// 主动型：名称既不含 ETF 也不含 指数（如普通主动股票/混合基金）
+// 主动型：名称未含 ETF/指数（如普通主动股票/混合基金）；其余归为「场内 ETF 类」。
+// 复用 fundCategory 的 isOnExchangeEtfFund 作为唯一分类来源。
 function isActiveRow(r: Row): boolean {
-  return !NAME_PASS.test(r.name)
+  return !isOnExchangeEtfFund(r.name)
 }
 
 export default function EtfMappingManager() {

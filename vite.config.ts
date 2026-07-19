@@ -16,7 +16,7 @@ export default defineConfig(({ command }) => ({
         target: 'https://fundf10.eastmoney.com',
         changeOrigin: true,
         headers: { Referer: 'https://fundf10.eastmoney.com/' },
-        rewrite: (path) => path.replace(/^\/fundf10/, ''),
+        rewrite: (p) => p.replace(/^\/fundf10/, ''),
       },
     },
   },

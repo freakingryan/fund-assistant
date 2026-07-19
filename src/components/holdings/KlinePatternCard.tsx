@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { KLineData } from '@/types'
 import type { DetectedPattern } from '@/services/klinePatterns'
 import type { KlineAnalysisResult } from '@/services/klineAnalysis'
-import { getPatternLabel } from '@/services/klinePatterns'
+import { getPatternDisplayName } from '@/services/klinePatterns'
+import { pnlColor } from '@/lib/format'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Loader2, BrainCircuit, MessageSquareText, Sparkles, CircleSlash } from 'lucide-react'
@@ -39,6 +40,22 @@ export default function KlinePatternCard({
   isRealKline = true, etfCode = null, loading = false, etfKlineError = null, onSwitchToRealKline,
 }: Props) {
   const [glossaryOpen, setGlossaryOpen] = useState(false)
+
+  // 触摸设备识别：无 hover 能力且指针为粗指（手机/平板）→ 用「点击切换」tooltip；
+  // 桌面（有 hover）→ 用「悬停显示」tooltip。
+  const isTouch =
+    typeof window !== 'undefined' &&
+    window.matchMedia('(hover: none) and (pointer: coarse)').matches
+  // 当前展开的 tooltip 对应的 K 线索引（null = 全部收起）
+  const [openTip, setOpenTip] = useState<number | null>(null)
+
+  // 触摸模式下，点击记录外部区域关闭 tooltip（点击记录本身已在 onClick 中 stopPropagation）
+  useEffect(() => {
+    if (openTip === null || !isTouch) return
+    const handler = () => setOpenTip(null)
+    const t = setTimeout(() => document.addEventListener('click', handler, { once: true }), 120)
+    return () => { clearTimeout(t); document.removeEventListener('click', handler) }
+  }, [openTip, isTouch])
 
   // 非真实 K 线模式：
   //  - 正在加载真实 K 线 → 显示「加载中」，避免用旧的净值数据（无 OHLC）误判为十字星；
@@ -112,12 +129,15 @@ export default function KlinePatternCard({
                 .sort((a, b) => b.index - a.index)
                 .map((p, i) => {
                   const isHighlighted = hoveredKlineIndex === p.index || selectedKlineIndex === p.index
+                  const tipKline = klineData[p.index]
+                  const tipStart = p.isMultiCandle && p.candleCount > 1 ? klineData[p.index - p.candleCount + 1] : null
+                  const tipChange = tipKline && tipKline.open ? ((tipKline.close - tipKline.open) / tipKline.open) * 100 : 0
                   return (
                     <div key={`${p.type}-${p.index}-${i}`}
-                      className={`flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors cursor-pointer ${isHighlighted ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
-                      onMouseEnter={() => onPatternHover?.(p.index)}
-                      onMouseLeave={() => onPatternHover?.(null)}
-                      onClick={(e) => { e.stopPropagation(); onPatternSelect?.(p.index) }}
+                      className={`relative flex items-center gap-2 text-xs px-2 py-1 rounded transition-colors cursor-pointer ${isHighlighted ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-muted/40'}`}
+                      onMouseEnter={() => { onPatternHover?.(p.index); if (!isTouch) setOpenTip(p.index) }}
+                      onMouseLeave={() => { onPatternHover?.(null); if (!isTouch) setOpenTip(null) }}
+                      onClick={(e) => { e.stopPropagation(); onPatternSelect?.(p.index); if (isTouch) setOpenTip((prev) => (prev === p.index ? null : p.index)) }}
                     >
                       <span className={`shrink-0 px-1 py-0.5 rounded text-[10px] font-medium ${
                         p.direction === 'bullish'
@@ -126,13 +146,46 @@ export default function KlinePatternCard({
                             ? 'bg-down/10 text-down'
                             : 'bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
                       }`}>
-                        {getPatternLabel([p], p.index) || p.type}
+                        {getPatternDisplayName(p) || p.type}
                       </span>
                       <span className="text-muted-foreground text-[10px] shrink-0">{klineData[p.index]?.date || ''}</span>
                       <span className="text-muted-foreground truncate flex-1 min-w-0">{p.description}</span>
                       <span className="text-[10px] text-muted-foreground shrink-0">
                         {p.isMultiCandle ? `${p.candleCount}K` : '单K'} · {(p.confidence * 100).toFixed(0)}%
                       </span>
+
+                      {/* 完整信息 tooltip：桌面悬停 / 触摸点击切换 */}
+                      {openTip === p.index && tipKline && (
+                        <div className="absolute z-50 left-2 right-2 bottom-full mb-1 rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-2 text-[10px] leading-relaxed">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="font-medium">{getPatternDisplayName(p)}</span>
+                            <span className={`px-1 py-0.5 rounded text-[9px] ${
+                              p.direction === 'bullish' ? 'bg-up/10 text-up'
+                                : p.direction === 'bearish' ? 'bg-down/10 text-down'
+                                  : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                            }`}>
+                              {p.direction === 'bullish' ? '看涨' : p.direction === 'bearish' ? '看跌' : '中性'}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground mb-1">{p.description}</p>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                            <span>日期：{tipKline.date}</span>
+                            <span>置信度：{(p.confidence * 100).toFixed(0)}%</span>
+                            <span>开：{tipKline.open.toFixed(3)}</span>
+                            <span>收：{tipKline.close.toFixed(3)}</span>
+                            <span>高：{tipKline.high.toFixed(3)}</span>
+                            <span>低：{tipKline.low.toFixed(3)}</span>
+                            <span className={pnlColor(tipChange)}>涨跌：{tipChange >= 0 ? '+' : ''}{tipChange.toFixed(2)}%</span>
+                            <span>量：{tipKline.volume.toLocaleString()}</span>
+                          </div>
+                          {p.isMultiCandle && tipStart && (
+                            <p className="text-muted-foreground mt-1">
+                              组合区间：{tipStart.date} ~ {tipKline.date}（{p.candleCount} 根 K 线）
+                            </p>
+                          )}
+                          {isTouch && <p className="text-[9px] text-muted-foreground/70 mt-1">点击其他区域关闭</p>}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

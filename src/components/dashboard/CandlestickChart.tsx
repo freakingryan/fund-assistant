@@ -143,7 +143,7 @@ export default function CandlestickChart({
     const candleWidth = Math.max(3, stepX * 0.6)
     const scaleY = (v: number) => MARGIN.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
 
-    const candles = data.map((d, i) => {
+    const computedCandles = data.map((d, i) => {
       const cx = MARGIN.left + i * stepX
       const o = scaleY(d.open)
       const c = scaleY(d.close)
@@ -153,7 +153,7 @@ export default function CandlestickChart({
       return { d, cx, o, c, hi, lo, isUp, candleWidth }
     })
 
-    return { yScale: { min: yMin, max: yMax }, candles }
+    return { yScale: { min: yMin, max: yMax }, candles: computedCandles }
   }, [data, chartWidth, chartHeight])
 
   const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data])

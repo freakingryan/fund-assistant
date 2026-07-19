@@ -646,20 +646,6 @@ export default function SettingsPage() {
                   onCheckedChange={(v) => updateSettings({ sync: { ...settings.sync, autoPush: v } })}
                 />
               </div>
-
-              <Separator className="my-3" />
-              <div className="flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <Label className="text-xs">后台预取 K 线</Label>
-                  <p className="text-[10px] text-muted-foreground">
-                    应用打开时静默预热有 ETF 映射基金的 K 线缓存，进入详情页/切换基金无需等待加载
-                  </p>
-                </div>
-                <Switch
-                  checked={!!settings.preloadKline}
-                  onCheckedChange={(v) => updateSettings({ preloadKline: v })}
-                />
-              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -505,8 +505,8 @@ export function getPatternLabel(patterns: DetectedPattern[], index: number): str
   return PATTERN_LABELS[best.type] || best.type
 }
 
-/** 中英文形态标签映射（用于图表显示） */
-const PATTERN_LABELS: Partial<Record<KlinePattern, string>> = {
+/** 单 K 线形态中文标签（用于图表/列表显示） */
+const PATTERN_LABELS: Partial<Record<SingleCandlePattern, string>> = {
   doji: '十字星',
   long_legged_doji: '长十字',
   t_line: 'T字线',
@@ -521,4 +521,23 @@ const PATTERN_LABELS: Partial<Record<KlinePattern, string>> = {
   upper_shadow_yin: '上影阴',
   small_yang: '小阳线',
   small_yin: '小阴线',
+}
+
+/** 多 K 线组合形态中文标签 */
+const MULTI_PATTERN_LABELS: Partial<Record<MultiCandlePattern, string>> = {
+  bullish_engulfing: '看涨吞没',
+  bearish_engulfing: '看跌吞没',
+  morning_star: '晨星',
+  evening_star: '暮星',
+  three_white_soldiers: '三连阳',
+  three_black_crows: '三连阴',
+}
+
+/**
+ * 获取某条检测结果的统一中文显示名（同时支持单 K 与组合形态）。
+ * 用于形态列表与 hover tooltip，避免组合形态回退到原始英文 type。
+ */
+export function getPatternDisplayName(p: DetectedPattern): string {
+  if (p.isMultiCandle) return MULTI_PATTERN_LABELS[p.type as MultiCandlePattern] || p.type
+  return PATTERN_LABELS[p.type as SingleCandlePattern] || p.type
 }

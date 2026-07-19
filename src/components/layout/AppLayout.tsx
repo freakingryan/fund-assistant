@@ -5,6 +5,7 @@ import {
   TrendingUp,
   Bell,
   Settings,
+  Target,
   Menu,
   X,
   LineChart,
@@ -58,6 +59,7 @@ const navItems = [
   { to: '/detail', icon: LineChart, label: '基金详情' },
   { to: '/plans', icon: TrendingUp, label: '投资计划' },
   { to: '/notifications', icon: Bell, label: '通知' },
+  { to: '/backtest', icon: Target, label: '评分回测' },
   { to: '/settings', icon: Settings, label: '设置' },
 ]
 

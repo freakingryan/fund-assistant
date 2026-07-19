@@ -69,7 +69,7 @@ export default function QuickAdjustDialog({ fund, open, onOpenChange }: Props) {
           const fromCache = cached?.quotes?.find((q) => q.code === fund.code)
           if (fromCache?.nav) { setLatestNAV(fromCache.nav); setNavLoading(false); return }
           const quotes = await dataSourceService.fetchQuotes([fund.code])
-          const q = quotes.find((q) => q.code === fund.code)
+          const q = quotes.find((quote) => quote.code === fund.code)
           if (q?.nav) setLatestNAV(q.nav)
         } catch { /* ignore */ }
         setNavLoading(false)
