@@ -17,7 +17,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { toast } from '@/components/ui/toast'
 import { autoClassify } from '@/lib/classification'
 import { extractFundInfoFromImage, getDefaultAI, fetchEtfMappings } from '@/services/ai'
-import { fetchFundCodeByName } from '@/adapters/datasource/jsonp-utils'
+import { fetchFundCodeByName, completeFundName } from '@/adapters/datasource/jsonp-utils'
 import { fetchFundQuoteWithFallback } from '@/adapters/datasource/stock-api'
 import type { Market, FundType, FundSector } from '@/types'
 import { TYPE_LABELS, MARKET_LABELS } from '@/lib/labels'
@@ -193,7 +193,11 @@ export default function ImportDialog() {
       const parsed: ParsedRow[] = []; const errs: string[] = []
       for (let i = 0; i < data.length; i++) {
         const n = normalizeRow(data[i])
-        if (n) { parsed.push(n) } else { errs.push(`第 ${i + 1} 行缺少基金代码或名称`) }
+        if (n) {
+          // CSV/Excel 一般名称完整，但仍补全可能被截断的名称（仅疑似截断才查接口）
+          try { n.name = await completeFundName(n.name) } catch { /* 失败则用原名 */ }
+          parsed.push(n)
+        } else { errs.push(`第 ${i + 1} 行缺少基金代码或名称`) }
       }
       if (parsed.length === 0) { setErrors(['没有解析到有效数据']); return }
       await validateAndPreview(parsed, errs)
@@ -219,14 +223,19 @@ export default function ImportDialog() {
       // 截图常缺基金代码（京东金融/支付宝等），按名称反查 6 位代码，使导入后可用行情
       let resolvedCount = 0
       const enriched = await Promise.all(result.holdings.map(async (h) => {
+        // 先补全可能被截图 UI 截断的名称（如 “…ETF发起…” → “…ETF联接C”）
+        let name = h.name
+        try {
+          name = await completeFundName(h.name)
+        } catch { /* 补全失败则用原名 */ }
         let code = h.code
-        if (!code && h.name) {
+        if (!code && name) {
           try {
-            const found = await fetchFundCodeByName(h.name)
+            const found = await fetchFundCodeByName(name)
             if (found) { code = found.code; resolvedCount++ }
           } catch { /* 解析失败则保留空码，导入后由用户手动补全 */ }
         }
-        return { ...h, code }
+        return { ...h, name, code }
       }))
       const parsed: ParsedRow[] = enriched.map((h) => {
         const auto = autoClassify(h.code, h.name)

@@ -170,15 +170,18 @@ export interface FundCodeCandidate {
   code: string
   name: string
   score: number // 0-1，越大越匹配
+  fundType?: string
+  category?: number
 }
 
-/** 常见基金公司前缀，用于同公司加分 */
+/** 常见基金公司前缀，用于同公司加分（含国海富兰克林） */
 const COMPANY_PREFIXES = [
   '天弘', '华夏', '易方达', '华泰柏瑞', '建信', '嘉实', '南方', '广发', '博时', '富国',
   '招商', '汇添富', '鹏华', '工银', '中银', '华安', '国泰', '大成', '银华', '华宝',
   '景顺', '中欧', '兴全', '交银', '光大', '银河', '民生', '中信', '平安', '国寿',
   '申万', '东吴', '方正', '长信', '华富', '浙商', '农银', '上投', '泰信', '诺安',
   '融通', '万家', '中邮', '国投', '前海', '长城', '海富通', '金鹰', '新华', '宝盈',
+  '国海富兰克林',
 ]
 
 /** 编辑距离 */
@@ -204,17 +207,29 @@ function levenshtein(a: string, b: string): number {
   return prev[n]
 }
 
-/** 计算候选名称与关键词的匹配分数（0-1） */
-function calcNameMatchScore(keyword: string, candidateName: string): number {
-  const k = keyword.trim()
-  const c = candidateName.trim()
+/** 清洗基金名称，用于匹配（去掉通用词、份额、括号等） */
+function cleanFundNameForMatch(name: string): string {
+  return name
+    .replace(/[（(].*?[）)]/g, '')
+    .replace(/\s+/g, '')
+    .replace(/主题指数|指数基金|指数|主题/g, '')
+    .replace(/中证/g, '')
+    .replace(/发起式|发起|ETF|联接|连接|人民币|美元|现汇|现钞|QDII|FOF/g, '')
+    .replace(/混合|股票|债券/g, '')
+    .replace(/[ACE](?:类|份额)?$/g, '')
+    .trim()
+}
+
+/** 计算两个字符串的相似分数（0-1） */
+function calcStrScore(keyword: string, candidateName: string): number {
+  const k = cleanFundNameForMatch(keyword)
+  const c = cleanFundNameForMatch(candidateName)
   if (!k || !c) return 0
   if (k === c) return 1
 
-  // 互相包含：高置信，但需避免“电力”匹配“绿发电力”这种短关键词命中
-  // 如果候选名称是查询词的子串且长度>3，或查询词是候选名称的子串，给较高分
-  if (k.includes(c) && c.length > 3) return 0.92
-  if (c.includes(k) && k.length > 3) return 0.9
+  // 互相包含：高置信，但需避免短关键词误命中（如“电力”匹配“绿发电力”）
+  if (k.includes(c) && c.length > 3) return 0.94
+  if (c.includes(k) && k.length > 3) return 0.92
 
   // 编辑距离归一化
   const dist = levenshtein(k, c)
@@ -229,24 +244,52 @@ function calcNameMatchScore(keyword: string, candidateName: string): number {
   const union = setK.size + setC.size - inter
   const jaccard = union > 0 ? inter / union : 0
 
+  return Math.min(0.95, editScore * 0.55 + jaccard * 0.45)
+}
+
+/** 计算候选与关键词的匹配分数，综合考虑 NAME / SHORTNAME / OTHERNAME 等别名 */
+function calcNameMatchScore(keyword: string, candidate: any): number {
+  const k = keyword.trim()
+  if (!k) return 0
+
+  const baseInfo = candidate?.FundBaseInfo || {}
+  const aliases = [
+    candidate?.NAME,
+    candidate?.SHORTNAME,
+    baseInfo?.SHORTNAME,
+    baseInfo?.OTHERNAME,
+  ].filter(Boolean) as string[]
+
   // 同公司前缀加分
   let companyBonus = 0
   for (const p of COMPANY_PREFIXES) {
-    if (k.startsWith(p) && c.startsWith(p)) {
+    if (k.startsWith(p) && aliases.some((a) => a.trim().startsWith(p))) {
       companyBonus = 0.08
       break
     }
   }
 
-  // 混合分数：编辑距离对顺序敏感，Jaccard 对字符集合敏感
-  return Math.min(0.95, editScore * 0.55 + jaccard * 0.45 + companyBonus)
+  let best = 0
+  for (const raw of aliases) {
+    const score = calcStrScore(keyword, raw)
+    if (score > best) best = score
+    // OTHERNAME 是逗号分隔的别名，分别评分
+    if (raw.includes(',')) {
+      for (const part of raw.split(',')) {
+        const partScore = calcStrScore(keyword, part)
+        if (partScore > best) best = partScore
+      }
+    }
+  }
+
+  return Math.min(1, best + companyBonus)
 }
 
 /**
  * 通过基金名称/关键词反查 6 位基金代码（东方财富基金搜索 JSONP），返回候选列表。
  *
- * 接口：fundsuggest.eastmoney.com（支持 callback 参数，JSONP 跨域可用）。
- * 返回按匹配分数排序的候选数组，无匹配或失败返回空数组。
+ * 使用 m=9（只搜索基金），避免 m=1 全市场搜索把股票/指数/美股当作基金返回。
+ * 过滤 CATEGORY=700（基金）的结果，并综合 NAME/SHORTNAME/OTHERNAME 打分。
  */
 export async function fetchFundCodeByNameCandidates(
   name: string,
@@ -265,13 +308,16 @@ export async function fetchFundCodeByNameCandidates(
       cleanup()
       try {
         const datas: any[] = data?.Datas || []
-        if (datas.length > 0) {
-          const scored = datas
-            .filter((d) => d?.CODE && /^\d{6}$/.test(String(d.CODE)))
+        // CATEGORY=700 才是基金（股票/指数/美股等其它类别需过滤）
+        const funds = datas.filter((d) => d?.CATEGORY === 700 && d?.CODE && /^\d{6}$/.test(String(d.CODE)))
+        if (funds.length > 0) {
+          const scored = funds
             .map((d) => ({
               code: String(d.CODE),
               name: String(d.NAME || keyword),
-              score: calcNameMatchScore(keyword, String(d.NAME || '')),
+              score: calcNameMatchScore(keyword, d),
+              fundType: d?.FundBaseInfo?.FTYPE,
+              category: d?.CATEGORY,
             }))
             .filter((d) => d.score > 0.35)
             .sort((a, b) => b.score - a.score)
@@ -282,10 +328,90 @@ export async function fetchFundCodeByNameCandidates(
       resolve([])
     }
     script.onerror = () => { cleanup(); resolve([]) }
-    script.src = `${FUNDSUGGEST_BASE}/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
+    script.src = `${FUNDSUGGEST_BASE}/FundSearch/api/FundSearchAPI.ashx?m=9&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
     document.head.appendChild(script)
     setTimeout(() => { cleanup(); resolve([]) }, timeout)
   })
+}
+
+/** 从基金名称中识别末尾 A/C/E 份额后缀（如 "A类" / "C" / "E份额"） */
+function extractShareClass(name: string): string {
+  const n = name
+    .replace(/[（(].*?[）)]/g, '')
+    .replace(/\s+/g, '')
+  const m = n.match(/([ACE])(?:类|份额)?$/)
+  return m ? m[1] : ''
+}
+
+/** 按份额后缀重新排序候选：同份额优先，无份额其次，不同份额最后 */
+function sortByShareClass(candidates: FundCodeCandidate[], shareClass: string): FundCodeCandidate[] {
+  if (!shareClass || candidates.length <= 1) return candidates
+  const rank = (name: string) => {
+    const cls = extractShareClass(name)
+    if (cls === shareClass) return 2
+    if (!cls) return 1
+    return 0
+  }
+  return [...candidates].sort((a, b) => {
+    const ra = rank(a.name)
+    const rb = rank(b.name)
+    if (ra !== rb) return rb - ra
+    return b.score - a.score
+  })
+}
+
+/** 无明确份额时默认 C 类优先（C > E > A > 无份额），同等级按匹配分数降序 */
+export function preferCClass(candidates: FundCodeCandidate[]): FundCodeCandidate[] {
+  const rank = (name: string) => {
+    const cls = extractShareClass(name)
+    if (cls === 'C') return 3
+    if (cls === 'E') return 2
+    if (cls === 'A') return 1
+    return 0
+  }
+  return [...candidates].sort((a, b) => {
+    const ra = rank(a.name)
+    const rb = rank(b.name)
+    if (ra !== rb) return rb - ra
+    return b.score - a.score
+  })
+}
+
+/** 判断基金名称是否疑似被截断（截图识别常见：结尾不完整或带省略号） */
+function isLikelyTruncated(name: string): boolean {
+  const n = name.trim()
+  if (!n) return false
+  // 1) 以省略号结尾
+  if (/[…．.]{1,}$/.test(n)) return true
+  // 2) 以不完整的基金后缀词结尾（说明被 App UI 截断）
+  const tails = [
+    '发起', '联接', '联接发', 'ETF联', '主题指数', '指数', '基金',
+    '混合', '股票', '债券', 'QDII', 'FOF', '人民币', '美元', '现汇', '现钞',
+    '中证', '产业', '行业', '主题',
+  ]
+  if (tails.some((t) => n.endsWith(t))) return true
+  // 3) 名称明显偏短（< 10 字）且不以 A/C/E 份额结尾
+  if (n.length < 10 && !/[ACE]$/.test(n)) return true
+  return false
+}
+
+/**
+ * 补全被截断的基金名称（截图识别时 App UI 常截断长名称，如
+ * “永赢国证商用卫星通信产业ETF发起…” 应为 “永赢国证商用卫星通信产业ETF联接C”）。
+ * 仅对「疑似截断」的名称查接口：取分数高且名称更长的候选作为补全结果；否则返回原名称。
+ */
+export async function completeFundName(name: string, timeout = 10000): Promise<string> {
+  const n = (name || '').trim()
+  if (n.length < 4) return n
+  if (!isLikelyTruncated(n)) return n
+  try {
+    const candidates = await fetchFundCodeByNameCandidates(n, timeout)
+    // 取 score 高且名称比原名称更长的候选（说明原名称确实被截断）
+    const better = candidates.find((c) => c.score >= 0.7 && c.name.length > n.length)
+    return better ? better.name : n
+  } catch {
+    return n
+  }
 }
 
 /**
@@ -295,14 +421,20 @@ export async function fetchFundCodeByNameCandidates(
  * 导入后无法获取行情。此函数按名称反查真实代码，使持仓可用（行情/K线/收益）。
  *
  * 接口：fundsuggest.eastmoney.com（支持 callback 参数，JSONP 跨域可用）。
- * 返回第一个匹配结果 { code, name }，无匹配或失败返回 null。
+ * 返回第一个高置信候选 { code, name }，无匹配或失败返回 null。
+ * 份额处理：
+ * - 名称明确带 A/C/E 份额后缀 → 优先返回同份额候选，避免 C 类被反查成 A 类；
+ * - 名称未明确份额（如被截断）→ 默认返回 C 类（C > E > A > 无份额）。
  */
 export async function fetchFundCodeByName(name: string, timeout = 10000): Promise<{ code: string; name: string } | null> {
   const keyword = (name || '').trim()
   if (keyword.length < 2) return null
   const candidates = await fetchFundCodeByNameCandidates(keyword, timeout)
-  // 只取高置信候选（>=0.75）作为最佳结果；否则认为名称反查不可靠，返回 null
-  const best = candidates[0]
-  if (best && best.score >= 0.75) return { code: best.code, name: best.name }
+  const shareClass = extractShareClass(name)
+  // 明确份额 → 同份额优先；未明确份额 → 默认 C 类优先
+  const ranked = shareClass ? sortByShareClass(candidates, shareClass) : preferCClass(candidates)
+  const best = ranked[0]
+  // 高置信候选（>=0.6）才采用；否则认为名称反查不可靠，返回 null
+  if (best && best.score >= 0.6) return { code: best.code, name: best.name }
   return null
 }
