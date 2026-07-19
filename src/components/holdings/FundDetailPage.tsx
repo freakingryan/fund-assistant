@@ -23,6 +23,7 @@ import KlinePatternCard from '@/components/holdings/KlinePatternCard'
 import SignalScoreCard from '@/components/holdings/SignalScoreCard'
 import { TechnicalIndicatorsPanel } from '@/components/holdings/TechnicalIndicatorsPanel'
 import { DecisionAdvisorCard } from '@/components/holdings/DecisionAdvisorCard'
+import FundRankHistoryCard from '@/components/holdings/FundRankHistoryCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { captureSnapshotForFund } from '@/services/backtest/decisionSnapshot'
 import { pnlColor, formatSigned } from '@/lib/format'
@@ -557,6 +558,9 @@ export default function FundDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* 同类排名走势（东财增强，门控） */}
+          <FundRankHistoryCard code={fund.code} config={eastmoneyConfig} />
 
           {/* Prompt 模板 */}
           <Card>

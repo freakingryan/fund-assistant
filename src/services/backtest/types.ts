@@ -109,6 +109,14 @@ export interface ScoreSnapshot {
   /** 板块赛道聚合明细（每只重仓股/ETF 所属板块的涨跌幅贡献） */
   sectorBreakdown?: SectorStrengthBreakdownItem[] | null
 
+  // ── 同类排名（东财增强，门控；enabled=false 时为 null） ──
+  /** 同类近三月排名百分位(%)，越小越好（前 X%）；来自东财 fund.rankHistory 最新点 */
+  rankPercentile?: number | null
+  /** 同类近三月排名名次（越小越靠前） */
+  rankValue?: number | null
+  /** 同类基金总数 */
+  rankTotal?: number | null
+
   // ── 次日回填 ──
   nextDate: string | null
   nextValue: number | null

@@ -8,16 +8,18 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Trophy, Camera, Loader2, TrendingUp, TrendingDown, Info, ChevronDown, AlertTriangle } from 'lucide-react'
+import { Trophy, Camera, Loader2, TrendingUp, TrendingDown, Info, ChevronDown, AlertTriangle, HelpCircle } from 'lucide-react'
 import { getAllSnapshots, captureDailySnapshots, getLatestCaptureReport, localDateKey } from '@/services/backtest/decisionSnapshot'
 import type { CaptureReport, ScoreSnapshot } from '@/services/backtest/types'
 import type { Rating } from '@/services/decision/types'
 import { useHoldingsStore } from '@/stores/holdings'
+import { useSettingsStore } from '@/stores/settings'
 import type { FundHolding } from '@/types'
 import { TYPE_LABELS } from '@/lib/labels'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toast'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 
 type Tone = 'up' | 'down' | 'neutral'
 
@@ -47,6 +49,14 @@ function sectorTone(v: number | null | undefined): Tone | null {
   return 'neutral'
 }
 
+/** 同类排名百分位色调：越小越好（前 25% 红 / 后 50% 绿 / 中间黄） */
+function rankTone(v: number | null | undefined): Tone | null {
+  if (v == null) return null
+  if (v <= 25) return 'up'
+  if (v > 50) return 'down'
+  return 'neutral'
+}
+
 function fmtPct(v: number | null): string {
   if (v == null) return '-'
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
@@ -63,13 +73,15 @@ export default function RankingPage() {
   const [allSnapshots, setAllSnapshots] = useState<ScoreSnapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [sortBy, setSortBy] = useState<'score' | 'capital' | 'sector'>('score')
+  const [sortBy, setSortBy] = useState<'score' | 'capital' | 'sector' | 'rank'>('score')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [report, setReport] = useState<CaptureReport | null>(null)
 
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const navigate = useNavigate()
+  const eastmoneyEnabled = useSettingsStore((s) => s.settings.dataSource.eastmoney.enabled)
+  const loadSettings = useSettingsStore((s) => s.loadSettings)
 
   const load = useCallback(async () => {
     const [data, rep] = await Promise.all([getAllSnapshots(), getLatestCaptureReport()])
@@ -80,9 +92,10 @@ export default function RankingPage() {
 
   useEffect(() => {
     loadHoldings()
+    loadSettings()
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load().catch(() => setLoading(false))
-  }, [loadHoldings, load])
+  }, [loadHoldings, loadSettings, load])
 
   // 每只基金取最新一次快照
   const latestByFund = useMemo(() => {
@@ -111,12 +124,28 @@ export default function RankingPage() {
     return { total, covered, missing: Math.max(0, total - covered) }
   }, [allSnapshots, holdings, todayKey])
 
+  // 维度可用性仅取决于数据本身（与排序无关），用 latestByFund 避免与 ranked 形成依赖环
+  const hasCapital = latestByFund.some((s) => s.capitalScore != null)
+  const hasSector = latestByFund.some((s) => s.sectorScore != null)
+  const hasRank = latestByFund.some((s) => s.rankPercentile != null)
+
+  // 选中维度若已无数据（如东财关闭 / 快照被清空），effectiveSort 自动回退到综合评分，
+  // 既保证“无数据维度无法被选中”，也避免按钮同时呈现“选中 + 禁用”的冲突态。
+  const effectiveSort: 'score' | 'capital' | 'sector' | 'rank' =
+    sortBy === 'capital' && !hasCapital
+      ? 'score'
+      : sortBy === 'sector' && !hasSector
+      ? 'score'
+      : sortBy === 'rank' && !hasRank
+      ? 'score'
+      : sortBy
+
   // 排序：综合评分降序（买入红在前），资金面分作 tie-break；
   // 切换为「资金面分」时，以 capitalScore 为主、score 为辅（null 沉底）；
   // 切换为「赛道分」时，以 sectorScore 为主、score 为辅（null 沉底）。
   const ranked = useMemo(() => {
     const arr = [...latestByFund]
-    if (sortBy === 'capital') {
+    if (effectiveSort === 'capital') {
       return arr.sort((a, b) => {
         const ca = a.capitalScore ?? -Infinity
         const cb = b.capitalScore ?? -Infinity
@@ -124,11 +153,20 @@ export default function RankingPage() {
         return b.score - a.score
       })
     }
-    if (sortBy === 'sector') {
+    if (effectiveSort === 'sector') {
       return arr.sort((a, b) => {
         const sa = a.sectorScore ?? -Infinity
         const sb = b.sectorScore ?? -Infinity
         if (sb !== sa) return sb - sa
+        return b.score - a.score
+      })
+    }
+    if (effectiveSort === 'rank') {
+      // 同类排名百分位越小越好 → 升序，null 沉底；同值以综合评分为辅
+      return arr.sort((a, b) => {
+        const ra = a.rankPercentile ?? Infinity
+        const rb = b.rankPercentile ?? Infinity
+        if (ra !== rb) return ra - rb
         return b.score - a.score
       })
     }
@@ -138,7 +176,7 @@ export default function RankingPage() {
       const cb = b.capitalScore ?? -Infinity
       return cb - ca
     })
-  }, [latestByFund, sortBy])
+  }, [latestByFund, effectiveSort])
 
   const stats = useMemo(() => {
     let buy = 0
@@ -159,9 +197,6 @@ export default function RankingPage() {
       avg: ranked.length ? Math.round(scoreSum / ranked.length) : 0,
     }
   }, [ranked])
-
-  const hasCapital = ranked.some((s) => s.capitalScore != null)
-  const hasSector = ranked.some((s) => s.sectorScore != null)
 
   // 未纳入评分的持仓：无快照 → 可能数据源不可达（东财净值 / 腾讯ETF K线）或尚未采集
   const missingFunds = useMemo(() => {
@@ -186,7 +221,7 @@ export default function RankingPage() {
     try {
       const n = await captureDailySnapshots({ force: true })
       await load()
-      if (n > 0) toast({ type: 'success', message: `已补全 ${n} 只今日评分` })
+      if (n > 0) toast({ type: 'success', message: `已更新 ${n} 只今日评分（含增强维度回填）` })
       else toast({ type: 'info', message: '今日评分已全部就绪' })
     } catch {
       toast({ type: 'error', message: '采集失败' })
@@ -218,7 +253,7 @@ export default function RankingPage() {
     )
   }
 
-  const cols = 7 + (hasCapital ? 1 : 0) + (hasSector ? 1 : 0)
+  const cols = 7 + (hasCapital ? 1 : 0) + (hasSector ? 1 : 0) + (hasRank ? 1 : 0)
 
   return (
     <div className="space-y-6">
@@ -303,24 +338,84 @@ export default function RankingPage() {
         </Card>
       )}
 
-      {/* 排序切换 + 资金面提示 */}
+      {/* 排序切换 + 增强维度提示 */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1">
-          <span className="text-xs text-muted-foreground mr-1">排序：</span>
-          <SortBtn active={sortBy === 'score'} onClick={() => setSortBy('score')}>
+          <span className="text-xs text-muted-foreground mr-1 flex items-center gap-1">
+            排序：
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-3.5 w-3.5 opacity-60 cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px] text-left leading-relaxed">
+                鼠标悬停每个排序按钮，查看其含义与排序方向（前三个分数越高越靠前；同类排名百分位越小越靠前）。
+              </TooltipContent>
+            </Tooltip>
+          </span>
+          <SortBtn active={effectiveSort === 'score'} onClick={() => setSortBy('score')} desc={
+            <>
+              <div className="font-semibold mb-0.5">综合评分</div>
+              <div>决策引擎技术面综合分（趋势 / 乖离 / 动量 / 量能 / MACD / 形态）。</div>
+              <div>排序：分数<b className="font-semibold">从高到低</b>，高分=偏买入排前、低分=减仓靠后；同分按资金面分兜底。</div>
+            </>
+          }>
             综合评分
           </SortBtn>
-          <SortBtn active={sortBy === 'capital'} onClick={() => setSortBy('capital')}>
+          <SortBtn
+            active={effectiveSort === 'capital'}
+            disabled={!hasCapital}
+            hint={eastmoneyEnabled ? '今日快照暂无资金面数据，点「更新今日评分」回填' : '开启东财增强后可用'}
+            onClick={() => hasCapital && setSortBy('capital')}
+            desc={
+              <>
+                <div className="font-semibold mb-0.5">资金面分</div>
+                <div>重仓股 / ETF 的主力资金净流入 + 北向资金，加权聚合（0–100）。</div>
+                <div>排序：分数<b className="font-semibold">从高到低</b>，资金越净流入越靠前。</div>
+                <div className="opacity-80">需开启东财增强；无数据沉底。</div>
+              </>
+            }
+          >
             资金面分
           </SortBtn>
-          <SortBtn active={sortBy === 'sector'} onClick={() => setSortBy('sector')}>
+          <SortBtn
+            active={effectiveSort === 'sector'}
+            disabled={!hasSector}
+            hint={eastmoneyEnabled ? '今日快照暂无赛道数据，点「更新今日评分」回填' : '开启东财增强后可用'}
+            onClick={() => hasSector && setSortBy('sector')}
+            desc={
+              <>
+                <div className="font-semibold mb-0.5">赛道分</div>
+                <div>重仓股所属行业 + 概念板块当日涨跌幅，按持仓权重加权（0–100）。</div>
+                <div>排序：分数<b className="font-semibold">从高到低</b>，踩中强势板块排前。</div>
+                <div className="opacity-80">需开启东财增强；无数据沉底。</div>
+              </>
+            }
+          >
             赛道分
           </SortBtn>
+          <SortBtn
+            active={effectiveSort === 'rank'}
+            disabled={!hasRank}
+            hint={eastmoneyEnabled ? '今日快照暂无同类排名数据，点「更新今日评分」回填' : '开启东财增强后可用'}
+            onClick={() => hasRank && setSortBy('rank')}
+            desc={
+              <>
+                <div className="font-semibold mb-0.5">同类排名</div>
+                <div>东财官方同类近三月排名百分位（0–100，<b className="font-semibold">越小越好</b>）。</div>
+                <div>排序：百分位<b className="font-semibold">从小到大</b>，前 12% 排最前、后 50% 沉底。</div>
+                <div className="opacity-80">需开启东财增强；无数据沉底。</div>
+              </>
+            }
+          >
+            同类排名
+          </SortBtn>
         </div>
-        {!hasCapital && !hasSector && (
+        {(!hasCapital || !hasSector || !hasRank) && (
           <p className="text-[11px] text-muted-foreground flex items-center gap-1">
             <Info className="h-3 w-3" />
-            资金面分 / 赛道分为空，到「设置 → 数据源」开启东财增强后可纳入排序
+            {eastmoneyEnabled
+              ? '资金面 / 赛道 / 同类排名暂无数据，点「更新今日评分」回填（已开启东财增强）'
+              : '资金面 / 赛道 / 同类排名需到「设置 → 数据源」开启东财增强后才会采集'}
           </p>
         )}
       </div>
@@ -355,6 +450,7 @@ export default function RankingPage() {
                     <th className="text-left font-medium py-1.5 px-2">评级</th>
                     {hasCapital && <th className="text-right font-medium py-1.5 px-2">资金面分</th>}
                     {hasSector && <th className="text-right font-medium py-1.5 px-2">赛道分</th>}
+                    {hasRank && <th className="text-right font-medium py-1.5 px-2">同类排名</th>}
                     <th className="text-right font-medium py-1.5 px-2 w-6" />
                   </tr>
                 </thead>
@@ -365,6 +461,7 @@ export default function RankingPage() {
                     const ret = calcReturnPct(s, holding)
                     const cap = capitalTone(s.capitalScore)
                     const sec = sectorTone(s.sectorScore)
+                    const rnk = rankTone(s.rankPercentile)
                     const isOpen = expanded === s.id
                     const jumpId = holding?.id
                     return (
@@ -481,6 +578,39 @@ export default function RankingPage() {
                               )}
                             </td>
                           )}
+                          {hasRank && (
+                            <td
+                              className={`py-2 px-2 text-right font-mono ${
+                                rnk
+                                  ? rnk === 'up'
+                                    ? 'text-up'
+                                    : rnk === 'down'
+                                    ? 'text-down'
+                                    : 'text-amber-500'
+                                  : 'text-muted-foreground'
+                              }`}
+                            >
+                              {s.rankPercentile == null ? (
+                                <span
+                                  title="同类排名需开启「东财资金面增强」（设置 → 数据源）；取东财同类近三月排名百分位，越小越好"
+                                  className="cursor-help"
+                                >
+                                  —
+                                </span>
+                              ) : (
+                                <span
+                                  title={
+                                    s.rankValue != null && s.rankTotal != null
+                                      ? `同类近三月第 ${s.rankValue}/${s.rankTotal} 名（前 ${s.rankPercentile.toFixed(1)}%）`
+                                      : `同类近三月排名百分位 ${s.rankPercentile.toFixed(1)}%（越小越好）`
+                                  }
+                                  className="cursor-help"
+                                >
+                                  前{s.rankPercentile.toFixed(0)}%
+                                </span>
+                              )}
+                            </td>
+                          )}
                           <td className="py-2 px-2 text-right text-muted-foreground">
                             <ChevronDown
                               className={`h-4 w-4 inline transition-transform ${isOpen ? 'rotate-180' : ''}`}
@@ -565,6 +695,17 @@ function ReasonBlock({ snap }: { snap: ScoreSnapshot }) {
           )}
         </div>
       </div>
+      {snap.rankPercentile != null && (
+        <p className="text-[11px] text-muted-foreground">
+          同类排名：
+          <span className={rankTone(snap.rankPercentile) === 'up' ? 'text-up' : rankTone(snap.rankPercentile) === 'down' ? 'text-down' : 'text-amber-500'}>
+            前 {snap.rankPercentile.toFixed(1)}%
+          </span>
+          {snap.rankValue != null && snap.rankTotal != null && (
+            <span className="ml-1">（同类近三月第 {snap.rankValue}/{snap.rankTotal} 名）</span>
+          )}
+        </p>
+      )}
       {snap.lowConfidence && (
         <p className="text-[10px] text-amber-500">
           基于净值走势（无盘中区间），指标置信度较低，建议切换 ETF 真实 K 线复核。
@@ -627,23 +768,47 @@ function Stat({
 
 function SortBtn({
   active,
+  disabled,
+  hint,
+  desc,
   onClick,
   children,
 }: {
   active: boolean
+  disabled?: boolean
+  hint?: string
+  desc?: ReactNode
   onClick: () => void
   children: ReactNode
 }) {
-  return (
+  const btn = (
     <button
       onClick={onClick}
-      className={`text-xs px-2 py-1 rounded border transition-colors ${
+      disabled={disabled}
+      title={disabled ? hint : undefined}
+      className={`text-xs px-2 py-1 rounded border transition-colors flex items-center gap-1 ${
         active
           ? 'bg-primary text-primary-foreground border-primary'
+          : disabled
+          ? 'bg-muted/20 text-muted-foreground/50 border-border/30 cursor-not-allowed'
           : 'bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted'
       }`}
     >
       {children}
+      {desc && <HelpCircle className="h-3 w-3 opacity-60" />}
+      {disabled && hint && <span className="ml-0.5 text-[10px] opacity-70">（暂无）</span>}
     </button>
+  )
+  if (!desc) return btn
+  // 用 span 包裹，确保按钮 disabled 时仍能悬停触发 tooltip
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={disabled ? 'inline-flex cursor-not-allowed' : 'inline-flex'}>{btn}</span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[260px] text-left leading-relaxed">
+        {desc}
+      </TooltipContent>
+    </Tooltip>
   )
 }

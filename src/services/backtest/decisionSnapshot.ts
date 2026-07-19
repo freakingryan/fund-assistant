@@ -25,6 +25,7 @@ import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding, KLineData } fr
 import type { CaptureFailure, CaptureReport, CaptureSource, Outcome, Recommendation, ScoreSnapshot, ValueSource } from './types'
 import { analyzeFundCapitalFlow } from '@/services/capitalFlowAnalysis'
 import { analyzeFundSectorStrength } from '@/services/sectorStrengthAnalysis'
+import { fetchFundRankHistory } from '@/services/fundRankHistory'
 
 /** 采集/回填所用 K 线周期：3 个月，足够指标（BIAS 等）计算 */
 const SNAPSHOT_PERIOD = '3m'
@@ -97,6 +98,8 @@ export async function captureSnapshotForFund(
   const capital = await analyzeFundCapitalFlow(fund, etfMappings, eastmoneyConfig).catch(() => null)
   // 板块赛道强度间接分析（同门控）
   const sector = await analyzeFundSectorStrength(fund, etfMappings, eastmoneyConfig).catch(() => null)
+  // 同类排名走势（东财增强，同门控；取最新百分位点）
+  const rankHist = await fetchFundRankHistory(fund.code, eastmoneyConfig).catch(() => null)
 
   const last = klines[klines.length - 1]
   const closeValue = typeof last?.close === 'number' ? last.close : null
@@ -132,6 +135,9 @@ export async function captureSnapshotForFund(
     capitalBreakdown: capital?.breakdown ?? null,
     sectorScore: sector?.combinedScore ?? null,
     sectorBreakdown: sector?.breakdown ?? null,
+    rankPercentile: rankHist?.latest?.percentile ?? null,
+    rankValue: rankHist?.latest?.rank ?? null,
+    rankTotal: rankHist?.latest?.total ?? null,
     nextDate: null,
     nextValue: null,
     nextChangePct: null,
@@ -180,7 +186,17 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
     const id = `${fund.code}-${date}`
     // 缓存联动：已有当日快照则跳过（除非显式 reevaluate）
     const existing = reevaluate ? null : await db.scoreSnapshots.get(id)
-    if (existing) continue
+    if (existing) {
+      // 东财增强开启后：已存在但缺少增强维度（资金面/赛道/同类排名）的旧快照需要回填，
+      // 否则「更新今日评分」会因缓存跳过而永远不补，导致增强排序形同虚设。
+      const eastEnabled = eastmoneyConfig.enabled
+      const missingEnhanced =
+        eastEnabled &&
+        existing.capitalScore == null &&
+        existing.sectorScore == null &&
+        existing.rankPercentile == null
+      if (!missingEnhanced) continue
+    }
     // 该基金评分所依赖的主数据源：有 ETF 映射走腾讯真实 K 线，否则走东财净值历史
     const etfCode = etfMappings.find((m) => m.otcCode === fund.code)?.exchangeCode || null
     const source: CaptureSource = etfCode ? 'tencent' : 'eastmoney'
