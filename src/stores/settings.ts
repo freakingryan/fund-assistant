@@ -3,6 +3,26 @@ import { db } from './db'
 import { deleteEtfMappingCache } from '@/services/klineCache'
 import type { UserSettings } from '@/types'
 
+/** 普通对象判断（用于深合并嵌套配置） */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+/**
+ * 深合并设置：对嵌套普通对象逐层合并，用于兼容旧版本持久化数据。
+ * 旧数据若缺失嵌套字段（如 dataSource 缺 eastmoney），用默认值补齐，
+ * 防止浅合并 `saved.dataSource:{}` 直接覆盖默认对象导致运行时读取 undefined 崩溃。
+ */
+function deepMergeSettings<T>(base: T, override: Partial<T>): T {
+  const out: Record<string, unknown> = { ...(base as Record<string, unknown>) }
+  for (const k of Object.keys(override)) {
+    const ov = (override as Record<string, unknown>)[k]
+    const bv = (base as Record<string, unknown>)[k]
+    out[k] = isPlainObject(ov) && isPlainObject(bv) ? deepMergeSettings(bv, ov) : ov
+  }
+  return out as T
+}
+
 const defaultSettings: UserSettings = {
   theme: 'system',
   aiConfigs: [],
@@ -23,6 +43,13 @@ const defaultSettings: UserSettings = {
     lastAutoPush: null,
     lastAutoPushAttempt: null,
   },
+  dataSource: {
+    eastmoney: {
+      enabled: false,
+      mode: 'direct',
+      proxyUrl: '',
+    },
+  },
 }
 
 interface SettingsState {
@@ -37,6 +64,7 @@ interface SettingsState {
   addEtfMapping: (otcCode: string, otcName: string, exchangeCode: string, exchangeName: string) => Promise<void>
   updateEtfMapping: (index: number, mapping: { otcCode: string; otcName: string; exchangeCode: string; exchangeName: string }) => Promise<void>
   removeEtfMapping: (index: number) => Promise<void>
+  updateDataSource: (dataSource: Partial<UserSettings['dataSource']>) => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -48,7 +76,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const saved = await db.settings.get('user-settings')
       if (saved) {
-        set({ settings: { ...defaultSettings, ...saved }, loading: false })
+        // 深合并补齐旧版本持久化数据缺失的嵌套字段（如 dataSource.eastmoney），
+        // 并回写归一化后的设置，避免后续加载再次因浅合并覆盖而崩溃。
+        const merged = deepMergeSettings(defaultSettings, saved as Partial<UserSettings>)
+        await db.settings.put({ ...merged, id: 'user-settings' })
+        set({ settings: merged, loading: false })
       } else {
         await db.settings.put({ ...defaultSettings, id: 'user-settings' })
         set({ settings: defaultSettings, loading: false })
@@ -120,6 +152,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const target = current.etfMappings[index]
     if (target) await deleteEtfMappingCache(target.otcCode)
     const updated = { ...current, etfMappings: current.etfMappings.filter((_, i) => i !== index) }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
+  },
+
+  updateDataSource: async (dataSource) => {
+    const current = get().settings
+    const updated = { ...current, dataSource: { ...current.dataSource, ...dataSource } }
     await db.settings.put({ ...updated, id: 'user-settings' })
     set({ settings: updated })
   },

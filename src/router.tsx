@@ -10,6 +10,7 @@ import PromptsPage from '@/components/prompts/PromptsPage'
 import NotificationsPage from '@/components/settings/NotificationsPage'
 import SettingsPage from '@/components/settings/SettingsPage'
 import BacktestPage from '@/components/backtest/BacktestPage'
+import RankingPage from '@/components/ranking/RankingPage'
 
 export const router = createBrowserRouter(
   [
@@ -26,6 +27,7 @@ export const router = createBrowserRouter(
         { path: 'prompts', element: <PromptsPage /> },
         { path: 'notifications', element: <NotificationsPage /> },
         { path: 'backtest', element: <BacktestPage /> },
+        { path: 'ranking', element: <RankingPage /> },
         { path: 'settings', element: <SettingsPage /> },
       ],
     },

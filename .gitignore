@@ -38,3 +38,6 @@ __pycache__/
 *.pyc
 aktools_env/
 *.log
+
+# Planning scratch (skills)
+.task/

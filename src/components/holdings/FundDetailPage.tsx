@@ -46,6 +46,7 @@ export default function FundDetailPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
   const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
+  const eastmoneyConfig = useSettingsStore((s) => s.settings.dataSource.eastmoney)
   const alerts = usePlansStore((s) => s.alerts)
   const loadAlerts = usePlansStore((s) => s.loadAlerts)
 
@@ -180,7 +181,7 @@ export default function FundDetailPage() {
     if (!fund) return
     setCapturingScore(true)
     try {
-      const snap = await captureSnapshotForFund(fund, etfMappings)
+      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig)
       if (snap) {
         toast({ type: 'success', message: `已记录 ${fund.name || fund.code} 今日评分（${snap.score}）` })
       } else {
@@ -190,7 +191,7 @@ export default function FundDetailPage() {
       toast({ type: 'error', message: '评分快照记录失败' })
     }
     setCapturingScore(false)
-  }, [fund, etfMappings])
+  }, [fund, etfMappings, eastmoneyConfig])
 
   // ─── K 线数据加载 ─────────────────────────────
   useEffect(() => {
@@ -463,6 +464,9 @@ export default function FundDetailPage() {
       <EditFundDialog fund={fund} open={editOpen} onOpenChange={setEditOpen} />
       <QuickAdjustDialog fund={fund} open={adjustOpen} onOpenChange={setAdjustOpen} />
 
+      {/* 智能决策建议：紧随持仓信息，独占整行 */}
+      <DecisionAdvisorCard klines={klineData} patterns={klineDetectedPatterns} signalResult={signalResult} isRealKline={isRealKline} />
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-4">
@@ -493,7 +497,6 @@ export default function FundDetailPage() {
             etfKlineError={etfKlineError}
             onSwitchToRealKline={() => { setEtfKlineError(null); setKlineRefreshKey((k) => k + 1); setUseEtfKline(true) }}
           />
-          <DecisionAdvisorCard klines={klineData} patterns={klineDetectedPatterns} signalResult={signalResult} isRealKline={isRealKline} />
           <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
               <span className="inline-block transition-transform group-open:rotate-90">▶</span>分析明细（综合评分 / 技术指标 / 形态）

@@ -20,8 +20,9 @@ import { computeStockSdkIndicators } from '@/services/stockSdkIndicators'
 import { evaluateStrategies } from '@/services/strategyLayer'
 import { buildDecision } from '@/services/decision/decisionEngine'
 import { db } from '@/stores/db'
-import type { EtfMapping, FundHolding, KLineData } from '@/types'
-import type { Outcome, Recommendation, ScoreSnapshot, ValueSource } from './types'
+import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding, KLineData } from '@/types'
+import type { CaptureFailure, CaptureReport, CaptureSource, Outcome, Recommendation, ScoreSnapshot, ValueSource } from './types'
+import { analyzeFundCapitalFlow } from '@/services/capitalFlowAnalysis'
 
 /** 采集/回填所用 K 线周期：3 个月，足够指标（BIAS 等）计算 */
 const SNAPSHOT_PERIOD = '3m'
@@ -67,6 +68,7 @@ export function computeOutcome(rec: Recommendation, pct: number): Outcome {
 export async function captureSnapshotForFund(
   fund: FundHolding,
   etfMappings: EtfMapping[],
+  eastmoneyConfig: EastmoneyDataSourceConfig,
 ): Promise<ScoreSnapshot | null> {
   const etfCode = etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null
 
@@ -88,6 +90,9 @@ export async function captureSnapshotForFund(
   const strategies = evaluateStrategies(klines, ind)
   const isRealKline = valueSource === 'etf'
   const decision = buildDecision({ klines, patterns, signalResult, ind, strategies, lowConfidence: !isRealKline })
+
+  // 资金面间接分析（东财增强，门控；enabled=false 时返回 null 且不发东财请求）
+  const capital = await analyzeFundCapitalFlow(fund, etfMappings, eastmoneyConfig).catch(() => null)
 
   const last = klines[klines.length - 1]
   const closeValue = typeof last?.close === 'number' ? last.close : null
@@ -118,6 +123,9 @@ export async function captureSnapshotForFund(
     summary: decision.summary,
     closeValue,
     valueSource,
+    capitalScore: capital?.capitalScore ?? null,
+    northboundScore: capital?.northboundScore ?? null,
+    capitalBreakdown: capital?.breakdown ?? null,
     nextDate: null,
     nextValue: null,
     nextChangePct: null,
@@ -130,12 +138,25 @@ export async function captureSnapshotForFund(
   return snapshot
 }
 
+export interface CaptureOptions {
+  /** 为 true 时忽略收盘门禁（手动触发随时可用）；默认遵守工作日 15:00 后自动采集 */
+  force?: boolean
+  /** 为 true 时忽略“当日已存在快照”的缓存跳过，强制重评全部持仓（覆盖旧结果） */
+  reevaluate?: boolean
+}
+
 /**
- * 为全部持仓补采当日评分快照（跳过已有记录）。
- * @param force 为 true 时忽略收盘门禁（手动触发）
- * @returns 本次新建的快照数量
+ * 为全部持仓补采当日评分快照。
+ * 默认与本地缓存联动：当日已存在快照的基金直接跳过，只补缺失项，不重复发请求。
+ * 调用方：
+ *   - App 自动采集：force=false，遵守收盘门禁
+ *   - 排行榜/回测页手动按钮：force=true 随时可触发；reevaluate=true 时强制重评全部
+ * @returns 本次新建或覆盖的快照数量
  */
-export async function captureDailySnapshots(force = false): Promise<number> {
+export async function captureDailySnapshots(opts: CaptureOptions | boolean = false): Promise<number> {
+  const force = typeof opts === 'boolean' ? opts : opts.force ?? false
+  const reevaluate = typeof opts === 'boolean' ? false : opts.reevaluate ?? false
+
   const now = new Date()
   if (!force && !isMarketClosed(now)) return 0
 
@@ -144,22 +165,48 @@ export async function captureDailySnapshots(force = false): Promise<number> {
     db.settings.toArray(),
   ])
   const etfMappings = settingsList[0]?.etfMappings || []
+  const eastmoneyConfig = settingsList[0]?.dataSource?.eastmoney || { enabled: false, mode: 'proxy', proxyUrl: '' }
   const date = localDateKey(now)
 
   let created = 0
+  const failures: CaptureFailure[] = []
   for (const fund of holdings) {
     const id = `${fund.code}-${date}`
-    // 幂等：已有当日快照则跳过
-    const existing = await db.scoreSnapshots.get(id)
+    // 缓存联动：已有当日快照则跳过（除非显式 reevaluate）
+    const existing = reevaluate ? null : await db.scoreSnapshots.get(id)
     if (existing) continue
+    // 该基金评分所依赖的主数据源：有 ETF 映射走腾讯真实 K 线，否则走东财净值历史
+    const etfCode = etfMappings.find((m) => m.otcCode === fund.code)?.exchangeCode || null
+    const source: CaptureSource = etfCode ? 'tencent' : 'eastmoney'
+    const reason =
+      source === 'tencent'
+        ? 'ETF 真实 K 线（腾讯源）获取失败，无法评分'
+        : '净值历史（东财）当前不可达，无法评分'
     try {
-      const snap = await captureSnapshotForFund(fund, etfMappings)
+      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig)
       if (snap) created++
+      else failures.push({ code: fund.code, name: fund.name || fund.code, source, reason })
     } catch (e) {
       console.warn('[backtest] 快照采集失败', fund.code, e)
+      failures.push({ code: fund.code, name: fund.name || fund.code, source, reason })
     }
   }
+  // 落库本次采集报告，供排行榜标注"因数据源不可达而缺评分"的基金
+  await db.captureReports.put({
+    id: date,
+    date,
+    total: holdings.length,
+    ok: created,
+    failures,
+    createdAt: Date.now(),
+  })
   return created
+}
+
+/** 读取最近一次采集报告（按日期倒序），用于排行榜标注未纳入评分的原因 */
+export async function getLatestCaptureReport(): Promise<CaptureReport | null> {
+  const all = await db.captureReports.orderBy('date').reverse().toArray()
+  return all[0] ?? null
 }
 
 /**

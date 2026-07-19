@@ -27,6 +27,7 @@ export default function SettingsPage() {
   const updateAIConfig = useSettingsStore((s) => s.updateAIConfig)
   const updateNotifications = useSettingsStore((s) => s.updateNotifications)
   const updateSettings = useSettingsStore((s) => s.updateSettings)
+  const updateDataSource = useSettingsStore((s) => s.updateDataSource)
 
   const [syncing, setSyncing] = useState(false)
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -241,6 +242,58 @@ export default function SettingsPage() {
                   ))}
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* 东财数据源（资金面增强） */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">东财资金面增强</CardTitle>
+                  <CardDescription>经重仓股 / ETF 映射间接分析基金资金面（资金流向、北向）</CardDescription>
+                </div>
+                <Switch
+                  checked={settings.dataSource.eastmoney.enabled}
+                  onCheckedChange={(v) => updateDataSource({ eastmoney: { ...settings.dataSource.eastmoney, enabled: v } })}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                默认关闭。开启后，对每只基金按「前十大重仓股（按占净值比例加权）」或「ETF 映射」聚合东方财富的资金流向与北向持仓变化，
+                反推出基金级资金面分，写入评分快照供排行榜排序。该能力底层走东方财富（与行情/K线 走腾讯不同）：
+                实测你的网络可直连东方财富，默认已选「直连东财」即可直接使用，无需部署 Worker；仅当处于无法直连东财的网络时，才需部署 Cloudflare Worker 反代并切换到「Worker 反代」。
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">连接模式</Label>
+                  <Select
+                    value={settings.dataSource.eastmoney.mode}
+                    disabled={!settings.dataSource.eastmoney.enabled}
+                    onValueChange={(v) => updateDataSource({ eastmoney: { ...settings.dataSource.eastmoney, mode: v as 'direct' | 'proxy' } })}
+                  >
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="direct">直连东财（推荐）</SelectItem>
+                      <SelectItem value="proxy">Worker 反代</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Worker 反代地址</Label>
+                  <Input
+                    placeholder="https://your-worker.workers.dev"
+                    value={settings.dataSource.eastmoney.proxyUrl}
+                    disabled={!settings.dataSource.eastmoney.enabled || settings.dataSource.eastmoney.mode !== 'proxy'}
+                    onChange={(e) => updateDataSource({ eastmoney: { ...settings.dataSource.eastmoney, proxyUrl: e.target.value } })}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                约定：Worker 转发时保留原始请求 path 与 query（即将 <code>*.eastmoney.com/api/...</code> 改写为 <code>&lt;Worker地址&gt;/api/...</code>）。
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

@@ -181,6 +181,28 @@ export interface UserSettings {
   }
   etfMappings: EtfMapping[]
   sync: SyncConfig
+  /** 数据源增强配置（门控型能力，默认关闭） */
+  dataSource: DataSourceSettings
+}
+
+/** 数据源增强配置 */
+export interface DataSourceSettings {
+  /**
+   * 东方财富资金面增强（资金流向 / 北向 / 板块 / 龙虎榜 / 融资融券）。
+   * 这些能力底层均走东方财富（与行情/K线 走腾讯不同），默认关闭。
+   * 开启后：经重仓股/ETF 映射间接分析基金资金面，写入评分快照，供排行榜排序。
+   * 默认关闭——当前网络到不了东财时不产生任何东财请求，App 行为与关闭前一致。
+   */
+  eastmoney: EastmoneyDataSourceConfig
+}
+
+export interface EastmoneyDataSourceConfig {
+  /** 是否启用东财资金面增强，默认 false */
+  enabled: boolean
+  /** direct=直连东财（网络可直连时）；proxy=经 Cloudflare Worker 反代（部署 Worker 后） */
+  mode: 'direct' | 'proxy'
+  /** Worker 反代地址（mode=proxy 时必填）。约定：Worker 转发时保留原始 path+query */
+  proxyUrl: string
 }
 
 /** GitHub Gist 同步配置 */

@@ -37,6 +37,18 @@ export interface StrategySnapshot {
   direction: Direction
 }
 
+/** 资金面聚合明细（单只重仓股/ETF 的贡献） */
+export interface CapitalFlowBreakdownItem {
+  symbol: string
+  name?: string
+  /** 占净值权重（0-1） */
+  weight: number
+  /** 主力净流入净占比(%)，近 5 日均值；null 表示未取得 */
+  capitalPercent: number | null
+  /** 北向持股变化(%)，最近两期对比；null 表示未取得 */
+  northboundDeltaPct: number | null
+}
+
 /**
  * 单日评分快照（主键 id = `${fundCode}-${date}`）
  */
@@ -71,6 +83,14 @@ export interface ScoreSnapshot {
   closeValue: number | null
   valueSource: ValueSource
 
+  // ── 资金面（东财增强，门控；enabled=false 时为 null） ──
+  /** 加权主力净流入分（0-100），来自重仓股/ETF 资金流向 */
+  capitalScore?: number | null
+  /** 加权北向增持分（0-100），来自重仓股北向持仓变化 */
+  northboundScore?: number | null
+  /** 资金面聚合明细（每只重仓股/ETF 的贡献） */
+  capitalBreakdown?: CapitalFlowBreakdownItem[] | null
+
   // ── 次日回填 ──
   nextDate: string | null
   nextValue: number | null
@@ -80,4 +100,31 @@ export interface ScoreSnapshot {
 
   createdAt: number
   updatedAt: number
+}
+
+/** 采集失败的数据源归属（用于标注"因某接口不可达而缺评分"） */
+export type CaptureSource = 'eastmoney' | 'tencent' | 'unknown'
+
+/** 单只基金当日未能生成评分的原因（数据接口不可达 / 无可用 K 线） */
+export interface CaptureFailure {
+  code: string
+  name: string
+  /** 该基金评分所依赖的主要数据源 */
+  source: CaptureSource
+  reason: string
+}
+
+/**
+ * 一次采集运行的报告（主键 id = 日期 YYYY-MM-DD），
+ * 记录哪些基金因数据源不可达而未能评分，供排行榜标注"未纳入评分"原因。
+ */
+export interface CaptureReport {
+  id: string
+  date: string
+  /** 参与采集的持仓总数 */
+  total: number
+  /** 成功生成快照的数量 */
+  ok: number
+  failures: CaptureFailure[]
+  createdAt: number
 }
