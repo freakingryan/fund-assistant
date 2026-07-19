@@ -164,17 +164,96 @@ export async function fetchFundHoldingsF10(code: string, _timeout = 15000): Prom
 }
 
 /**
- * 通过基金名称/关键词反查 6 位基金代码（东方财富基金搜索 JSONP）。
- *
- * 用途：截图导入（京东金融/支付宝等）识别出的持仓往往只有名称、没有代码，
- * 导入后无法获取行情。此函数按名称反查真实代码，使持仓可用（行情/K线/收益）。
+ * 基金名称匹配候选。
+ */
+export interface FundCodeCandidate {
+  code: string
+  name: string
+  score: number // 0-1，越大越匹配
+}
+
+/** 常见基金公司前缀，用于同公司加分 */
+const COMPANY_PREFIXES = [
+  '天弘', '华夏', '易方达', '华泰柏瑞', '建信', '嘉实', '南方', '广发', '博时', '富国',
+  '招商', '汇添富', '鹏华', '工银', '中银', '华安', '国泰', '大成', '银华', '华宝',
+  '景顺', '中欧', '兴全', '交银', '光大', '银河', '民生', '中信', '平安', '国寿',
+  '申万', '东吴', '方正', '长信', '华富', '浙商', '农银', '上投', '泰信', '诺安',
+  '融通', '万家', '中邮', '国投', '前海', '长城', '海富通', '金鹰', '新华', '宝盈',
+]
+
+/** 编辑距离 */
+function levenshtein(a: string, b: string): number {
+  const m = a.length
+  const n = b.length
+  if (m === 0) return n
+  if (n === 0) return m
+  const prev = new Array(n + 1).fill(0)
+  const curr = new Array(n + 1).fill(0)
+  for (let j = 0; j <= n; j++) prev[j] = j
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i
+    for (let j = 1; j <= n; j++) {
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+    for (let j = 0; j <= n; j++) prev[j] = curr[j]
+  }
+  return prev[n]
+}
+
+/** 计算候选名称与关键词的匹配分数（0-1） */
+function calcNameMatchScore(keyword: string, candidateName: string): number {
+  const k = keyword.trim()
+  const c = candidateName.trim()
+  if (!k || !c) return 0
+  if (k === c) return 1
+
+  // 互相包含：高置信，但需避免“电力”匹配“绿发电力”这种短关键词命中
+  // 如果候选名称是查询词的子串且长度>3，或查询词是候选名称的子串，给较高分
+  if (k.includes(c) && c.length > 3) return 0.92
+  if (c.includes(k) && k.length > 3) return 0.9
+
+  // 编辑距离归一化
+  const dist = levenshtein(k, c)
+  const maxLen = Math.max(k.length, c.length)
+  const editScore = maxLen > 0 ? 1 - dist / maxLen : 0
+
+  // Jaccard 字符相似度（对中文基金名较稳定）
+  const setK = new Set(k)
+  const setC = new Set(c)
+  let inter = 0
+  for (const ch of setK) if (setC.has(ch)) inter++
+  const union = setK.size + setC.size - inter
+  const jaccard = union > 0 ? inter / union : 0
+
+  // 同公司前缀加分
+  let companyBonus = 0
+  for (const p of COMPANY_PREFIXES) {
+    if (k.startsWith(p) && c.startsWith(p)) {
+      companyBonus = 0.08
+      break
+    }
+  }
+
+  // 混合分数：编辑距离对顺序敏感，Jaccard 对字符集合敏感
+  return Math.min(0.95, editScore * 0.55 + jaccard * 0.45 + companyBonus)
+}
+
+/**
+ * 通过基金名称/关键词反查 6 位基金代码（东方财富基金搜索 JSONP），返回候选列表。
  *
  * 接口：fundsuggest.eastmoney.com（支持 callback 参数，JSONP 跨域可用）。
- * 返回第一个匹配结果 { code, name }，无匹配或失败返回 null。
+ * 返回按匹配分数排序的候选数组，无匹配或失败返回空数组。
  */
-export async function fetchFundCodeByName(name: string, timeout = 10000): Promise<{ code: string; name: string } | null> {
+export async function fetchFundCodeByNameCandidates(
+  name: string,
+  timeout = 10000,
+): Promise<FundCodeCandidate[]> {
   const keyword = (name || '').trim()
-  if (keyword.length < 2) return null
+  if (keyword.length < 2) return []
   return new Promise((resolve) => {
     const cbName = `__fundSuggestCb_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
     const script = document.createElement('script')
@@ -187,21 +266,43 @@ export async function fetchFundCodeByName(name: string, timeout = 10000): Promis
       try {
         const datas: any[] = data?.Datas || []
         if (datas.length > 0) {
-          // 优先取与关键词互相包含（最相似）的结果，否则取第一条
-          const hit = datas.find((d) =>
-            d.NAME && (d.NAME.includes(keyword) || keyword.includes(d.NAME)),
-          ) || datas[0]
-          if (hit?.CODE) {
-            resolve({ code: String(hit.CODE), name: String(hit.NAME || keyword) })
-            return
-          }
+          const scored = datas
+            .filter((d) => d?.CODE && /^\d{6}$/.test(String(d.CODE)))
+            .map((d) => ({
+              code: String(d.CODE),
+              name: String(d.NAME || keyword),
+              score: calcNameMatchScore(keyword, String(d.NAME || '')),
+            }))
+            .filter((d) => d.score > 0.35)
+            .sort((a, b) => b.score - a.score)
+          resolve(scored)
+          return
         }
       } catch { /* ignore */ }
-      resolve(null)
+      resolve([])
     }
-    script.onerror = () => { cleanup(); resolve(null) }
+    script.onerror = () => { cleanup(); resolve([]) }
     script.src = `${FUNDSUGGEST_BASE}/FundSearch/api/FundSearchAPI.ashx?m=1&key=${encodeURIComponent(keyword)}&callback=${cbName}&_=${Date.now()}`
     document.head.appendChild(script)
-    setTimeout(() => { cleanup(); resolve(null) }, timeout)
+    setTimeout(() => { cleanup(); resolve([]) }, timeout)
   })
+}
+
+/**
+ * 通过基金名称/关键词反查 6 位基金代码（东方财富基金搜索 JSONP）。
+ *
+ * 用途：截图导入（京东金融/支付宝等）识别出的持仓往往只有名称、没有代码，
+ * 导入后无法获取行情。此函数按名称反查真实代码，使持仓可用（行情/K线/收益）。
+ *
+ * 接口：fundsuggest.eastmoney.com（支持 callback 参数，JSONP 跨域可用）。
+ * 返回第一个匹配结果 { code, name }，无匹配或失败返回 null。
+ */
+export async function fetchFundCodeByName(name: string, timeout = 10000): Promise<{ code: string; name: string } | null> {
+  const keyword = (name || '').trim()
+  if (keyword.length < 2) return null
+  const candidates = await fetchFundCodeByNameCandidates(keyword, timeout)
+  // 只取高置信候选（>=0.75）作为最佳结果；否则认为名称反查不可靠，返回 null
+  const best = candidates[0]
+  if (best && best.score >= 0.75) return { code: best.code, name: best.name }
+  return null
 }
