@@ -22,6 +22,8 @@ import { fetchFundQuoteWithFallback } from '@/adapters/datasource/stock-api'
 import type { Market, FundType, FundSector } from '@/types'
 import { TYPE_LABELS, MARKET_LABELS } from '@/lib/labels'
 
+const wait = (ms: number) => new Promise((res) => setTimeout(res, ms))
+
 const COLUMN_ALIASES: Record<string, string> = {
   '基金代码': 'code', '代码': 'code', 'code': 'code', 'fund_code': 'code',
   '基金名称': 'name', '名称': 'name', 'name': 'name', 'fund_name': 'name',
@@ -55,6 +57,8 @@ interface ParsedRow {
   notes: string
   /** 导入校验时标记为「无法获取行情」（代码缺失/识别有误），需用户手动核对 */
   needsCodeCheck?: boolean
+  /** 按名称反查到的正确代码（与当前 code 不一致时提示用户采用，修复导入时的代码错配） */
+  suggestedCode?: string
 }
 
 function parseFile(file: File): Promise<ImportRow[]> {
@@ -144,11 +148,32 @@ export default function ImportDialog() {
     }))
   }, [])
 
+  /**
+   * 对「待核对」(行情取不到) 的基金按名称反查正确代码，供用户一键采用，修复导入时的代码错配。
+   * 仅对 needsCodeCheck 行查询，串行 + 间隔规避接口连发限流；命中且与当前 code 不同才写入。
+   */
+  const enrichWithSuggested = useCallback(async (inputRows: ParsedRow[]): Promise<ParsedRow[]> => {
+    const out: ParsedRow[] = []
+    for (const r of inputRows) {
+      let suggestedCode: string | undefined
+      if (r.needsCodeCheck && r.name) {
+        try {
+          const hit = await fetchFundCodeByName(r.name)
+          if (hit && hit.code && hit.code !== r.code) suggestedCode = hit.code
+        } catch { /* ignore */ }
+        await wait(300)
+      }
+      out.push({ ...r, suggestedCode })
+    }
+    return out
+  }, [])
+
   /** 校验后写入预览，并对无法获取行情的基金给出提示 */
   const validateAndPreview = useCallback(async (parsed: ParsedRow[], rowErrors: string[]) => {
     const validated = await validateRows(parsed)
-    const failed = validated.filter((r) => r.needsCodeCheck)
-    setRows(validated)
+    const enriched = await enrichWithSuggested(validated)
+    const failed = enriched.filter((r) => r.needsCodeCheck)
+    setRows(enriched)
     if (failed.length > 0) {
       const examples = failed.slice(0, 3).map((r) => r.code || r.name).join('、')
       const msg = `有 ${failed.length} 只基金代码待核对（可能无法获取行情）：${examples}${failed.length > 3 ? ' 等' : ''}，导入后请补全代码`
@@ -158,7 +183,7 @@ export default function ImportDialog() {
       setErrors(rowErrors)
     }
     setStep('preview')
-  }, [validateRows, toast])
+  }, [validateRows, enrichWithSuggested, toast])
 
   // ---- CSV/Excel ----
   const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -484,9 +509,10 @@ export default function ImportDialog() {
                     <TableHead className="w-[80px]">金额</TableHead>
                     <TableHead className="w-[75px]">收益</TableHead>
                     <TableHead className="w-[65px]">成本</TableHead>
-                    <TableHead className="w-[65px]">份额</TableHead>
-                    <TableHead className="w-[64px]">状态</TableHead>
-                  </TableRow>
+                  <TableHead className="w-[65px]">份额</TableHead>
+                  <TableHead className="w-[64px]">状态</TableHead>
+                  <TableHead className="w-[120px]">建议</TableHead>
+                </TableRow>
                 </TableHeader>
                 <TableBody>
                   {displayRows.map(({ row, idx }) => (
@@ -523,6 +549,19 @@ export default function ImportDialog() {
                           <Badge variant="destructive" className="text-[10px]">待核对</Badge>
                         ) : (
                           <Badge variant="secondary" className="text-[10px] text-green-600">✓</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {row.suggestedCode && row.suggestedCode !== row.code ? (
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-up">{row.suggestedCode}</span>
+                            <Button
+                              size="sm" variant="ghost" className="h-6 px-1.5 text-[10px]"
+                              onClick={() => updateRow(idx, 'code', row.suggestedCode!)}
+                            >采用</Button>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                     </TableRow>

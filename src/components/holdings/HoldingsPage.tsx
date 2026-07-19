@@ -5,6 +5,7 @@ import { useHoldingsStore } from '@/stores/holdings'
 import ImportDialog from './ImportDialog'
 import AddFundDialog from './AddFundDialog'
 import HoldingsTable from './HoldingsTable'
+import FundCodeRepair from './FundCodeRepair'
 
 export default function HoldingsPage() {
   const holdings = useHoldingsStore((s) => s.holdings)
@@ -29,6 +30,8 @@ export default function HoldingsPage() {
           <AddFundDialog />
         </div>
       </div>
+
+      <FundCodeRepair />
 
       <Card>
         <CardHeader className="pb-3">

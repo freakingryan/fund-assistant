@@ -88,6 +88,8 @@ export default function EtfMappingManager() {
   const [recProgress, setRecProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 })
   const [reviewOpen, setReviewOpen] = useState(false)
   const [editRecs, setEditRecs] = useState<Record<string, { code: string; name: string }>>({})
+  // 已应用的场外码集合：应用后按钮禁用，且记录移到末尾
+  const [appliedCodes, setAppliedCodes] = useState<Set<string>>(new Set())
 
   // 合并：所有持仓（附其映射状态）+ 持仓中不存在的孤儿映射
   const rows = useMemo<Row[]>(() => {
@@ -332,6 +334,7 @@ export default function EtfMappingManager() {
 
   // 对检测到的错误映射，逐条调用 AI 推荐修正项（R1-R4 + 流动性预排序 + K 线验证）
   const handleAiFix = useCallback(async () => {
+    setAppliedCodes(new Set())
     const brokenList = (health ? health.filter((h) => !h.ok) : []).map((h) => ({
       otcCode: h.otcCode,
       otcName: h.otcName,
@@ -381,6 +384,7 @@ export default function EtfMappingManager() {
       exchangeCode: edit.code.trim(),
       exchangeName: edit.name.trim() || edit.code.trim(),
     })
+    setAppliedCodes((prev) => new Set(prev).add(otcCode))
     // 仅当 AI 验证通过才记为健康；否则保留为错误待复查
     useEtfHealthStore.getState().set(edit.code.trim(), rec.verified)
     setHealth((prev) =>
@@ -424,6 +428,7 @@ export default function EtfMappingManager() {
           })
         : prev,
     )
+    setAppliedCodes(new Set(Object.keys(editRecs)))
     setReviewOpen(false)
     toast({ type: 'success', message: `已应用 ${applied} 条推荐映射` })
   }
@@ -432,6 +437,16 @@ export default function EtfMappingManager() {
   const brokenCodes = useMemo(
     () => new Set((health || []).filter((h) => !h.ok).map((h) => h.exchangeCode)),
     [health],
+  )
+
+  // AI 推荐审查：已应用的记录排到末尾（未应用的保持原有相对顺序）
+  const orderedRecs = useMemo(
+    () => [...recommendations].sort((a, b) => {
+      const aa = appliedCodes.has(a.otcCode)
+      const bb = appliedCodes.has(b.otcCode)
+      return aa === bb ? 0 : aa ? 1 : -1
+    }),
+    [recommendations, appliedCodes],
   )
 
   const renderRow = (r: Row) => {
@@ -719,7 +734,7 @@ export default function EtfMappingManager() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {recommendations.map((r) => {
+                  {orderedRecs.map((r) => {
                     const edit = editRecs[r.otcCode] || {
                       code: r.recommendedExchangeCode,
                       name: r.recommendedExchangeName,
@@ -760,8 +775,12 @@ export default function EtfMappingManager() {
                             : <Badge variant="destructive" className="text-[10px]">未验证</Badge>}
                         </TableCell>
                         <TableCell>
-                          <Button size="sm" className="h-7 text-xs" onClick={() => handleApplyRec(r.otcCode)}>
-                            应用
+                          <Button
+                            size="sm" className="h-7 text-xs"
+                            onClick={() => handleApplyRec(r.otcCode)}
+                            disabled={appliedCodes.has(r.otcCode)}
+                          >
+                            {appliedCodes.has(r.otcCode) ? '已应用' : '应用'}
                           </Button>
                         </TableCell>
                       </TableRow>

@@ -627,4 +627,4 @@ export async function testAIConnection(config: AIConfig): Promise<{ ok: boolean;
   }
 }
 
-export { getDefaultAI }
+export { getDefaultAI, callAI }
