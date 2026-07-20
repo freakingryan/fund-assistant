@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AppNotification, FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
-import type { CaptureReport, ScoreSnapshot } from '@/services/backtest/types'
+import type { AppNotification, DailyReport, FundHolding, InvestmentPlan, PlanAlert, UserSettings } from '@/types'
+import type { CaptureReport, ScoreSnapshot, AiBacktestAnalysis } from '@/services/backtest/types'
 
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, 'id'>
@@ -11,6 +11,8 @@ export class FundAssistantDB extends Dexie {
   notifications!: EntityTable<AppNotification, 'id'>
   scoreSnapshots!: EntityTable<ScoreSnapshot, 'id'>
   captureReports!: EntityTable<CaptureReport, 'id'>
+  dailyReports!: EntityTable<DailyReport, 'date'>
+  aiAnalyses!: EntityTable<AiBacktestAnalysis, 'id'>
 
   constructor() {
     super('FundAssistantDB')
@@ -44,6 +46,16 @@ export class FundAssistantDB extends Dexie {
     // v6: captureReports — 采集失败报告（标注"因数据源不可达而缺评分"）
     this.version(6).stores({
       captureReports: 'id, date',
+    })
+
+    // v7: dailyReports — 每日日报（日期幂等，主键 date）
+    this.version(7).stores({
+      dailyReports: 'date',
+    })
+
+    // v8: aiAnalyses — 回测 AI 辅助分析结果（可回看，主键 id）
+    this.version(8).stores({
+      aiAnalyses: 'id, createdAt',
     })
   }
 }

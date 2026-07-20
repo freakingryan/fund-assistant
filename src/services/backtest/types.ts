@@ -7,6 +7,7 @@
  */
 
 import type { Rating, SignalCategory, Direction } from '@/services/decision/types'
+import type { BucketStat } from './stats'
 
 /** 决策建议的回测口径：买 / 持 / 卖（由 rating 归一化） */
 export type Recommendation = 'buy' | 'hold' | 'sell'
@@ -152,5 +153,55 @@ export interface CaptureReport {
   /** 成功生成快照的数量 */
   ok: number
   failures: CaptureFailure[]
+  createdAt: number
+}
+
+/**
+ * 每日方向性准确率数据点（按快照 date 聚合）。
+ * 用于「按日期回看」趋势曲线：观察算法逐日表现是否稳定。
+ */
+export interface DailyAccuracyPoint {
+  /** 快照日历日 YYYY-MM-DD */
+  date: string
+  /** 当日方向性准确率 correct/(correct+wrong)，无方向性样本时为 null */
+  accuracy: number | null
+  /** 当日方向性样本数（correct+wrong） */
+  sampleCount: number
+  /** 当日已结算快照的平均次日涨跌幅(%) */
+  avgNextChange: number | null
+}
+
+/**
+ * AI 辅助分析结果（回测算法诊断 + 调参建议），可回看。
+ * context 保留生成时的统计快照，便于复用与对比。
+ */
+export interface AiBacktestAnalysis {
+  /** 主键：自增 id（时间戳-based） */
+  id: string
+  /** 生成日期 YYYY-MM-DD */
+  date: string
+  /** 使用的模型名（如 deepseek-chat） */
+  model: string
+  /** 使用的 provider（如 deepseek） */
+  provider: string
+  /** 生成时的统计上下文，供回看/复现 */
+  context: {
+    total: number
+    settled: number
+    directionalAccuracy: number | null
+    buyHitRate: number | null
+    sellHitRate: number | null
+    avgNextByRec: Record<Recommendation, number | null>
+    buckets: BucketStat[]
+    daily: DailyAccuracyPoint[]
+  }
+  /** AI 诊断出的算法薄弱环节（中文短句） */
+  weaknesses: string[]
+  /** AI 给出的调参/策略建议（中文短句） */
+  suggestions: string[]
+  /** AI 总体结论摘要 */
+  summary: string
+  /** AI 原始返回文本 */
+  raw: string
   createdAt: number
 }

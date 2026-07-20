@@ -18,14 +18,17 @@ import { dataSourceService } from '@/adapters/datasource/service'
 import { detectPatterns } from '@/services/klinePatterns'
 import { evaluateSignal } from '@/services/signalEngine'
 import { computeStockSdkIndicators } from '@/services/stockSdkIndicators'
+import type { SignalEvent } from '@/services/stockSdkIndicators'
 import { evaluateStrategies } from '@/services/strategyLayer'
 import { buildDecision } from '@/services/decision/decisionEngine'
+import type { Rating, ReasonItem } from '@/services/decision/types'
 import { db } from '@/stores/db'
 import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding, KLineData } from '@/types'
 import type { CaptureFailure, CaptureReport, CaptureSource, Outcome, Recommendation, ScoreSnapshot, ValueSource } from './types'
 import { analyzeFundCapitalFlow } from '@/services/capitalFlowAnalysis'
 import { analyzeFundSectorStrength } from '@/services/sectorStrengthAnalysis'
 import { fetchFundRankHistory } from '@/services/fundRankHistory'
+import { isTradingDay } from '@/lib/tradingCalendar'
 
 /** 采集/回填所用 K 线周期：3 个月，足够指标（BIAS 等）计算 */
 const SNAPSHOT_PERIOD = '3m'
@@ -72,6 +75,8 @@ export async function captureSnapshotForFund(
   fund: FundHolding,
   etfMappings: EtfMapping[],
   eastmoneyConfig: EastmoneyDataSourceConfig,
+  /** 回溯补齐时指定目标交易日；省略则取本地今日 */
+  targetDate?: string,
 ): Promise<ScoreSnapshot | null> {
   const etfCode = etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null
 
@@ -85,6 +90,10 @@ export async function captureSnapshotForFund(
     klines = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)
     if (klines.length > 0) valueSource = 'nav'
   }
+  if (klines.length === 0) return null
+
+  // 回溯补齐：截断到目标交易日，避免引入未来 K 线造成前视偏差（look-ahead bias）
+  if (targetDate) klines = klines.filter((k) => k.date <= targetDate)
   if (klines.length === 0) return null
 
   const patterns = detectPatterns(klines)
@@ -103,8 +112,8 @@ export async function captureSnapshotForFund(
 
   const last = klines[klines.length - 1]
   const closeValue = typeof last?.close === 'number' ? last.close : null
-  const asOfDate = last?.date || localDateKey()
-  const date = localDateKey()
+  const asOfDate = last?.date || (targetDate ?? localDateKey())
+  const date = targetDate ?? localDateKey()
   const id = `${fund.code}-${date}`
 
   const snapshot: ScoreSnapshot = {
@@ -150,11 +159,74 @@ export async function captureSnapshotForFund(
   return snapshot
 }
 
+/** 决策引擎趋势结果（供预警 trend 规则 / 日报复用，不写库） */
+export interface FundTrendResult {
+  score: number
+  lowConfidence: boolean
+  rating: Rating
+  ratingLabel: string
+  summary: string
+  /** 最近的技术事件信号（金叉/死叉/SAR 反转/布林突破等） */
+  signals: SignalEvent[]
+  bullReasons: ReasonItem[]
+  bearReasons: ReasonItem[]
+}
+
+/**
+ * 为单只基金跑完整决策管线并返回趋势结果（不写库）。
+ * 复用与 captureSnapshotForFund 完全相同的 K 线获取 + buildDecision 逻辑，
+ * 供 `scan()` 的 trend 规则与「每日日报」模块3/4 共用，避免重复实现。
+ * 数据来源：有场内 ETF 映射走腾讯真实 K 线；否则走东财净值历史。
+ * 无法取得 K 线（如纯净值基金且东财阻断）返回 null。
+ */
+export async function computeFundTrendScore(
+  fund: FundHolding,
+  etfMappings: EtfMapping[],
+): Promise<FundTrendResult | null> {
+  const etfCode = etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null
+
+  let klines: KLineData[] = []
+  if (etfCode) {
+    klines = await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)
+  }
+  if (klines.length === 0) {
+    klines = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)
+  }
+  if (klines.length === 0) return null
+
+  const patterns = detectPatterns(klines)
+  const signalResult = evaluateSignal(klines, patterns)
+  const ind = computeStockSdkIndicators(klines)
+  const strategies = evaluateStrategies(klines, ind)
+  const isRealKline = klines.some((k) => k.high > k.low)
+  const decision = buildDecision({
+    klines,
+    patterns,
+    signalResult,
+    ind,
+    strategies,
+    lowConfidence: !isRealKline,
+  })
+
+  return {
+    score: decision.score,
+    lowConfidence: decision.lowConfidence,
+    rating: decision.rating,
+    ratingLabel: decision.ratingLabel,
+    summary: decision.summary,
+    signals: ind.signals,
+    bullReasons: decision.bullReasons,
+    bearReasons: decision.bearReasons,
+  }
+}
+
 export interface CaptureOptions {
   /** 为 true 时忽略收盘门禁（手动触发随时可用）；默认遵守工作日 15:00 后自动采集 */
   force?: boolean
   /** 为 true 时忽略“当日已存在快照”的缓存跳过，强制重评全部持仓（覆盖旧结果） */
   reevaluate?: boolean
+  /** 回溯补齐指定交易日（YYYY-MM-DD）；省略则采集今日。采集过去交易日不受收盘门禁限制 */
+  targetDate?: string
 }
 
 /**
@@ -168,9 +240,13 @@ export interface CaptureOptions {
 export async function captureDailySnapshots(opts: CaptureOptions | boolean = false): Promise<number> {
   const force = typeof opts === 'boolean' ? opts : opts.force ?? false
   const reevaluate = typeof opts === 'boolean' ? false : opts.reevaluate ?? false
+  const targetDate = typeof opts === 'boolean' ? undefined : opts.targetDate
 
   const now = new Date()
-  if (!force && !isMarketClosed(now)) return 0
+  const date = targetDate ?? localDateKey(now)
+  // 门禁：采集「今日」需本地收盘后（≥15:00）且为交易日；回溯采集「过去交易日」随时允许（该日已收盘）
+  const capturingPast = targetDate != null && targetDate < localDateKey(now)
+  if (!force && !capturingPast && (!isMarketClosed(now) || !isTradingDay(now))) return 0
 
   const [holdings, settingsList] = await Promise.all([
     db.holdings.toArray(),
@@ -178,7 +254,6 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
   ])
   const etfMappings = settingsList[0]?.etfMappings || []
   const eastmoneyConfig = settingsList[0]?.dataSource?.eastmoney || { enabled: false, mode: 'proxy', proxyUrl: '' }
-  const date = localDateKey(now)
 
   let created = 0
   const failures: CaptureFailure[] = []
@@ -205,7 +280,7 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
         ? 'ETF 真实 K 线（腾讯源）获取失败，无法评分'
         : '净值历史（东财）当前不可达，无法评分'
     try {
-      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig)
+      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig, date)
       if (snap) created++
       else failures.push({ code: fund.code, name: fund.name || fund.code, source, reason })
     } catch (e) {
@@ -223,6 +298,35 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
     createdAt: Date.now(),
   })
   return created
+}
+
+/**
+ * 回溯补齐最近缺失的交易日快照。
+ *
+ * 解决「用户仅收盘前打开过一次、当日未采集，且之后当天再没打开」导致该日快照永久缺失的问题：
+ * 在后续任意一次打开应用时，对最近 lookbackDays 天内、尚无任何快照的工作日，
+ * 用截断至该日的 K 线（避免引入未来数据 / 前视偏差）补采。
+ * 天然幂等：已有快照的工作日直接跳过；单只基金也已按 `${code}-${date}` 主键去重。
+ *
+ * @param lookbackDays 向前回溯的自然日窗口（默认 7）
+ * @returns 本次补齐的快照数量
+ */
+export async function backfillMissingTradingDays(lookbackDays = 7): Promise<number> {
+  const now = new Date()
+  const today = localDateKey(now)
+  let done = 0
+  for (let i = 1; i <= lookbackDays; i++) {
+    const d = new Date(now)
+    d.setDate(now.getDate() - i)
+    if (!isTradingDay(d)) continue // 跳过周末与法定节假日（非交易日）
+    const day = localDateKey(d)
+    if (day >= today) continue // 不回溯今日（今日由每日首次守卫处理）
+    const count = await db.scoreSnapshots.where('date').equals(day).count()
+    if (count > 0) continue // 该日已有快照，跳过
+    const n = await captureDailySnapshots({ targetDate: day }) // 过去交易日，随时可补
+    done += n
+  }
+  return done
 }
 
 /** 读取最近一次采集报告（按日期倒序），用于排行榜标注未纳入评分的原因 */

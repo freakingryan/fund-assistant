@@ -90,6 +90,7 @@ export type PlanRuleType =
   | 'daily_change'    // 单日涨跌幅触发
   | 'dca'             // 定期定投触发
   | 'kline_pattern'   // K 线形态 AI 诊断（手动）
+  | 'trend'           // 决策引擎趋势评分触发（0-100）
 
 export type Comparator = 'lt' | 'gt' | 'lte' | 'gte'
 
@@ -138,6 +139,93 @@ export interface PlanAlert {
   dismissed: boolean      // 是否已忽略
 }
 
+// ============= 每日日报 =============
+
+/** 单只持仓的盈亏明细（日报模块1） */
+export interface HoldingPnlItem {
+  code: string
+  name: string
+  nav: number
+  dailyChange: number   // 今日涨跌幅 (%)
+  costNAV: number       // 估算成本净值（方式二可能为 0）
+  shares: number
+  returnRate: number    // 当前收益率 (%)
+  marketValue: number   // 当前市值
+  costValue: number     // 本金（成本市值）
+  dayPnl: number        // 今日盈亏
+  totalPnl: number      // 累计盈亏
+  costKnown: boolean    // 成本是否已知（costNAV>0）。false 时收益率/累计盈亏无意义，UI 显示「成本未知」并从成本类聚合中剔除
+}
+
+/** 组合盈亏快照（日报模块1） */
+export interface PortfolioSnapshot {
+  date: string
+  totalMarketValue: number
+  totalCost: number
+  totalPnl: number
+  totalPnlPct: number
+  dayPnl: number
+  dayPnlPct: number
+  prevDayMarketValue: number | null   // 昨日组合市值（来自上一期日报，无则 null）
+  dayPnlByPrev: number | null         // 较昨日市值增减
+  prevDate: string | null
+  holdings: HoldingPnlItem[]
+}
+
+export type PlanProgressStatus = 'reached' | 'near' | 'far' | 'na' | 'disabled'
+
+/** 单条计划的当前进度（日报模块3） */
+export interface PlanProgressItem {
+  ruleId: string
+  ruleType: PlanRuleType
+  threshold: number
+  comparator: Comparator
+  action: 'buy' | 'sell'
+  enabled: boolean
+  currentValue: number | null         // 当前指标值（组合/平均/天数）
+  distance: number | null             // threshold - currentValue
+  reached: boolean
+  status: PlanProgressStatus
+  note: string
+}
+
+/** 板块温度单项（日报模块4） */
+export interface SectorTempItem {
+  name: string
+  changePercent: number | null        // 板块当日涨跌幅 (%)
+  score: number | null                // 0-100（±4.17% 映射到 0-100）
+  source: 'industry' | 'concept'
+}
+
+/** 当日技术信号事件（日报模块4） */
+export interface MarketSignalItem {
+  code: string
+  name: string
+  type: string
+  label: string
+  date: string
+  direction: 'up' | 'down' | 'neutral'
+}
+
+/** 板块温度 + 当日信号（日报模块4） */
+export interface MarketPulse {
+  sectorEnabled: boolean              // 东财增强是否开启
+  sectorTemp: SectorTempItem[]
+  avgSectorScore: number | null       // 持仓市值加权的板块温度均分
+  signals: MarketSignalItem[]
+  lowConfidenceCount: number          // 基于净值（无盘中区间）的基金数
+}
+
+/** 每日日报（主键 date = YYYY-MM-DD，幂等） */
+export interface DailyReport {
+  date: string
+  portfolio: PortfolioSnapshot
+  suggestions: PlanAlert[]            // 模块2：当日行动建议（待处理 alert）
+  planProgress: PlanProgressItem[]    // 模块3
+  market: MarketPulse                 // 模块4
+  generatedAt: string
+}
+
 // ============= AI / 存储 / 数据源 适配器接口 =============
 
 export interface StorageAdapter {
@@ -183,6 +271,11 @@ export interface UserSettings {
   sync: SyncConfig
   /** 数据源增强配置（门控型能力，默认关闭） */
   dataSource: DataSourceSettings
+  /** 评分回测模块元数据（自动采集守卫等） */
+  backtest?: {
+    /** 上次自动采集的日期 YYYY-MM-DD，用于「每日首次」守卫避免重复尝试 */
+    lastAutoCaptureDate: string | null
+  }
 }
 
 /** 数据源增强配置 */

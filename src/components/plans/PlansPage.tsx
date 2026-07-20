@@ -17,7 +17,7 @@ import {
   DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { CheckCircle, Eye, Trash2, Plus, Play, Loader2,
-  Settings2, History, Activity, TrendingUp,
+  Settings2, History, Activity, TrendingUp, Sparkles,
 } from 'lucide-react'
 import type { PlanRule, PlanRuleType, Comparator, PlanAlert } from '@/types'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
@@ -30,11 +30,37 @@ const RULE_TYPE_LABELS: Record<PlanRuleType, string> = {
   daily_change: '单日涨跌幅',
   dca: '定期定投',
   kline_pattern: 'K 线形态',
+  trend: '趋势信号',
 }
 const COMPARATOR_LABELS: Record<Comparator, string> = {
   lt: '<', gt: '>', lte: '≤', gte: '≥',
 }
 const ACTION_LABELS: Record<string, string> = { buy: '买入', sell: '卖出' }
+
+/** 智能趋势预设：覆盖"趋势好加仓 / 破位割肉 / 转弱止盈 / 大跌补仓"四类诉求 */
+const SMART_PRESETS: {
+  key: string
+  label: string
+  desc: string
+  rule: Omit<PlanRule, 'id'>
+}[] = [
+  { key: 'add', label: '趋势强加仓', desc: '趋势评分 ≥ 60 时，建议加仓', rule: { type: 'trend', threshold: 60, comparator: 'gte', action: 'buy', shares: 0, enabled: true } },
+  { key: 'cut', label: '趋势破位割肉', desc: '趋势评分 ≤ 40 时，建议减仓/割肉', rule: { type: 'trend', threshold: 40, comparator: 'lte', action: 'sell', shares: 0, enabled: true } },
+  { key: 'profit', label: '趋势转弱止盈', desc: '趋势评分 ≤ 45 时，建议止盈减仓', rule: { type: 'trend', threshold: 45, comparator: 'lte', action: 'sell', shares: 0, enabled: true } },
+  { key: 'dip', label: '大跌补仓', desc: '单日跌幅 ≤ -3% 时，提醒补仓', rule: { type: 'daily_change', threshold: -3, comparator: 'lte', action: 'buy', shares: 0, enabled: true } },
+]
+
+/** 判断规则是否已存在（按 类型+阈值+方向+动作 去重） */
+function ruleExists(plan: InvestmentPlan | null, r: Omit<PlanRule, 'id'>): boolean {
+  if (!plan) return false
+  return plan.rules.some(
+    (x) =>
+      x.type === r.type &&
+      x.threshold === r.threshold &&
+      x.comparator === r.comparator &&
+      x.action === r.action,
+  )
+}
 
 function RuleForm({ rule, onSave, onCancel }: {
   rule?: PlanRule
@@ -49,11 +75,12 @@ function RuleForm({ rule, onSave, onCancel }: {
   const [error, setError] = useState('')
 
   const thresholdHint = {
-    return: '百分比（如 -10 = 收益率 ≤ -10%）',
+    return: '百分比（如 -10 = 收益率 ≤ -10%；15 = 收益率 ≥ 15%）',
     price_diff: '净值绝对值（如 0.5 = 价差 ≥ 0.5）',
-    daily_change: '百分比（如 3 = 单日涨跌幅 ≤ -3%）',
+    daily_change: '百分比（如 -3 = 单日涨跌幅 ≤ -3%）',
     dca: '间隔天数（如 30 = 每 30 天）',
     kline_pattern: '仅在手动 AI 诊断时使用',
+    trend: '决策引擎趋势评分（0-100，如 60 = 评分 ≥ 60 建议加仓；40 = 评分 ≤ 40 提醒割肉）',
   }[type]
 
   return (
@@ -116,8 +143,13 @@ function RuleForm({ rule, onSave, onCancel }: {
         <Button size="sm" onClick={() => {
           const t = Number(threshold)
           // F14: 阈值留空/非法时存为 0 会建出永不当/永当的规则，需校验
-          if (!(t > 0)) {
-            setError(type === 'dca' ? '间隔天数需大于 0' : '阈值需大于 0')
+          if (threshold.trim() === '' || Number.isNaN(t)) {
+            setError('请输入有效阈值')
+            return
+          }
+          // dca 间隔天数必须 > 0；其余类型允许负数阈值（如收益率 ≤ -10%、单日跌幅 ≤ -3%）
+          if (type === 'dca' && t <= 0) {
+            setError('间隔天数需大于 0')
             return
           }
           onSave({
@@ -151,6 +183,7 @@ export default function PlansPage() {
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
 
   const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<PlanRule | null>(null)
   const [activeTab, setActiveTab] = useState<'rules' | 'alerts' | 'history'>('rules')
   const [adjustFund, setAdjustFund] = useState<FundHolding | null>(null)
@@ -241,20 +274,73 @@ export default function PlansPage() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">{plan.rules.length} 条规则</p>
-            <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm" className="h-7 text-xs">
-                  <Plus className="h-3 w-3 mr-1" />添加规则
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-sm">
-                <DialogHeader>
-                  <DialogTitle>添加规则</DialogTitle>
-                  <DialogDescription>设置触发条件和操作</DialogDescription>
-                </DialogHeader>
-                <RuleForm onSave={(r) => { addRule(r); setAddDialogOpen(false) }} onCancel={() => setAddDialogOpen(false)} />
-              </DialogContent>
-            </Dialog>
+            <div className="flex items-center gap-2">
+              <Dialog open={presetDialogOpen} onOpenChange={setPresetDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="h-7 text-xs">
+                    <Sparkles className="h-3 w-3 mr-1" />智能预设
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle>智能趋势预设</DialogTitle>
+                    <DialogDescription>
+                      一键导入趋势/涨跌类规则。已存在的规则会自动跳过（不重复）。
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2">
+                    {SMART_PRESETS.map((p) => {
+                      const exists = ruleExists(plan, p.rule)
+                      return (
+                        <div key={p.key} className="flex items-center justify-between rounded-lg border p-2.5">
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium">{p.label}</div>
+                            <div className="text-[10px] text-muted-foreground truncate">{p.desc}</div>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant={exists ? 'ghost' : 'default'}
+                            className="h-7 text-xs shrink-0 ml-2"
+                            disabled={exists}
+                            onClick={() => { addRule(p.rule); toast({ type: 'success', message: `已导入：${p.label}` }) }}
+                          >
+                            {exists ? '已存在' : '导入'}
+                          </Button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      let added = 0
+                      for (const p of SMART_PRESETS) {
+                        if (!ruleExists(plan, p.rule)) { addRule(p.rule); added++ }
+                      }
+                      setPresetDialogOpen(false)
+                      toast({ type: 'success', message: added > 0 ? `已导入 ${added} 条预设规则` : '预设规则均已存在' })
+                    }}
+                  >
+                    一键导入全部预设
+                  </Button>
+                </DialogContent>
+              </Dialog>
+              <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="h-7 text-xs">
+                    <Plus className="h-3 w-3 mr-1" />添加规则
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-sm">
+                  <DialogHeader>
+                    <DialogTitle>添加规则</DialogTitle>
+                    <DialogDescription>设置触发条件和操作</DialogDescription>
+                  </DialogHeader>
+                  <RuleForm onSave={(r) => { addRule(r); setAddDialogOpen(false) }} onCancel={() => setAddDialogOpen(false)} />
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
 
           {plan.rules.length === 0 ? (

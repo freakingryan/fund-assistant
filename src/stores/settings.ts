@@ -50,6 +50,9 @@ const defaultSettings: UserSettings = {
       proxyUrl: '',
     },
   },
+  backtest: {
+    lastAutoCaptureDate: null,
+  },
 }
 
 interface SettingsState {
@@ -65,6 +68,7 @@ interface SettingsState {
   updateEtfMapping: (index: number, mapping: { otcCode: string; otcName: string; exchangeCode: string; exchangeName: string }) => Promise<void>
   removeEtfMapping: (index: number) => Promise<void>
   updateDataSource: (dataSource: Partial<UserSettings['dataSource']>) => Promise<void>
+  updateBacktestMeta: (backtest: Partial<NonNullable<UserSettings['backtest']>>) => Promise<void>
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -159,6 +163,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateDataSource: async (dataSource) => {
     const current = get().settings
     const updated = { ...current, dataSource: { ...current.dataSource, ...dataSource } }
+    await db.settings.put({ ...updated, id: 'user-settings' })
+    set({ settings: updated })
+  },
+
+  updateBacktestMeta: async (backtest) => {
+    const current = get().settings
+    const next = { ...(current.backtest || { lastAutoCaptureDate: null }), ...backtest }
+    const updated = { ...current, backtest: next }
     await db.settings.put({ ...updated, id: 'user-settings' })
     set({ settings: updated })
   },

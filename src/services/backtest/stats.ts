@@ -4,7 +4,7 @@
  * @module backtest/stats
  */
 
-import type { Recommendation, ScoreSnapshot } from './types'
+import type { DailyAccuracyPoint, Recommendation, ScoreSnapshot } from './types'
 
 export interface BucketStat {
   bucket: string
@@ -151,4 +151,33 @@ const OUTCOME_LABEL: Record<ScoreSnapshot['outcome'], string> = {
 }
 export function outcomeLabel(o: ScoreSnapshot['outcome']): string {
   return OUTCOME_LABEL[o]
+}
+
+/**
+ * 按快照日期聚合「每日方向性准确率」，用于按日回看趋势。
+ * 仅纳入方向性样本（outcome 为 correct/wrong），中性/待回填不计。
+ * @returns 按日期升序排列的数据点
+ */
+export function computeDailyAccuracySeries(snapshots: ScoreSnapshot[]): DailyAccuracyPoint[] {
+  const byDate = new Map<string, { correct: number; wrong: number; next: number[] }>()
+  for (const s of snapshots) {
+    if (s.outcome !== 'correct' && s.outcome !== 'wrong') continue
+    const b = byDate.get(s.date) || { correct: 0, wrong: 0, next: [] }
+    if (s.outcome === 'correct') b.correct++
+    else b.wrong++
+    if (s.nextChangePct != null) b.next.push(s.nextChangePct)
+    byDate.set(s.date, b)
+  }
+  const points: DailyAccuracyPoint[] = []
+  for (const [date, b] of byDate) {
+    const dirTotal = b.correct + b.wrong
+    points.push({
+      date,
+      accuracy: dirTotal > 0 ? b.correct / dirTotal : null,
+      sampleCount: dirTotal,
+      avgNextChange: b.next.length ? avg(b.next) : null,
+    })
+  }
+  points.sort((a, b) => (a.date < b.date ? -1 : 1))
+  return points
 }

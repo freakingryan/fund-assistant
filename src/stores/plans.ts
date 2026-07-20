@@ -3,6 +3,7 @@ import { db } from './db'
 import type { InvestmentPlan, PlanRule, PlanAlert, Comparator, FundHolding } from '@/types'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
+import { computeFundTrendScore } from '@/services/backtest/decisionSnapshot'
 import { useSettingsStore } from './settings'
 
 const DEFAULT_PLAN: Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'> = {
@@ -190,6 +191,8 @@ export const usePlansStore = create<PlansState>((set, get) => ({
 
         switch (rule.type) {
           case 'return': {
+            // 成本未知（无成本净值/份额）时无法判定收益率，跳过该规则，避免静默漏报
+            if (costNAV <= 0) break
             const matches = compare(returnRate, rule.comparator, rule.threshold)
             if (matches) {
               triggered = true
@@ -198,6 +201,8 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             break
           }
           case 'price_diff': {
+            // 成本为 0 时 diff=nav（整份净值）会产生虚假价差买入提醒，跳过
+            if (costNAV <= 0) break
             const diff = nav - costNAV
             const matches = compare(diff, rule.comparator, rule.threshold)
             if (matches) {
@@ -247,6 +252,22 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             } catch {
               // K 线获取失败，跳过
               continue
+            }
+            break
+          }
+          case 'trend': {
+            const etfMappings = useSettingsStore.getState().settings.etfMappings
+            const trend = await computeFundTrendScore(h, etfMappings)
+            if (!trend) continue // 无法取得 K 线则跳过
+
+            const score = trend.score
+            if (compare(score, rule.comparator, rule.threshold)) {
+              triggered = true
+              const verb = rule.action === 'buy' ? '加仓' : '减仓/止盈'
+              reason = `趋势评分 ${score} ${cmpLabel(rule.comparator)} ${rule.threshold} → 建议${verb}`
+              if (trend.lowConfidence) {
+                reason += '（基于净值走势，无盘中区间，信号置信度较低，建议切换 ETF 真实 K 线复核）'
+              }
             }
             break
           }

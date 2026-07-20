@@ -1,5 +1,7 @@
 # 东方财富数据代理（Cloudflare Worker）
 
+> ⚠️ **前置条件已变化**：本 Worker 最初为「东财被硬阻断」而设。**2026-07-19 实测用户网络可直连东方财富**（含 pingzhongdata / fundgz / fundf10），未配置 `VITE_FUND_WORKER_URL` 时前端直连东财即可工作，本 Worker **已非必需**。仅当你需要解除 `fundf10` 的 eastmoney Referer 跨域校验（纯静态站浏览器无法伪造该 Referer）时，仍需自建边缘代理。保留本文档作为可选增强参考。
+
 基金助手依赖东方财富（天天基金）的多个接口获取基金净值历史、F10 持仓、实时估值、
 基金搜索。这些接口域名（`*.eastmoney.com`、`fundgz.1234567.com.cn`）在部分网络环境下
 被硬阻断（即使开启代理也无法访问）。本 Worker 部署在 Cloudflare 边缘节点（可达东财），

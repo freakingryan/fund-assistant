@@ -7,9 +7,9 @@
  * @module backtest/BacktestPage
  */
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import { captureDailySnapshots, reconcileSnapshots, getAllSnapshots } from '@/services/backtest/decisionSnapshot'
-import { computeBacktestStats, recommendationLabel, outcomeLabel } from '@/services/backtest/stats'
+import { useEffect, useMemo, useState, useCallback, Fragment, useRef } from 'react'
+import { captureDailySnapshots, reconcileSnapshots, getAllSnapshots, localDateKey } from '@/services/backtest/decisionSnapshot'
+import { computeBacktestStats, computeDailyAccuracySeries, recommendationLabel, outcomeLabel } from '@/services/backtest/stats'
 import type { Recommendation, ScoreSnapshot } from '@/services/backtest/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,8 @@ import { Loader2, BarChart3, Download, RefreshCw, Camera } from 'lucide-react'
 import { toast } from '@/components/ui/toast'
 import ScoreScatterChart from './ScoreScatterChart'
 import AccuracyBucketChart from './AccuracyBucketChart'
+import DailyAccuracyTrendChart from './DailyAccuracyTrendChart'
+import AiAnalysisPanel from './AiAnalysisPanel'
 
 const REC_COLOR: Record<Recommendation, string> = {
   buy: 'text-up bg-up/10 border-up/30',
@@ -46,23 +48,60 @@ export default function BacktestPage() {
   const [busy, setBusy] = useState<null | 'capture' | 'reconcile'>(null)
   const [recFilter, setRecFilter] = useState<'all' | Recommendation>('all')
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | ScoreSnapshot['outcome']>('all')
+  const [dateFilter, setDateFilter] = useState<'all' | string>('all')
+  // 首次加载后将明细默认聚焦「当日」（无当日数据则回退到最近一个交易日），而非全部日期平铺
+  const initialDateSet = useRef(false)
 
   const load = useCallback(async () => {
     const data = await getAllSnapshots()
     setSnapshots(data)
+    if (!initialDateSet.current) {
+      const set = new Set(data.map((s) => s.date))
+      const today = localDateKey()
+      const latest = Array.from(set).sort((a, b) => (a < b ? 1 : -1))[0]
+      setDateFilter(set.has(today) ? today : (latest ?? 'all'))
+      initialDateSet.current = true
+    }
     setLoading(false)
   }, [])
 
   useEffect(() => { load().catch(() => setLoading(false)) }, [load]) // eslint-disable-line react-hooks/set-state-in-effect
 
   const stats = useMemo(() => computeBacktestStats(snapshots), [snapshots])
+  const daily = useMemo(() => computeDailyAccuracySeries(snapshots), [snapshots])
+
+  // 明细表日期筛选选项：全部有快照的交易日（降序）
+  const dateOptions = useMemo(() => {
+    const set = new Set(snapshots.map((s) => s.date))
+    return Array.from(set).sort((a, b) => (a < b ? 1 : -1))
+  }, [snapshots])
 
   const filtered = useMemo(
     () => snapshots.filter(
       (s) => (recFilter === 'all' || s.recommendation === recFilter)
-        && (outcomeFilter === 'all' || s.outcome === outcomeFilter),
+        && (outcomeFilter === 'all' || s.outcome === outcomeFilter)
+        && (dateFilter === 'all' || s.date === dateFilter),
     ),
-    [snapshots, recFilter, outcomeFilter],
+    [snapshots, recFilter, outcomeFilter, dateFilter],
+  )
+
+  // 明细表按日期分组（降序），便于「按日期浏览」而非所有日期平铺一页
+  const groupedByDate = useMemo(() => {
+    const map = new Map<string, ScoreSnapshot[]>()
+    for (const s of filtered) {
+      const arr = map.get(s.date)
+      if (arr) arr.push(s)
+      else map.set(s.date, [s])
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+      .map(([date, rows]) => ({ date, rows }))
+  }, [filtered])
+
+  // 是否存在「ETF/个股类且仍待回填」的快照——用于针对性提示时间差成因
+  const hasPendingEtf = useMemo(
+    () => snapshots.some((s) => s.outcome === 'pending' && s.valueSource === 'etf'),
+    [snapshots],
   )
 
   const handleCapture = async () => {
@@ -182,6 +221,19 @@ export default function BacktestPage() {
         </Card>
       </div>
 
+      {/* 每日方向性准确率趋势 */}
+      <Card className="card-hover">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">每日方向性准确率趋势</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DailyAccuracyTrendChart daily={daily} />
+        </CardContent>
+      </Card>
+
+      {/* AI 辅助算法分析 */}
+      <AiAnalysisPanel snapshots={snapshots} />
+
       {/* 明细表 */}
       <Card className="card-hover">
         <CardHeader className="pb-2">
@@ -198,10 +250,32 @@ export default function BacktestPage() {
                 value={outcomeFilter} onChange={setOutcomeFilter}
                 options={[['all', '全部结果'], ['pending', '待回填'], ['correct', '命中'], ['wrong', '未命中'], ['neutral', '中性']] as const}
               />
+              {dateOptions.length > 0 && (
+                <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
+                  <span className="text-[10px] text-muted-foreground">日期</span>
+                  <select
+                    value={dateFilter}
+                    onChange={(e) => setDateFilter(e.target.value)}
+                    className="text-[11px] px-1.5 py-0.5 rounded border border-border/50 bg-muted/40 text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[120px]"
+                    title="按采集日期筛选明细"
+                  >
+                    <option value="all">全部日期</option>
+                    {dateOptions.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         </CardHeader>
         <CardContent>
+          {hasPendingEtf && (
+            <p className="text-[10px] text-muted-foreground/80 mb-2 leading-relaxed">
+              提示：ETF/个股类快照的「次日涨跌」需等下一交易日收盘后才有数据，故最近约 1 个交易日会显示「待回填」；
+              而净值类基金因净值 T+1 公布，其快照的 asOfDate 通常比采集日早一天，故往往当日即可回填。两者均属正常时间差，并非数据缺失。
+            </p>
+          )}
           {filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-10">
               {snapshots.length === 0 ? '暂无评分快照，点击「记录今日评分」开始积累数据' : '当前筛选无匹配记录'}
@@ -221,32 +295,42 @@ export default function BacktestPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((s) => (
-                    <tr key={s.id} className="border-b border-border/40 hover:bg-muted/30">
-                      <td className="py-1.5 px-2 font-mono text-[10px] text-muted-foreground">{s.date}</td>
-                      <td className="py-1.5 px-2">
-                        <div className="truncate max-w-[140px]">{s.fundName}</div>
-                        <div className="font-mono text-[10px] text-muted-foreground">{s.fundCode}</div>
-                      </td>
-                      <td className="py-1.5 px-2 text-right font-mono font-medium">{s.score}</td>
-                      <td className="py-1.5 px-2">
-                        <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${REC_COLOR[s.recommendation]}`}>
-                          {recommendationLabel(s.recommendation)}
-                        </span>
-                      </td>
-                      <td className="py-1.5 px-2 text-right font-mono">
-                        {s.closeValue != null ? s.closeValue.toFixed(3) : '-'}
-                        <span className="text-[9px] text-muted-foreground ml-1">{s.valueSource === 'etf' ? 'ETF' : s.valueSource === 'nav' ? '净值' : ''}</span>
-                      </td>
-                      <td className={`py-1.5 px-2 text-right font-mono ${s.nextChangePct != null ? (s.nextChangePct >= 0 ? 'text-up' : 'text-down') : 'text-muted-foreground'}`}>
-                        {fmtPct(s.nextChangePct)}
-                      </td>
-                      <td className="py-1.5 px-2">
-                        <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${OUTCOME_COLOR[s.outcome]}`}>
-                          {outcomeLabel(s.outcome)}
-                        </span>
-                      </td>
-                    </tr>
+                  {groupedByDate.map(({ date, rows }) => (
+                    <Fragment key={date}>
+                      <tr className="bg-muted/40">
+                        <td colSpan={7} className="py-1 px-2 text-[11px] font-semibold text-foreground/90">
+                          {date}
+                          <span className="ml-2 text-[10px] font-normal text-muted-foreground">{rows.length} 只基金</span>
+                        </td>
+                      </tr>
+                      {rows.map((s) => (
+                        <tr key={s.id} className="border-b border-border/40 hover:bg-muted/30">
+                          <td className="py-1.5 px-2 font-mono text-[10px] text-muted-foreground">{s.date}</td>
+                          <td className="py-1.5 px-2">
+                            <div className="truncate max-w-[140px]">{s.fundName}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground">{s.fundCode}</div>
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono font-medium">{s.score}</td>
+                          <td className="py-1.5 px-2">
+                            <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${REC_COLOR[s.recommendation]}`}>
+                              {recommendationLabel(s.recommendation)}
+                            </span>
+                          </td>
+                          <td className="py-1.5 px-2 text-right font-mono">
+                            {s.closeValue != null ? s.closeValue.toFixed(3) : '-'}
+                            <span className="text-[9px] text-muted-foreground ml-1">{s.valueSource === 'etf' ? 'ETF' : s.valueSource === 'nav' ? '净值' : ''}</span>
+                          </td>
+                          <td className={`py-1.5 px-2 text-right font-mono ${s.nextChangePct != null ? (s.nextChangePct >= 0 ? 'text-up' : 'text-down') : 'text-muted-foreground'}`}>
+                            {fmtPct(s.nextChangePct)}
+                          </td>
+                          <td className="py-1.5 px-2">
+                            <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${OUTCOME_COLOR[s.outcome]}`}>
+                              {outcomeLabel(s.outcome)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

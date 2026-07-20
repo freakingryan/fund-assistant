@@ -411,10 +411,60 @@ export function detectMultiPatterns(
   return results
 }
 
+// ─── L2.5: 缺口方向形态（高开低走 / 低开高走） ───────────
+
+export type GapPattern = 'gap_up_fade' | 'gap_down_recover'
+
+/**
+ * 缺口方向形态检测：需要上一根 K 线的收盘（判缺口）与当前 K 线的开/收（判日内方向）。
+ * - 高开低走 (gap_up_fade)：今开 > 昨收（跳空向上）且今收 < 今开（冲高回落收阴）→ 偏空反转
+ * - 低开高走 (gap_down_recover)：今开 < 昨收（跳空向下）且今收 > 今开（低开高走收阳）→ 偏多反转
+ *
+ * 仅对含盘中 OHLC 的真实 K 线有意义；纯净值序列 open==close，缺口与日内方向均不成立，自然不会触发。
+ */
+const GAP_MIN_RATIO = 0.002 // 缺口幅度阈值（open 相对昨收偏离 > 0.2% 才算有效缺口，过滤微小跳空噪声）
+
+export function detectGapDirectionPatterns(data: KLineData[]): DetectedPattern[] {
+  const results: DetectedPattern[] = []
+  for (let i = 1; i < data.length; i++) {
+    const prevClose = data[i - 1].close
+    const c = data[i]
+    if (!prevClose || prevClose === 0) continue
+    const gapRatio = (c.open - prevClose) / prevClose
+    const isGapUp = gapRatio > GAP_MIN_RATIO
+    const isGapDown = gapRatio < -GAP_MIN_RATIO
+    const closedUp = c.close > c.open
+    const closedDown = c.close < c.open
+
+    if (isGapUp && closedDown) {
+      results.push({
+        type: 'gap_up_fade',
+        index: i,
+        confidence: 0.75,
+        description: '高开低走：跳空高开后回落收阴，上方抛压显现，日内反转偏空',
+        direction: 'bearish',
+        isMultiCandle: false,
+        candleCount: 1,
+      })
+    } else if (isGapDown && closedUp) {
+      results.push({
+        type: 'gap_down_recover',
+        index: i,
+        confidence: 0.75,
+        description: '低开高走：跳空低开后回升收阳，下方承接有力，日内反转偏多',
+        direction: 'bullish',
+        isMultiCandle: false,
+        candleCount: 1,
+      })
+    }
+  }
+  return results
+}
+
 // ─── 统一导出 ─────────────────────────────────────────
 
 /** 所有形态的联合类型 */
-export type KlinePattern = SingleCandlePattern | MultiCandlePattern
+export type KlinePattern = SingleCandlePattern | MultiCandlePattern | GapPattern
 
 /** 检测到的形态 */
 export interface DetectedPattern {
@@ -472,8 +522,11 @@ export function detectPatterns(data: KLineData[]): DetectedPattern[] {
     return result
   })
 
+  // L2.5：缺口方向形态（高开低走 / 低开高走）
+  const gapResults = detectGapDirectionPatterns(data)
+
   // 合并 & 排序（按位置从前到后）
-  return [...singleResults, ...multiResults].sort((a, b) => a.index - b.index)
+  return [...singleResults, ...multiResults, ...gapResults].sort((a, b) => a.index - b.index)
 }
 
 // ─── 工具函数 ─────────────────────────────────────────
@@ -502,7 +555,10 @@ export function getPatternLabel(patterns: DetectedPattern[], index: number): str
   const atIndex = patterns.filter((p) => p.index === index && !p.isMultiCandle)
   if (atIndex.length === 0) return null
   const best = atIndex.reduce((a, b) => (a.confidence > b.confidence ? a : b))
-  return PATTERN_LABELS[best.type] || best.type
+  if (best.type === 'gap_up_fade' || best.type === 'gap_down_recover') {
+    return GAP_PATTERN_LABELS[best.type]
+  }
+  return PATTERN_LABELS[best.type as SingleCandlePattern] || best.type
 }
 
 /** 单 K 线形态中文标签（用于图表/列表显示） */
@@ -533,11 +589,20 @@ const MULTI_PATTERN_LABELS: Partial<Record<MultiCandlePattern, string>> = {
   three_black_crows: '三连阴',
 }
 
+/** 缺口方向形态中文标签 */
+const GAP_PATTERN_LABELS: Record<GapPattern, string> = {
+  gap_up_fade: '高开低走',
+  gap_down_recover: '低开高走',
+}
+
 /**
  * 获取某条检测结果的统一中文显示名（同时支持单 K 与组合形态）。
  * 用于形态列表与 hover tooltip，避免组合形态回退到原始英文 type。
  */
 export function getPatternDisplayName(p: DetectedPattern): string {
   if (p.isMultiCandle) return MULTI_PATTERN_LABELS[p.type as MultiCandlePattern] || p.type
+  if (p.type === 'gap_up_fade' || p.type === 'gap_down_recover') {
+    return GAP_PATTERN_LABELS[p.type]
+  }
   return PATTERN_LABELS[p.type as SingleCandlePattern] || p.type
 }

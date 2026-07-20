@@ -139,7 +139,7 @@ ETF 映射       em_    7 天
 
 ### 模块 4：投资计划 (`src/components/plans/PlansPage.tsx`)
 
-- **规则配置**：5 种触发条件、4 种比较方向、买入/卖出操作、份数系统
+- **规则配置**：6 种触发条件（收益率 / 净值价差 / 单日涨跌 / 定投 / K线形态 / 趋势信号）、4 种比较方向、买入/卖出操作、份数系统
 - **扫描引擎**：遍历所有持仓 × 所有规则 → 去重 → 批量生成 PlanAlert → 浏览器通知
 - **提醒面板**：待处理列表，每条含「快速调仓」「已执行」「已读」操作
 - **操作日志**：历史记录查看
@@ -193,6 +193,9 @@ Prompt 生成 → 选择模板 → 填充持仓+行情+提醒+K线 → 复制到
 | `/prompts` | PromptsPage | Prompt 生成器 |
 | `/notifications` | NotificationsPage | 通知概览 |
 | `/settings` | SettingsPage | 设置 |
+| `/ranking` | RankingPage | 综合评分排行榜（含全市场板块资金流入/流出） |
+| `/daily` | DailyReportPage | 每日日报（组合盈亏快照 / 行动建议 / 计划进度 / 板块温度） |
+| `/backtest` | BacktestPage | 评分回测验证（每日评分快照 / 准确率统计 / AI 辅助算法分析） |
 
 ## 六、CI/CD 配置
 
@@ -229,6 +232,8 @@ PR to main / push to main → eslint . + tsc --noEmit + vite build
 | Phase 14 | ✅ 完成 | 技术指标叠加：MA5/10/20/60 均线 + BOLL(20,2) 布林带 + SVG 内联渲染 + 图例外置防遮挡 + 可折叠详细说明 |
 | Phase 15 | ✅ 完成 | MACD(EMA12-26+信号线)、RSI(14)、成交量均线(VOL-MA5/10/20) + 多指标融合信号评分系统(signalEngine.ts) |
 | Phase 16 | ✅ 完成 | UI 一致性：深色/浅色模式适配、触屏支持(Tooltip/选中高亮)、固定高度容器防布局抖动、数据方向左旧右新 |
+| Phase 16.5 | ✅ 完成 | 评分回测验证模块（`/backtest`）：收盘后自动采集每日评分快照 + 次日涨跌回填 + 持久化 + 准确率/区间命中统计 + 散点/区间图 |
+| Phase 16.6 | ✅ 完成 | 回测增强：AI 辅助算法分析（复用 services/ai.ts 调 LLM，诊断薄弱环节+调参建议，落库可回看）+ 按日方向性准确率趋势图 + 明细表日期筛选 + 每日首次自动采集守卫 |
 | Phase 17 | 🔜 待开始 | 通知系统增强：Web Push 定时扫描 + 飞书通知 |
 | Phase 18 | 🔜 待开始 | 存储扩展：Notion 适配器实现 |
 | Phase 19 | 🔜 待开始 | 数据同步：多设备数据同步方案 |

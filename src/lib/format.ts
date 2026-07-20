@@ -27,6 +27,15 @@ export function formatCurrency(value: number): string {
   })}`
 }
 
+/** 大额金额紧凑显示：元 → 亿/万，如 12.3亿 / 4567.8万 / -1.2亿 */
+export function formatMoneyCompact(value: number): string {
+  const sign = value < 0 ? '-' : ''
+  const abs = Math.abs(value)
+  if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`
+  if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(2)}万`
+  return `${sign}${abs.toFixed(0)}`
+}
+
 /**
  * 持仓参考市值：
  * 方式一（成本净值+份额）：成本净值 × 份额

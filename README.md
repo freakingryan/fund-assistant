@@ -255,8 +255,8 @@ fund-assistant/
 | 数据存在哪里？ | 浏览器 IndexedDB，清除浏览器数据会丢失 |
 | 需要数据库或后端？ | 不需要，纯前端应用。股票/ETF 走 **stock-api**（腾讯源），基金净值/估值/F10 走 **stock-sdk**（东方财富源），请求治理由两库内部负责 |
 | ETF K 线显示空白？ | K 线走腾讯源，偶发失败由 stock-api 内部重试 + 多源兜底自动处理，刷新即可；若长时间空白多为本机 IP 被临时限流（数小时~1 天恢复）或网络受限，切换网络即可 |
-| 基金净值/估值/搜索空白？ | 走东方财富（不校验 Referer）：网络不可达时暂时空白，恢复访问 / 开 VPN / 开 Clash 系统代理后自动复活 |
-| 基金持仓明细（F10）空白？ | `fundf10` 强制校验 eastmoney Referer，浏览器无法伪造 → **纯静态生产（GitHub Pages）无法直接取**，即使开代理也不行；开发环境走 Vite proxy 注入 Referer 可用；生产可用需自建边缘代理（Cloudflare Worker）转发设 Referer |
+| 基金净值/估值/搜索空白？ | 走东方财富（用户网络 2026-07-19 实测直连可达，无需代理）；若空白多为东财接口偶发限流，刷新或切换网络即可恢复 |
+| 基金持仓明细（F10）空白？ | `fundf10` 强制校验 eastmoney Referer，浏览器无法伪造 → 纯静态生产（GitHub Pages）仍受 Referer 跨域限制无法直接取（与东财网络是否可达无关）；开发环境走 Vite proxy 注入 Referer 可用；如需生产可用需自建边缘代理（Cloudflare Worker）转发设 Referer |
 
 ## 部署
 

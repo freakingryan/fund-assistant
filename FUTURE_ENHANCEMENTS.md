@@ -4,7 +4,7 @@
 整理可引入 fund-assistant 的候选能力。**第一档（纯计算 indicators + signals）已立项实现**，
 本文件记录剩余的「未来增强」候选，供后续迭代参考，不阻塞当前工作。
 
-## 第一档（已立项，纯本地、零网络）★进行中
+## 第一档（已立项，纯本地、零网络）✅ 已完成（stockSdkIndicators.ts + signals 已落地，2026-07-18）
 - `stock-sdk/indicators`：`calcMACD`/`calcBOLL`/`calcRSI`/`calcBIAS`/`calcMA` 等（部分只需收盘价数组，
   基金净值K线可直接用；KDJ/WR/CCI/ATR/OBV/DMI/SAR/KC 需 OHLCV，仅股票K线可用）。
 - `stock-sdk/signals`：`calcSignals` 金叉/死叉/超买超卖/布林突破/SAR反转事件识别。
@@ -14,13 +14,13 @@
 > ✅ 2026-07-19 实测：用户网络可直连东方财富全部子域（含 pingzhongdata / push2his /
 > datacenter-web / fundgz），无需部署 Cloudflare Worker。资金面增强（capitalFlow）已按此落地。
 > 以下接口现在即可直接调用（direct 模式）。
-- **同类排名走势** `sdk.fund.rankHistory(code)`：基金在同类型中的排名变化曲线，辅助业绩评价。
+- **同类排名走势** `sdk.fund.rankHistory(code)`：基金在同类型中的排名变化曲线，辅助业绩评价。 ✅ 已接入（综合评分排行榜「同类排名」列）
 - **分红派送** `sdk.fund.dividendList(code)`：基金分红送配历史，支撑分红再投资分析。
 - **主题基金** `sdk.fund.theme(...)`：按主题分类发现基金，辅助资产配置与自选拓展。
 
 ## 第三档：A股个股向（基金助手非核心，除非扩展个股分析；东财现已直连可达 ✅）
 - **板块** `sdk.board.industry/*` / `sdk.board.concept/*`：行业/概念板块行情与成分，做板块配置视角。
-- **资金流向** `sdk.fundFlow.{individual,market,rank,sectorRank}`：个股/板块/市场资金净流入，量价辅助（individual 已用于 capitalFlow）。
+- **资金流向** `sdk.fundFlow.{individual,market,rank,sectorRank}`：个股/板块/市场资金净流入，量价辅助（individual 已用于 capitalFlow）。 ✅ `sectorRank` 已接入（排行榜页「资金流」tab 板块资金流面板）
 - **沪深港通/北向** `sdk.northbound.{minute,summary,holdingRank,history}`：北向资金持仓与流向，宏观情绪指标（individual 已用于 capitalFlow）。
 - **筹码分布** `sdk.chips.{cn,hk,us}`：CYQ 获利比例/成本区间（东财算法本地算，但需东财行情数据作输入）。
 - **交易日历** `sdk.calendar.{isTradingDay,marketStatus,nextTradingDay}`：交易日判断与提醒调度（部分走网络）。

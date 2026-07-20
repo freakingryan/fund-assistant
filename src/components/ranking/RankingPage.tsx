@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toast'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+import SectorFundFlowPanel from '@/components/ranking/SectorFundFlowPanel'
 
 type Tone = 'up' | 'down' | 'neutral'
 
@@ -76,6 +77,7 @@ export default function RankingPage() {
   const [sortBy, setSortBy] = useState<'score' | 'capital' | 'sector' | 'rank'>('score')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [report, setReport] = useState<CaptureReport | null>(null)
+  const [tab, setTab] = useState<'score' | 'flow'>('score')
 
   const holdings = useHoldingsStore((s) => s.holdings)
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
@@ -261,10 +263,10 @@ export default function RankingPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Trophy className="h-6 w-6 text-primary" /> 综合评分排行榜
+            <Trophy className="h-6 w-6 text-primary" /> 排行榜
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            按决策引擎综合评分排序，买入建议靠前、减仓建议靠后
+            基金评分（决策引擎综合分排序，买入靠前、减仓靠后）与全市场板块资金流排行，用上方 Tab 切换视图
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -276,23 +278,46 @@ export default function RankingPage() {
             />
             今日已评 {coverage.covered}/{coverage.total}
           </span>
-          <Button size="sm" variant="outline" onClick={handleCapture} disabled={busy}>
-            {busy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Camera className="h-3 w-3 mr-1" />}
-            更新今日评分
-            {coverage.missing > 0 && `（补 ${coverage.missing}）`}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleForceRefresh}
-            disabled={busy}
-            title="忽略缓存，重新拉取并覆盖全部持仓今日评分"
-          >
-            重评全部
-          </Button>
+          {tab === 'score' && (
+            <>
+              <Button size="sm" variant="outline" onClick={handleCapture} disabled={busy}>
+                {busy ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Camera className="h-3 w-3 mr-1" />}
+                更新今日评分
+                {coverage.missing > 0 && `（补 ${coverage.missing}）`}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleForceRefresh}
+                disabled={busy}
+                title="忽略缓存，重新拉取并覆盖全部持仓今日评分"
+              >
+                重评全部
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Tab 切换：基金评分 / 资金流 */}
+      <div className="flex items-center gap-1 border-b border-border/50">
+        {(['score', 'flow'] as const).map((tk) => (
+          <button
+            key={tk}
+            onClick={() => setTab(tk)}
+            className={`text-sm px-3 py-1.5 border-b-2 -mb-px transition-colors ${
+              tab === tk
+                ? 'border-primary text-primary font-medium'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {tk === 'score' ? '基金评分' : '资金流'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'score' && (
+      <>
       {/* 统计卡 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="纳入排名" value={`${stats.total}`} sub="只基金" />
@@ -636,6 +661,11 @@ export default function RankingPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 全市场板块资金流：主力净流入 / 净流出 TOP（东财增强） */}
+      </> )}
+
+      {tab === 'flow' && <SectorFundFlowPanel />}
     </div>
   )
 }

@@ -6,7 +6,9 @@ import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
 import { useNotificationsStore } from './stores/notifications'
 import { runDailyGistPush } from './services/autoSync'
-import { captureDailySnapshots, reconcileSnapshots } from './services/backtest/decisionSnapshot'
+import { captureDailySnapshots, reconcileSnapshots, backfillMissingTradingDays, isMarketClosed, localDateKey } from './services/backtest/decisionSnapshot'
+import { isTradingDay } from './lib/tradingCalendar'
+import { sendAlertBatch } from './services/notification'
 import ToastContainer from './components/ui/toast'
 import InstallPrompt from './components/layout/InstallPrompt'
 import { AlertCircle } from 'lucide-react'
@@ -32,6 +34,50 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
       )
     }
     return this.props.children
+  }
+}
+
+/**
+ * 交易日交易时段内（周一至周五）是否打开，用于收盘前自动扫描。
+ * 覆盖 9:30–15:00，但排除午间休市 11:30–13:00（基金申赎 15:00 截止）。
+ *   - 上午盘：09:30–11:30
+ *   - 午休：  11:30–13:00（跳过）
+ *   - 下午盘：13:00–15:00
+ */
+function isTradingHoursOpen(now: Date = new Date()): boolean {
+  const day = now.getDay()
+  if (day === 0 || day === 6) return false
+  const mins = now.getHours() * 60 + now.getMinutes()
+  const inMorning = mins >= 9 * 60 + 30 && mins < 11 * 60 + 30
+  const inAfternoon = mins >= 13 * 60 && mins < 15 * 60
+  return inMorning || inAfternoon
+}
+
+/**
+ * 评分回测：每个交易日收盘后仅自动采集一次 + 回溯补齐最近缺失的交易日。
+ * 1) 今日守卫：settings.backtest.lastAutoCaptureDate === today 则跳过今日采集，
+ *    避免每 30 分钟定时复查重复读 Dexie / 发网络请求。
+ *    仅当本地已过 15:00（isMarketClosed）才把今日标记为已采集——
+ *    盘中空跑（capture 受门禁直接返回 0）不锁定当日，收盘后仍需真正采集一次。
+ * 2) 回溯补齐：本次会话仅首次运行时，补齐最近 7 天内「尚无任何快照」的交易日，
+ *    解决「用户只收盘前打开过一次、当日未采集、且之后再没打开」导致该日快照永久缺失的问题。
+ *    补齐用截断 K 线（targetDate）避免前视偏差，天然幂等。
+ */
+let backtestBackfillRan = false
+async function autoCaptureBacktestOnce() {
+  const today = localDateKey()
+  const meta = useSettingsStore.getState().settings.backtest
+  // 今日收盘后采集（每日首次守卫）；非交易日（周末/节假日）无快照可采，直接跳过
+  if (isTradingDay(new Date()) && meta?.lastAutoCaptureDate !== today) {
+    await captureDailySnapshots() // force=false，遵守收盘门禁
+    if (isMarketClosed()) {
+      await useSettingsStore.getState().updateBacktestMeta({ lastAutoCaptureDate: today })
+    }
+  }
+  // 回溯补齐最近缺失的交易日（仅本次会话首次运行一次）
+  if (!backtestBackfillRan) {
+    backtestBackfillRan = true
+    await backfillMissingTradingDays(7)
   }
 }
 
@@ -71,12 +117,31 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       await loadSettings()
-      loadHoldings()
-      loadPlan()
+      await loadHoldings()
+      await loadPlan()
       await useNotificationsStore.getState().loadNotifications()
       runDailyGistPush()
-      // 评分回测：收盘后自动补采当日快照 + 回填次日涨跌（幂等，门禁内置）
-      captureDailySnapshots().catch((e) => console.warn('[backtest] 自动采集失败', e))
+
+      // 收盘前自动扫描：交易时段内打开 App 即跑一次投资计划检查，新提醒推送浏览器通知。
+      // scan() 内部按 fundCode|ruleId 去重，仅生成真正新增的提醒，不会重复打扰。
+      if (isTradingHoursOpen()) {
+        const plan = usePlansStore.getState().plan
+        if (plan?.enabled) {
+          const holdings = useHoldingsStore.getState().holdings
+          if (holdings.length > 0) {
+            try {
+              const newAlerts = await usePlansStore.getState().scan(holdings)
+              if (newAlerts.length > 0) {
+                sendAlertBatch(newAlerts.map((a) => ({ fundName: a.fundName, reason: a.reason })))
+              }
+            } catch (e) {
+              console.warn('[plans] 收盘前自动扫描失败', e)
+            }
+          }
+        }
+      }
+      // 评分回测：收盘后自动补采当日快照（每日首次守卫）+ 回填次日涨跌（幂等，门禁内置）
+      autoCaptureBacktestOnce().catch((e) => console.warn('[backtest] 自动采集失败', e))
       reconcileSnapshots().catch((e) => console.warn('[backtest] 自动回填失败', e))
     }
     init()
@@ -93,7 +158,7 @@ export default function App() {
   // 评分回测：每 30 分钟复查一次采集/回填（仅收盘后/已有次日数据时生效，幂等）
   useEffect(() => {
     const timer = setInterval(() => {
-      captureDailySnapshots().catch((e) => console.warn('[backtest] 定时采集失败', e))
+      autoCaptureBacktestOnce().catch((e) => console.warn('[backtest] 定时采集失败', e))
       reconcileSnapshots().catch((e) => console.warn('[backtest] 定时回填失败', e))
     }, 30 * 60 * 1000)
     return () => clearInterval(timer)

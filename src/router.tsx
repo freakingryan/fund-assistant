@@ -9,6 +9,7 @@ import PlansPage from '@/components/plans/PlansPage'
 import PromptsPage from '@/components/prompts/PromptsPage'
 import NotificationsPage from '@/components/settings/NotificationsPage'
 import SettingsPage from '@/components/settings/SettingsPage'
+import DailyReportPage from '@/components/daily/DailyReportPage'
 import BacktestPage from '@/components/backtest/BacktestPage'
 import RankingPage from '@/components/ranking/RankingPage'
 
@@ -28,6 +29,7 @@ export const router = createBrowserRouter(
         { path: 'notifications', element: <NotificationsPage /> },
         { path: 'backtest', element: <BacktestPage /> },
         { path: 'ranking', element: <RankingPage /> },
+        { path: 'daily', element: <DailyReportPage /> },
         { path: 'settings', element: <SettingsPage /> },
       ],
     },
