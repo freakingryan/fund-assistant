@@ -454,7 +454,7 @@ export default function ImportDialog() {
                     <>
                       <Camera className="h-10 w-10 mx-auto text-muted-foreground" />
                       <p className="text-sm text-muted-foreground">上传持仓截图（京东金融 / 支付宝 / 天天基金等），AI 自动识别基金名称、金额、收益</p>
-                      <Input type="file" accept="image/*" capture="environment" onChange={handleImage} className="max-w-xs mx-auto" />
+                      <Input type="file" accept="image/*" onChange={handleImage} className="max-w-xs mx-auto" />
                       <p className="text-xs text-muted-foreground">支持 JPG/PNG，建议截图清晰完整</p>
                     </>
                   )}

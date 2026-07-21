@@ -27,6 +27,7 @@ import FundRankHistoryCard from '@/components/holdings/FundRankHistoryCard'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { captureSnapshotForFund } from '@/services/backtest/decisionSnapshot'
 import { pnlColor, formatSigned } from '@/lib/format'
+import { resolveHoldingCost } from '@/lib/holdingCost'
 import { isOnExchangeEtfFund } from '@/lib/fundCategory'
 import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from '@/lib/labels'
 import type { DetectedPattern } from '@/services/klinePatterns'
@@ -411,25 +412,8 @@ export default function FundDetailPage() {
             // 有效净值必须 > 1 且不是默认值 1.0000
             const currentNAV = (q?.nav && q.nav > 0.001 && q.nav !== 1) ? q.nav : null
 
-            // 方式一：成本净值 × 份额
-            const costByShares = fund.costNAV && fund.shares ? fund.costNAV * fund.shares : 0
-            // 方式二：持有金额 - 持有收益（即成本）
-            const costByProfit = fund.holdingAmount != null && fund.holdingProfit != null
-              ? fund.holdingAmount - fund.holdingProfit : 0
-            // 实际投入本金（优先方式一）
-            const investment = costByShares || costByProfit || 0
-
-            // 如果通过方式二录入且无份额，从持有金额反算份额
-            const derivedShares = fund.shares || (currentNAV && currentNAV > 0
-              ? Math.round((fund.holdingAmount || 0) / currentNAV * 100) / 100
-              : 0)
-
-            // 持仓成本单价：优先用户录入，否则反算（使用真实份额或反算份额）
-            const activeShares = fund.shares || derivedShares
-            const costNAV = fund.costNAV 
-              || (investment && fund.shares ? investment / fund.shares : 0) 
-              || (investment && derivedShares && derivedShares > 0 ? investment / derivedShares : 0) 
-              || 0
+            // 统一成本解析（兼容方式一/方式二；方式二按当前净值反算份额与成本净值）
+            const { costValue: investment, costNAV, shares: activeShares, method } = resolveHoldingCost(fund, currentNAV || 0)
 
             // 当前市值 = 份额 × 最新净值（优先），否则用持有金额，最后用成本
             const currentMarketValue = (activeShares && currentNAV)
@@ -439,11 +423,16 @@ export default function FundDetailPage() {
             const profit = currentMarketValue - investment
             const returnRate = investment > 0 ? (profit / investment) * 100 : 0
             const isProfit = profit >= 0
-          
+
+            const navPrefix = method === 'stored' ? '¥' : '≈¥'
+            const shareDisplay = activeShares > 0
+              ? (method === 'stored' ? activeShares.toLocaleString() : `≈${activeShares.toLocaleString()}`)
+              : '-'
+
           return (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                <Item label="持有份额" value={fund.shares ? fund.shares.toLocaleString() : (derivedShares ? `≈${derivedShares.toLocaleString()}` : '-')} />
-                <Item label="持仓成本单价" value={costNAV > 0 ? `¥${costNAV.toFixed(4)}` : '-'} />
+                <Item label="持有份额" value={shareDisplay} />
+                <Item label="持仓成本单价" value={costNAV > 0 ? `${navPrefix}${costNAV.toFixed(4)}` : '-'} />
                 <Item label={`最新净值${q?.navDate ? `(${q.navDate.slice(5)})` : ''}`}
                   value={<>{currentNAV ? `¥${currentNAV.toFixed(4)}` : '-'}{q?.dailyChange != null && currentNAV && (
                     <span className={`ml-1 text-[10px] ${pnlColor(q.dailyChange)}`}>

@@ -15,12 +15,20 @@
  */
 
 import { db } from '@/stores/db'
+import { resolveHoldingCost } from '@/lib/holdingCost'
 import { dataSourceService } from '@/adapters/datasource/service'
 import {
   computeFundTrendScore,
   localDateKey,
   type FundTrendResult,
 } from '@/services/backtest/decisionSnapshot'
+
+/**
+ * 日报 schema 版本。每当成本/盈亏聚合逻辑变更导致旧日报数据不可信时，在此 +1，
+ * DailyReportPage 会在打开时检测并自动重算，覆盖旧 bug 留下的陈旧快照。
+ * 本次（v2）：成本解析改为 pnlKnown 驱动，方式二持仓不再误报「成本未知」。
+ */
+export const DAILY_REPORT_SCHEMA_VERSION = 2
 import { analyzeFundSectorStrength } from '@/services/sectorStrengthAnalysis'
 import type {
   Comparator,
@@ -61,32 +69,20 @@ function computePortfolio(
     const q = quotes.get(h.code)
     if (!q) continue
     const nav = q.nav
-    // 与 scan() 一致的成本估算（兼容方式一 costNAV×shares 与方式二 holdingAmount/holdingProfit）
-    const costValue =
-      h.costNAV && h.shares
-        ? h.costNAV * h.shares
-        : h.holdingAmount
-          ? h.holdingAmount - (h.holdingProfit ?? 0)
-          : 0
-    const costNAV =
-      h.shares && h.costNAV
-        ? h.costNAV
-        : costValue && h.shares
-          ? costValue / h.shares
-          : 0
-    const costKnown = costNAV > 0
-    const currentValue = h.shares > 0 ? nav * h.shares : (h.holdingAmount || 0)
+    // 统一成本解析（兼容方式一 costNAV×shares 与方式二 holdingAmount/holdingProfit 反算）。
+    // pnlKnown=true 即收益率/累计盈亏可算（方式二即使无实时净值也能由 holdingProfit 得出）；
+    // costKnown 仅表示「单价成本净值已知」，与盈亏展示解耦。
+    const rc = resolveHoldingCost(h, nav)
+    const { costValue, costNAV, shares, costKnown, pnlKnown, returnRate, totalPnl: holdTotalPnl } = rc
+    const currentValue = shares > 0 ? nav * shares : (h.holdingAmount || 0)
     // 今日盈亏与成本无关，始终按市值×涨跌幅计入
     const dp = currentValue * (q.dailyChange / 100)
-    // 成本未知：收益率/累计盈亏无意义，不计入成本类聚合（避免把市值当利润虚高）
-    const returnRate = costKnown ? ((nav - costNAV) / costNAV) * 100 : 0
-    const tp = costKnown ? currentValue - costValue : 0
 
     totalMarketValue += currentValue
     dayPnl += dp
-    if (costKnown) {
+    if (pnlKnown) {
       totalCost += costValue
-      totalPnl += tp
+      totalPnl += holdTotalPnl
     }
 
     items.push({
@@ -95,13 +91,14 @@ function computePortfolio(
       nav,
       dailyChange: q.dailyChange,
       costNAV,
-      shares: h.shares,
+      shares,
       returnRate,
       marketValue: currentValue,
-      costValue: costKnown ? costValue : 0,
+      costValue: pnlKnown ? costValue : 0,
       dayPnl: dp,
-      totalPnl: tp,
+      totalPnl: holdTotalPnl,
       costKnown,
+      pnlKnown,
     })
   }
 
@@ -393,6 +390,7 @@ export async function generateDailyReport(holdings: FundHolding[]): Promise<Dail
     planProgress,
     market,
     generatedAt: new Date().toISOString(),
+    schemaVersion: DAILY_REPORT_SCHEMA_VERSION,
   }
 
   await db.dailyReports.put(report)

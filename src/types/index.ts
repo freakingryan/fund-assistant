@@ -131,6 +131,7 @@ export interface PlanAlert {
   currentNAV: number
   costNAV: number
   returnRate: number      // 当前收益率 (%)
+  totalPnl: number        // 累计盈亏（元）。方式二直接由 holdingProfit 得出，无需实时净值
   dailyChange: number     // 今日涨跌幅 (%)
   reason: string          // 触发说明
   triggeredAt: string
@@ -154,7 +155,8 @@ export interface HoldingPnlItem {
   costValue: number     // 本金（成本市值）
   dayPnl: number        // 今日盈亏
   totalPnl: number      // 累计盈亏
-  costKnown: boolean    // 成本是否已知（costNAV>0）。false 时收益率/累计盈亏无意义，UI 显示「成本未知」并从成本类聚合中剔除
+  costKnown: boolean    // 单价成本是否已知（costNAV>0）。false 时单价成本无意义，UI 可显示「成本未知」
+  pnlKnown: boolean     // 盈亏是否已知（可算收益率/累计盈亏）。方式二只要填了持有金额即 true，无需实时净值；false 时收益率/累计盈亏无意义
 }
 
 /** 组合盈亏快照（日报模块1） */
@@ -224,6 +226,8 @@ export interface DailyReport {
   planProgress: PlanProgressItem[]    // 模块3
   market: MarketPulse                 // 模块4
   generatedAt: string
+  /** 生成时所用日报 schema 版本；低于当前版本时打开页面会自动重算，覆盖旧 bug 数据 */
+  schemaVersion: number
 }
 
 // ============= AI / 存储 / 数据源 适配器接口 =============

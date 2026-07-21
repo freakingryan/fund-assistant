@@ -22,7 +22,9 @@ import { CheckCircle, Eye, Trash2, Plus, Play, Loader2,
 import type { PlanRule, PlanRuleType, Comparator, PlanAlert } from '@/types'
 import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
 import type { FundHolding } from '@/types'
-import { pnlColor, formatSigned } from '@/lib/format'
+import { pnlColor, formatSigned, formatCurrency } from '@/lib/format'
+import { useRealtimeQuotes, type RealtimeValuation } from '@/hooks/useRealtimeQuotes'
+import { resolveHoldingCost } from '@/lib/holdingCost'
 
 const RULE_TYPE_LABELS: Record<PlanRuleType, string> = {
   return: '收益率',
@@ -197,6 +199,10 @@ export default function PlansPage() {
 
   const pendingAlerts = useMemo(() => alerts.filter((a) => !a.executed && !a.dismissed), [alerts])
   const historyAlerts = useMemo(() => alerts.filter((a) => a.executed || a.dismissed), [alerts])
+
+  // 提醒面板实时行情：用于现场重算每条提醒的成本/收益率/盈亏，覆盖陈旧快照（旧 bug 的「成本未知」）
+  const alertCodes = useMemo(() => pendingAlerts.map((a) => a.fundCode), [pendingAlerts])
+  const { valuations: alertValuations } = useRealtimeQuotes(alertCodes)
 
   const handleScan = useCallback(async () => {
     if (!plan?.enabled) return
@@ -429,7 +435,7 @@ export default function PlansPage() {
             pendingAlerts.map((alert) => (
               <AlertCard key={alert.id} alert={alert} onExecuted={markAlertExecuted} onDismiss={dismissAlert}
                 onQuickAdjust={(fund) => { setAdjustFund(fund); setAdjustOpen(true) }}
-                holdings={holdings} />
+                holdings={holdings} valuation={alertValuations[alert.fundCode]} />
             ))
           )}
         </div>
@@ -468,15 +474,37 @@ export default function PlansPage() {
   )
 }
 
-function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings }: {
+function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings, valuation }: {
   alert: PlanAlert
   onExecuted: (id: string) => void
   onDismiss: (id: string) => void
   onQuickAdjust: (fund: FundHolding) => void
   holdings: FundHolding[]
+  /** 实时行情估值（来自 PlansPage 的 useRealtimeQuotes），用于现场重算成本/盈亏 */
+  valuation?: RealtimeValuation
 }) {
-  const isUp = alert.returnRate >= 0
   const matchedHolding = holdings.find((h) => h.code === alert.fundCode)
+
+  // 现场重算：用实时净值（若有）对持仓解析成本，覆盖扫描时留下的陈旧快照
+  const liveQuote = valuation?.quote ?? null
+  const live = matchedHolding ? resolveHoldingCost(matchedHolding, liveQuote?.nav ?? 0) : null
+
+  // 成本净值：优先实时反算，否则回退快照
+  const effCostNAV = live && live.costNAV > 0 ? live.costNAV : alert.costNAV
+  // 盈亏是否可算：实时优先，否则快照有成本净值也算
+  const effPnlKnown = (live?.pnlKnown ?? false) || alert.costNAV > 0
+  // 收益率：实时优先（更准），否则快照值
+  const effReturnRate = live?.pnlKnown ? live.returnRate : alert.returnRate
+  // 累计盈亏：实时优先，否则快照值（旧快照可能无此字段）
+  const effTotalPnl = live?.pnlKnown ? live.totalPnl : (alert.totalPnl ?? null)
+
+  const isUp = effReturnRate >= 0
+  const costLabel =
+    effCostNAV > 0
+      ? `¥${effCostNAV.toFixed(4)}`
+      : matchedHolding && (matchedHolding.holdingAmount || 0) > 0
+        ? `本金 ¥${Math.max(0, (matchedHolding.holdingAmount || 0) - (matchedHolding.holdingProfit || 0)).toFixed(2)}`
+        : '成本未知'
 
   const handleQuick = () => {
     if (!matchedHolding) return
@@ -498,12 +526,17 @@ function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings }: {
               </Badge>
               <span className="text-xs">{alert.reason}</span>
             </div>
-            <div className="flex gap-3 text-[10px] text-muted-foreground">
-              <span>成本: ¥{alert.costNAV.toFixed(4)}</span>
-              <span>现价: ¥{alert.currentNAV.toFixed(4)}</span>
+            <div className="flex gap-3 text-[10px] text-muted-foreground flex-wrap">
+              <span>成本: {costLabel}</span>
+              <span>现价: ¥{(liveQuote?.nav ?? alert.currentNAV).toFixed(4)}</span>
               <span className={pnlColor(isUp)}>
-                收益率: {formatSigned(alert.returnRate)}{alert.returnRate.toFixed(2)}%
+                收益率: {effPnlKnown ? `${formatSigned(effReturnRate)}${effReturnRate.toFixed(2)}%` : '—'}
               </span>
+              {effTotalPnl != null && (
+                <span className={pnlColor(effTotalPnl)}>
+                  累计盈亏: {formatSigned(effTotalPnl)}{formatCurrency(effTotalPnl)}
+                </span>
+              )}
               <span className={pnlColor(alert.dailyChange)}>
                 今日: {formatSigned(alert.dailyChange)}{alert.dailyChange.toFixed(2)}%
               </span>

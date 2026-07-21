@@ -5,6 +5,7 @@ import { dataSourceService } from '@/adapters/datasource/service'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { computeFundTrendScore } from '@/services/backtest/decisionSnapshot'
 import { useSettingsStore } from './settings'
+import { resolveHoldingCost } from '@/lib/holdingCost'
 
 const DEFAULT_PLAN: Omit<InvestmentPlan, 'id' | 'createdAt' | 'updatedAt'> = {
   name: '全局投资计划',
@@ -173,14 +174,15 @@ export const usePlansStore = create<PlansState>((set, get) => ({
       if (!q) continue
 
       const nav = q.nav
-      // C5 fix: 确保 holdingProfit 不会产生 NaN
-      const costValue = h.costNAV && h.shares
-        ? h.costNAV * h.shares
-        : (h.holdingAmount ? h.holdingAmount - (h.holdingProfit ?? 0) : 0)
-      const costNAV = h.shares && h.costNAV ? h.costNAV : (costValue && h.shares ? costValue / h.shares : 0)
-
-      // 当前收益率
-      const returnRate = costNAV > 0 ? ((nav - costNAV) / costNAV) * 100 : 0
+      // 统一成本解析（兼容方式一/方式二；方式二由 holdingProfit 直接得出收益率/盈亏，无需实时净值）
+      const rc = resolveHoldingCost(h, nav)
+      const { costNAV, costKnown, pnlKnown, returnRate, totalPnl } = rc
+      // 当前收益率（方式二无净值时已由 holdingProfit 得出，仍优先用实时净值精算）
+      const effectiveReturnRate = pnlKnown
+        ? costKnown
+          ? (nav - costNAV) / costNAV * 100
+          : returnRate
+        : 0
 
       for (const rule of enabledRules) {
         // C3 fix: 跳过已有未处理的相同 fundCode+ruleId
@@ -191,17 +193,17 @@ export const usePlansStore = create<PlansState>((set, get) => ({
 
         switch (rule.type) {
           case 'return': {
-            // 成本未知（无成本净值/份额）时无法判定收益率，跳过该规则，避免静默漏报
-            if (costNAV <= 0) break
-            const matches = compare(returnRate, rule.comparator, rule.threshold)
+            // 盈亏未知（既无成本净值/份额，又无持有收益）时无法判定收益率，跳过该规则
+            if (!pnlKnown) break
+            const matches = compare(effectiveReturnRate, rule.comparator, rule.threshold)
             if (matches) {
               triggered = true
-              reason = `收益率 ${returnRate >= 0 ? '+' : ''}${returnRate.toFixed(2)}% ${cmpLabel(rule.comparator)} ${rule.threshold}%`
+              reason = `收益率 ${effectiveReturnRate >= 0 ? '+' : ''}${effectiveReturnRate.toFixed(2)}% ${cmpLabel(rule.comparator)} ${rule.threshold}%`
             }
             break
           }
           case 'price_diff': {
-            // 成本为 0 时 diff=nav（整份净值）会产生虚假价差买入提醒，跳过
+            // 单价成本为 0 时 diff=nav（整份净值）会产生虚假价差买入提醒，跳过
             if (costNAV <= 0) break
             const diff = nav - costNAV
             const matches = compare(diff, rule.comparator, rule.threshold)
@@ -273,7 +275,7 @@ export const usePlansStore = create<PlansState>((set, get) => ({
           }
         }
 
-        if (triggered) {
+          if (triggered) {
           const alert: PlanAlert = {
             id: crypto.randomUUID(),
             fundCode: h.code,
@@ -284,7 +286,8 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             shares: rule.shares,
             currentNAV: nav,
             costNAV: costNAV,
-            returnRate,
+            returnRate: effectiveReturnRate,
+            totalPnl,
             dailyChange: q.dailyChange,
             reason,
             triggeredAt: now,

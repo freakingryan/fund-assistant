@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { usePlansStore } from '@/stores/plans'
 import { useHoldingsStore } from '@/stores/holdings'
-import { generateDailyReport, getDailyReport } from '@/services/dailyReport'
+import { generateDailyReport, getDailyReport, DAILY_REPORT_SCHEMA_VERSION } from '@/services/dailyReport'
 import { localDateKey } from '@/services/backtest/decisionSnapshot'
 import type {
   DailyReport,
@@ -72,8 +72,20 @@ export default function DailyReportPage() {
   useEffect(() => {
     if (!holdingsReady) return
     if (report) return
-    getDailyReport(localDateKey()).then((r) => setReport(r ?? null))
-  }, [holdingsReady, report])
+    const today = localDateKey()
+    getDailyReport(today).then((r) => {
+      // 无日报，或旧版本（成本解析 bug）留下的陈旧快照 → 自动重算覆盖，避免持续显示「成本未知」
+      if (!r || (r.schemaVersion ?? 0) < DAILY_REPORT_SCHEMA_VERSION) {
+        if (holdings.length > 0) {
+          generateDailyReport(holdings).then(setReport)
+          return
+        }
+        setReport(null)
+        return
+      }
+      setReport(r)
+    })
+  }, [holdingsReady, report, holdings])
 
   const handleGenerate = async () => {
     if (holdings.length === 0) {
@@ -192,14 +204,14 @@ export default function DailyReportPage() {
                     </td>
                     <td className="text-right px-2 font-mono">{h.nav.toFixed(4)}</td>
                     <td className={`text-right px-2 ${pnlColor(h.dailyChange)}`}>{formatPercent(h.dailyChange)}</td>
-                    {h.costKnown ? (
+                    {h.pnlKnown ? (
                       <td className={`text-right px-2 ${pnlColor(h.returnRate)}`}>{formatPercent(h.returnRate)}</td>
                     ) : (
                       <td className="text-right px-2 text-muted-foreground">成本未知</td>
                     )}
                     <td className="text-right px-2 font-mono">{formatCurrency(h.marketValue)}</td>
                     <td className={`text-right px-2 ${pnlColor(h.dayPnl)}`}>{formatSigned(h.dayPnl)}{formatCurrency(h.dayPnl)}</td>
-                    {h.costKnown ? (
+                    {h.pnlKnown ? (
                       <td className={`text-right pl-2 ${pnlColor(h.totalPnl)}`}>{formatSigned(h.totalPnl)}{formatCurrency(h.totalPnl)}</td>
                     ) : (
                       <td className="text-right pl-2 text-muted-foreground">成本未知</td>

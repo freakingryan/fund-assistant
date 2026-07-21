@@ -14,6 +14,7 @@ import { useHoldingsStore } from '@/stores/holdings'
 import { useRealtimeQuotes } from '@/hooks/useRealtimeQuotes'
 import type { FundHolding } from '@/types'
 import { pnlColor, formatSigned } from '@/lib/format'
+import { resolveHoldingCost } from '@/lib/holdingCost'
 import { TYPE_LABELS, MARKET_LABELS, SECTOR_LABELS } from '@/lib/labels'
 import { RefreshButton } from '@/components/ui/refresh-button'
 import { ConfirmAction } from '@/components/ui/confirm-dialog'
@@ -137,18 +138,11 @@ export default function HoldingsTable() {
       id: 'costNAV',
       header: '成本净值',
       cell: ({ row }) => {
-        const { costNAV: storedNAV, holdingAmount, holdingShares } = row.original
         const code = row.original.code
-        const val = valuations[code]
-        const currentNAV = val?.quote?.nav
-        // 优先存储值，否则反算：投入本金 / 份额
-        const investment = (storedNAV && holdingShares) ? storedNAV * holdingShares
-          : (holdingAmount != null && row.original.holdingProfit != null) ? holdingAmount - row.original.holdingProfit
-          : 0
-        const shares = holdingShares || (currentNAV && currentNAV > 0 ? Math.round((holdingAmount || 0) / currentNAV * 100) / 100 : 0)
-        const nav = storedNAV || (investment && shares ? investment / shares : 0)
-        if (nav > 0) {
-          return <span className="font-mono text-sm">{storedNAV ? '¥' : '≈¥'}{nav.toFixed(4)}</span>
+        const currentNAV = valuations[code]?.quote?.nav || 0
+        const { costNAV, method } = resolveHoldingCost(row.original, currentNAV)
+        if (costNAV > 0) {
+          return <span className="font-mono text-sm">{method === 'stored' ? '¥' : '≈¥'}{costNAV.toFixed(4)}</span>
         }
         return <span className="text-xs text-muted-foreground">-</span>
       },
@@ -158,14 +152,11 @@ export default function HoldingsTable() {
       id: 'shares',
       header: '份额',
       cell: ({ row }) => {
-        const { shares: storedShares, holdingAmount } = row.original
         const code = row.original.code
-        const val = valuations[code]
-        const currentNAV = val?.quote?.nav
-        // 优先存储值，否则反算
-        const shares = storedShares || (currentNAV && currentNAV > 0 ? Math.round((holdingAmount || 0) / currentNAV * 100) / 100 : 0)
+        const currentNAV = valuations[code]?.quote?.nav || 0
+        const { shares, method } = resolveHoldingCost(row.original, currentNAV)
         if (shares > 0) {
-          return <span className="font-mono text-sm">{storedShares ? shares.toFixed(2) : `≈${shares.toFixed(2)}`}</span>
+          return <span className="font-mono text-sm">{method === 'stored' ? shares.toFixed(2) : `≈${shares.toFixed(2)}`}</span>
         }
         return <span className="text-xs text-muted-foreground">-</span>
       },
@@ -204,7 +195,6 @@ export default function HoldingsTable() {
       id: 'realtimePnl',
       header: '实时盈亏',
       cell: ({ row }) => {
-        const { costNAV, shares, holdingAmount, holdingProfit } = row.original
         const code = row.original.code
         const val = valuations[code]
         
@@ -212,12 +202,10 @@ export default function HoldingsTable() {
         if (!val.quote || val.quote.nav <= 0.001) return <span className="text-xs text-muted-foreground">-</span>
 
         // 计算实时市值
-        const currentMV = (shares && val.quote.nav > 0.001) ? shares * val.quote.nav
-          : holdingAmount || 0
-        // 计算投入成本
-        const cost = (costNAV && shares) ? costNAV * shares
-          : (holdingAmount != null && holdingProfit != null) ? holdingAmount - holdingProfit
-          : 0
+        const currentMV = (row.original.shares && val.quote.nav > 0.001) ? row.original.shares * val.quote.nav
+          : row.original.holdingAmount || 0
+        // 计算投入成本（统一解析）
+        const { costValue: cost } = resolveHoldingCost(row.original, val.quote.nav)
         const pnl = currentMV - cost
         const pnlRate = cost > 0 ? (pnl / cost) * 100 : 0
 
@@ -251,11 +239,11 @@ export default function HoldingsTable() {
       id: 'marketValue',
       header: '参考市值',
       cell: ({ row }) => {
-        const { costNAV, shares, holdingAmount } = row.original
-        // 优先用方式一：成本×份额；否则用方式二：持有金额（已含收益）
-        const mv = (costNAV && shares) ? costNAV * shares
-          : (holdingAmount) ? holdingAmount
-          : 0
+        const code = row.original.code
+        const currentNAV = valuations[code]?.quote?.nav || 0
+        const { shares } = resolveHoldingCost(row.original, currentNAV)
+        // 优先用份额×净值，否则用持有金额（已含收益）
+        const mv = shares > 0 ? shares * currentNAV : (row.original.holdingAmount || 0)
         return mv != null ? <span className="font-mono text-sm font-medium">¥{mv.toFixed(2)}</span> : <span className="text-xs text-muted-foreground">-</span>
       },
       size: 100,
@@ -489,11 +477,11 @@ export default function HoldingsTable() {
           共 {holdings.length} 只基金
           {typeFilter !== 'all' && `（已筛选: ${TYPE_LABELS[typeFilter]}）`}
           {selectedIds.length > 0 && `，已选 ${selectedIds.length} 只`}
-          {holdings.length > 0 && ` | 参考市值: ¥${holdings.reduce((sum, h) => sum + (
-            (h.costNAV && h.shares) ? h.costNAV * h.shares
-            : h.holdingAmount ? h.holdingAmount
-            : 0
-          ), 0).toFixed(2)}`}
+          {holdings.length > 0 && ` | 参考市值: ¥${holdings.reduce((sum, h) => {
+            const currentNAV = h.code ? (valuations[h.code]?.quote?.nav || 0) : 0
+            const { shares } = resolveHoldingCost(h, currentNAV)
+            return sum + (shares > 0 ? shares * currentNAV : (h.holdingAmount || 0))
+          }, 0).toFixed(2)}`}
         </div>
         {lastUpdated && (
           <span>实时估值更新于 {lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
