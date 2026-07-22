@@ -75,6 +75,8 @@ export interface ScoreSnapshot {
   asOfDate: string
   /** 场内 ETF 代码（若有），回填时据此拉取真实 K 线；为空则走基金净值 K 线 */
   etfCode: string | null
+  /** 是否盘中临时快照：盘中采集的基准价不可靠，盘后基金数据公布后会被准确数据覆盖 */
+  provisional: boolean
 
   // ── 决策结果（来自 buildDecision） ──
   score: number

@@ -249,8 +249,9 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   // 评级：先按分数，再叠加「趋势背景 / 多空冲突」上下文修正
   let rating: Rating
   if (trendBearish || conflict) {
-    // 风险上下文：不追高、偏防守
-    if (score >= 60) rating = 'hold'
+    // 风险上下文：不追高、偏防守；但强多头共振（高分且多方主导）仍给出买入信号，避免引擎永不买入
+    if (score >= 70 && bullRatio >= 0.6) rating = 'buy'
+    else if (score >= 60) rating = 'hold'
     else if (score >= 45) rating = 'reduce'
     else if (score >= 30) rating = 'sell'
     else rating = 'strong_sell'

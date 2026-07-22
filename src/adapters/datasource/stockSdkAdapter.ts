@@ -2,9 +2,12 @@
  * 行情 / K 线 / 基金数据统一适配器（迁移目标 / 单一真相来源）
  *
  * 结合两个第三方库、零自管 fetch/JSONP/重试逻辑：
- *  - K 线（场内 ETF / 个股）：走 stock-api 的 `stocks.auto.getKlines`
- *    （默认 tencent → sina → eastmoney 自动兜底；浏览器下腾讯源自动切
- *    JSONP 适配绕开 CORS；端点 web.ifzq.gtimg.cn 在用户网络可达）。
+ *  - K 线（场内 ETF / 个股）：走本仓库自实现的 `fetchTencentKline`
+ *    （见 tencentKline.ts）。注意：stock-api 的 `stocks.auto.getKlines`
+ *    对 tencent/sina/eastmoney 三源均用裸 fetch，浏览器下会被 CORS 拦截，
+ *   且其 JSONP 适配只加在 quote/search，kline 没有——故 K 线必须自实现：
+ *    现已改为直连 proxy.finance.qq.com（返回 CORS*，浏览器可直接 fetch，无需代理/JSONP）；
+ *    旧端点 web.ifzq.gtimg.cn 已被腾讯 WAF 拦截（返回 501），不再使用。
  *    —— stock-sdk 的 kline.cn 写死东财 push2his，用户网络到不了，故 K 线用 stock-api。
  *  - 股票/ETF 行情：走 stock-api 的 `stocks.auto.getStocks`（腾讯优先、三源兜底）主源 +
  *    stock-sdk 的 `quotes.cn` 兜底（见 crossLibFallback）。
@@ -24,6 +27,7 @@
 import StockSDK from 'stock-sdk'
 import { stocks } from 'stock-api'
 import { withCrossLibFallback } from './crossLibFallback'
+import { fetchTencentKline } from './tencentKline'
 import type { FundQuote, KLineData } from '@/types'
 import type { FundDataSource } from './base'
 import { periodToCount } from './periodConfig'
@@ -105,36 +109,21 @@ class StockSdkAdapter implements FundDataSource {
   }
 
   /**
-   * 统一实现：场内 ETF / 个股 K 线 → stock-api `stocks.auto.getKlines`。
-   * 默认 tencent → sina → eastmoney 自动兜底；浏览器下腾讯源自动切 JSONP
-   * 适配绕开 CORS；端点 web.ifzq.gtimg.cn 在用户网络可达。
-   * （stock-sdk 的 kline.cn 写死东财 push2his，用户网络到不了，故不用。）
-   * stock-api 直接按 count 返回日 K（period:'day'，adjust:'qfq'），与 KLineData 一一对应。
+   * 统一实现：场内 ETF / 个股 K 线 → 自实现 `fetchTencentKline`（绕开 WAF + CORS*）。
+   * 直连 proxy.finance.qq.com（返回 Access-Control-Allow-Origin: *，浏览器可直接
+   * fetch，开发态/生产态均无需代理或 JSONP）。
+   * （stock-api 的 stocks.auto.getKlines 三源均裸 fetch，浏览器 CORS 失败，故不用；
+   *  stock-sdk 的 kline.cn 写死东财 push2his，用户网络到不了，亦不用。）
+   * 直接按 count 返回日 K（period:'day'，adjust:'qfq'），与 KLineData 一一对应。
    */
   private async fetchCnKline(rawCode: string, period: string): Promise<KLineData[]> {
     const symbol = toMarketPrefixedCode(rawCode)
     if (!/^(SH|SZ|BJ)\d{6}$/.test(symbol)) return []
     const count = periodToCount(period)
-    try {
-      const klines = await stocks.auto.getKlines(symbol, {
-        period: 'day',
-        count,
-        adjust: 'qfq',
-      })
-      if (!Array.isArray(klines) || klines.length === 0) return []
-      // 防御性取尾部 count 根（腾讯通常按 count 返回，但留余量）
-      return klines.slice(-count).map((k) => ({
-        date: k.date,
-        open: k.open ?? 0,
-        close: k.close ?? 0,
-        high: k.high ?? 0,
-        low: k.low ?? 0,
-        volume: k.volume ?? 0,
-      }))
-    } catch (e) {
-      console.error(`[StockSdkAdapter] K线获取失败: ${symbol}`, e)
-      return []
-    }
+    const klines = await fetchTencentKline(symbol, count, 'qfq')
+    if (klines.length === 0) return []
+    // 防御性取尾部 count 根（腾讯通常按 count 返回，但留余量）
+    return klines.length > count ? klines.slice(-count) : klines
   }
 
   // ── 行情：股票/ETF 走 stock-api（主）+ stock-sdk.quotes.cn（兜底），不再委托旧适配器 ──

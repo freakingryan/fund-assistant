@@ -6,7 +6,7 @@ import { useSettingsStore } from './stores/settings'
 import { usePlansStore } from './stores/plans'
 import { useNotificationsStore } from './stores/notifications'
 import { runDailyGistPush } from './services/autoSync'
-import { captureDailySnapshots, reconcileSnapshots, backfillMissingTradingDays, isMarketClosed, localDateKey } from './services/backtest/decisionSnapshot'
+import { captureDailySnapshots, reconcileSnapshots, backfillMissingTradingDays, isFundDataReady, localDateKey } from './services/backtest/decisionSnapshot'
 import { isTradingDay } from './lib/tradingCalendar'
 import { sendAlertBatch } from './services/notification'
 import ToastContainer from './components/ui/toast'
@@ -67,10 +67,11 @@ let backtestBackfillRan = false
 async function autoCaptureBacktestOnce() {
   const today = localDateKey()
   const meta = useSettingsStore.getState().settings.backtest
-  // 今日收盘后采集（每日首次守卫）；非交易日（周末/节假日）无快照可采，直接跳过
+  // 今日采集（每日首次守卫）：仅基金数据公布后（工作日 ≥20:00，净值定稿）自动采一次，
+  // 避免盘后早期（15:00–20:00）采到“昨日净值”当作今日基准；盘中/未到 20:00 不采且不锁当日。
   if (isTradingDay(new Date()) && meta?.lastAutoCaptureDate !== today) {
-    await captureDailySnapshots() // force=false，遵守收盘门禁
-    if (isMarketClosed()) {
+    if (isFundDataReady()) {
+      await captureDailySnapshots() // force=false，遵守收盘门禁（≥15:00 已满足）
       await useSettingsStore.getState().updateBacktestMeta({ lastAutoCaptureDate: today })
     }
   }

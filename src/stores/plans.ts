@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { db } from './db'
-import type { InvestmentPlan, PlanRule, PlanAlert, Comparator, FundHolding } from '@/types'
+import type { InvestmentPlan, PlanRule, PlanAlert, Comparator, FundHolding, KLineData } from '@/types'
 import { dataSourceService } from '@/adapters/datasource/service'
 import { detectPatterns, formatPatternsSummary } from '@/services/klinePatterns'
 import { computeFundTrendScore } from '@/services/backtest/decisionSnapshot'
@@ -169,6 +169,8 @@ export const usePlansStore = create<PlansState>((set, get) => ({
       if (!prev || a.triggeredAt > prev) dcaAlertMap.set(key, a.triggeredAt)
     }
 
+    // 本地 K 线结果缓存：同一 ETF 在整个扫描中只请求一次（避免重复请求同一接口）
+    const klineMemo = new Map<string, KLineData[]>()
     for (const h of holdings) {
       const q = quoteMap.get(h.code)
       if (!q) continue
@@ -242,7 +244,11 @@ export const usePlansStore = create<PlansState>((set, get) => ({
             if (!mapping) continue // 无 ETF 映射无法获取 K 线
 
             try {
-              const klineData = await dataSourceService.fetchEtfKLine(mapping.exchangeCode, '3m')
+              let klineData = klineMemo.get(mapping.exchangeCode)
+              if (!klineData) {
+                klineData = await dataSourceService.fetchEtfKLine(mapping.exchangeCode, '3m')
+                klineMemo.set(mapping.exchangeCode, klineData)
+              }
               if (!klineData || klineData.length < 5) continue
 
               const patterns = detectPatterns(klineData)

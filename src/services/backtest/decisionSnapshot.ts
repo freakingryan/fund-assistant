@@ -33,6 +33,12 @@ import { isTradingDay } from '@/lib/tradingCalendar'
 /** 采集/回填所用 K 线周期：3 个月，足够指标（BIAS 等）计算 */
 const SNAPSHOT_PERIOD = '3m'
 
+/**
+ * 单日涨跌幅合理上限(%)。A 股 ±10%，QDII/部分品种一般 <±20%。
+ * 超过此值视为数据源单位换算等异常（如 -67%），不计入方向性命中，避免污染准确率。
+ */
+const MAX_DAILY_CHANGE_PCT = 30
+
 /** 本地日历日 YYYY-MM-DD（避免 toISOString 的 UTC 偏移） */
 export function localDateKey(d: Date = new Date()): string {
   const y = d.getFullYear()
@@ -50,6 +56,20 @@ export function isMarketClosed(now: Date = new Date()): boolean {
   if (day === 0 || day === 6) return false
   const minutes = now.getHours() * 60 + now.getMinutes()
   return minutes >= 15 * 60
+}
+
+/** 基金净值类快照判定为“数据已公布”的本地小时（净值多在 20:00 后定稿） */
+const FUND_NAV_READY_HOUR = 20
+
+/**
+ * 基金数据是否已公布（净值型基金口径）：工作日且本地时间 ≥ 20:00。
+ * 此时东财等来源的基金净值大多已定稿；ETF 实时价 15:00 即定，但为统一口径
+ * 自动采集也等此时间点，避免盘后早期采到“昨日净值”当今日基准。
+ */
+export function isFundDataReady(now: Date = new Date()): boolean {
+  if (!isTradingDay(now)) return false
+  const minutes = now.getHours() * 60 + now.getMinutes()
+  return minutes >= FUND_NAV_READY_HOUR * 60
 }
 
 /** 由评级归一化为回测建议口径 */
@@ -77,18 +97,30 @@ export async function captureSnapshotForFund(
   eastmoneyConfig: EastmoneyDataSourceConfig,
   /** 回溯补齐时指定目标交易日；省略则取本地今日 */
   targetDate?: string,
+  /** 可选共享 K 线缓存：批量扫描（captureDailySnapshots）传入，避免同一 ETF/基金被重复请求同一接口 */
+  klineMemo?: Map<string, KLineData[]>,
 ): Promise<ScoreSnapshot | null> {
   const etfCode = etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null
 
   let klines: KLineData[] = []
   let valueSource: ValueSource = 'unknown'
   if (etfCode) {
-    klines = await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)
-    if (klines.length > 0) valueSource = 'etf'
+    const memoKey = `etf:${etfCode}`
+    if (!klineMemo?.has(memoKey)) {
+      const fetched = await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)
+      klineMemo?.set(memoKey, fetched ?? [])
+    }
+    const fetched = klineMemo?.get(memoKey) ?? []
+    if (fetched.length > 0) { klines = fetched; valueSource = 'etf' }
   }
   if (klines.length === 0) {
-    klines = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)
-    if (klines.length > 0) valueSource = 'nav'
+    const memoKey = `nav:${fund.code}`
+    if (!klineMemo?.has(memoKey)) {
+      const fetched = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)
+      klineMemo?.set(memoKey, fetched ?? [])
+    }
+    const fetched = klineMemo?.get(memoKey) ?? []
+    if (fetched.length > 0) { klines = fetched; valueSource = 'nav' }
   }
   if (klines.length === 0) return null
 
@@ -113,8 +145,15 @@ export async function captureSnapshotForFund(
   const last = klines[klines.length - 1]
   const closeValue = typeof last?.close === 'number' ? last.close : null
   const asOfDate = last?.date || (targetDate ?? localDateKey())
-  const date = targetDate ?? localDateKey()
+  const now = new Date()
+  const date = targetDate ?? localDateKey(now)
   const id = `${fund.code}-${date}`
+  // 回溯/补全（目标日为过去交易日）→ 数据已定稿，非临时；
+  // 今日快照：ETF 盘后(≥15:00)准确，净值基金需净值公布(≥20:00)后才准确，否则标记临时待覆盖。
+  const isPast = targetDate != null && targetDate < localDateKey(now)
+  const marketReady = isPast || isMarketClosed(now)
+  const navReady = isPast || isFundDataReady(now)
+  const provisional = etfCode ? !marketReady : !navReady
 
   const snapshot: ScoreSnapshot = {
     id,
@@ -123,6 +162,7 @@ export async function captureSnapshotForFund(
     date,
     asOfDate,
     etfCode,
+    provisional,
     score: decision.score,
     rating: decision.rating,
     ratingLabel: decision.ratingLabel,
@@ -187,10 +227,10 @@ export async function computeFundTrendScore(
 
   let klines: KLineData[] = []
   if (etfCode) {
-    klines = await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)
+    klines = (await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)) ?? []
   }
   if (klines.length === 0) {
-    klines = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)
+    klines = (await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)) ?? []
   }
   if (klines.length === 0) return null
 
@@ -256,13 +296,17 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
   const eastmoneyConfig = settingsList[0]?.dataSource?.eastmoney || { enabled: false, mode: 'proxy', proxyUrl: '' }
 
   let created = 0
+  // 批量扫描共享 K 线缓存：同一 ETF/基金在本次扫描中只请求一次接口
+  const klineMemo = new Map<string, KLineData[]>()
   const failures: CaptureFailure[] = []
   for (const fund of holdings) {
     const id = `${fund.code}-${date}`
-    // 缓存联动：已有当日快照则跳过（除非显式 reevaluate）
-    const existing = reevaluate ? null : await db.scoreSnapshots.get(id)
+    // 缓存联动：已有当日快照按状态处理
+    const existing = await db.scoreSnapshots.get(id)
     if (existing) {
-      // 东财增强开启后：已存在但缺少增强维度（资金面/赛道/同类排名）的旧快照需要回填，
+      // 已回填（历史验证数据）：永远保护，覆盖会丢失 nextChangePct/outcome，破坏回测基准
+      if (existing.nextChangePct != null) continue
+      // 东财增强开启后：已存在但缺少增强维度（资金面/赛道/同类排名）的旧快照需要补填，
       // 否则「更新今日评分」会因缓存跳过而永远不补，导致增强排序形同虚设。
       const eastEnabled = eastmoneyConfig.enabled
       const missingEnhanced =
@@ -270,7 +314,13 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
         existing.capitalScore == null &&
         existing.sectorScore == null &&
         existing.rankPercentile == null
-      if (!missingEnhanced) continue
+      if (reevaluate) {
+        // 强制重评未回填快照（历史验证数据已在上面跳过保护）；其余全覆盖
+      } else if (!missingEnhanced && existing.provisional !== true) {
+        // 非临时且增强维度齐全的盘后准确快照：读缓存，不再重复采集
+        continue
+      }
+      // 其余情况（盘中临时快照 provisional=true 待盘后覆盖 / 缺增强维度待补）落到下方重新采集
     }
     // 该基金评分所依赖的主数据源：有 ETF 映射走腾讯真实 K 线，否则走东财净值历史
     const etfCode = etfMappings.find((m) => m.otcCode === fund.code)?.exchangeCode || null
@@ -280,7 +330,7 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
         ? 'ETF 真实 K 线（腾讯源）获取失败，无法评分'
         : '净值历史（东财）当前不可达，无法评分'
     try {
-      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig, date)
+      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig, date, klineMemo)
       if (snap) created++
       else failures.push({ code: fund.code, name: fund.name || fund.code, source, reason })
     } catch (e) {
@@ -342,15 +392,26 @@ export async function getLatestCaptureReport(): Promise<CaptureReport | null> {
  */
 export async function reconcileSnapshots(): Promise<number> {
   const all = await db.scoreSnapshots.toArray()
+  // 批量回填共享 K 线缓存：同一 ETF/基金在本次回填中只请求一次接口
+  const klineMemo = new Map<string, KLineData[]>()
   let updated = 0
+  let isolated = 0
+  let failed = 0
 
   for (const snap of all) {
-    if (snap.outcome !== 'pending' && snap.outcome !== 'unknown') continue
     if (snap.closeValue == null) continue
     try {
-      const klines = snap.etfCode
-        ? await dataSourceService.fetchEtfKLine(snap.etfCode, SNAPSHOT_PERIOD)
-        : await dataSourceService.fetchKLine(snap.fundCode, SNAPSHOT_PERIOD)
+      const memoKey = snap.etfCode ? `etf:${snap.etfCode}` : `nav:${snap.fundCode}`
+      let klines = klineMemo.get(memoKey)
+      if (!klineMemo.has(memoKey)) {
+        klines = snap.etfCode
+          ? await dataSourceService.fetchEtfKLine(snap.etfCode, SNAPSHOT_PERIOD)
+          : await dataSourceService.fetchKLine(snap.fundCode, SNAPSHOT_PERIOD)
+        // 强制非 null（接口失败兜底空数组），避免后续 .filter 在 null 上崩溃
+        klineMemo.set(memoKey, klines ?? [])
+      }
+      klines = klineMemo.get(memoKey) ?? []
+      if (klines.length === 0) continue // 无 K 线（接口失败或尚未上市）则跳过回填
       const later = klines
         .filter((k) => k.date > snap.asOfDate)
         .sort((a, b) => (a.date < b.date ? -1 : 1))
@@ -360,19 +421,45 @@ export async function reconcileSnapshots(): Promise<number> {
       const nextChangePct = snap.closeValue
         ? ((next.close - snap.closeValue) / snap.closeValue) * 100
         : 0
-      const outcome = computeOutcome(snap.recommendation, nextChangePct)
 
-      await db.scoreSnapshots.update(snap.id, {
-        nextDate: next.date,
-        nextValue: next.close,
-        nextChangePct,
-        outcome,
-        updatedAt: Date.now(),
-      })
-      updated++
-    } catch (e) {
-      console.warn('[backtest] 回填失败', snap.id, e)
+      // 数据质量守卫：单日涨跌幅超出合理上限（如单位换算错误导致 -67%）视为数据异常，
+      // 隔离为 unknown 不计入方向性命中。已结算快照也会在此被自愈（旧逻辑只处理 pending/unknown，脏数据永不修正）。
+      if (!Number.isFinite(nextChangePct) || Math.abs(nextChangePct) > MAX_DAILY_CHANGE_PCT) {
+        if (snap.outcome !== 'unknown') {
+          await db.scoreSnapshots.update(snap.id, {
+            nextDate: next.date,
+            nextValue: next.close,
+            nextChangePct: null,
+            outcome: 'unknown',
+            updatedAt: Date.now(),
+          })
+          updated++
+          isolated++
+        }
+        continue
+      }
+
+      const outcome = computeOutcome(snap.recommendation, nextChangePct)
+      // 幂等自愈：已结算快照若 pct 有效也重算 outcome（与最新数据一致）；pending/unknown 正常回填
+      if (snap.outcome !== outcome || snap.nextChangePct == null) {
+        await db.scoreSnapshots.update(snap.id, {
+          nextDate: next.date,
+          nextValue: next.close,
+          nextChangePct,
+          outcome,
+          updatedAt: Date.now(),
+        })
+        updated++
+      }
+    } catch {
+      failed++
     }
+  }
+  // 聚合日志：避免逐条打印导致控制台刷屏（自愈成功不应产生噪音）
+  if (isolated > 0 || failed > 0) {
+    console.warn(
+      `[backtest] 回填完成：检查 ${all.length} 条，隔离 ${isolated} 条异常涨跌（|pct|>${MAX_DAILY_CHANGE_PCT}%）已标记为 unknown，${failed} 条拉取失败；共更新 ${updated} 条`,
+    )
   }
   return updated
 }

@@ -18,6 +18,8 @@ export default defineConfig(({ command }) => ({
         headers: { Referer: 'https://fundf10.eastmoney.com/' },
         rewrite: (p) => p.replace(/^\/fundf10/, ''),
       },
+      // 腾讯 K 线已改用 proxy.finance.qq.com（返回 CORS*，浏览器直连 fetch，
+      // 无需代理/JSONP），此处不再需要 /tx-api 代理。
     },
   },
   plugins: [
