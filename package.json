@@ -60,6 +60,7 @@
     "globals": "^17.6.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.1.1",
+    "madge": "^8.0.0",
     "postcss": "^8.5.15",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.1",
