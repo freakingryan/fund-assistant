@@ -7,9 +7,17 @@
  * @module ranking/SectorFundFlowPanel
  */
 
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowDownRight, ArrowUpRight, Loader2, RefreshCw, TrendingDown, TrendingUp, Coins } from 'lucide-react'
-import type { SectorFundFlowItem } from 'stock-sdk'
+import { useCallback, useEffect, useState, memo } from "react";
+import {
+  ArrowDownRight,
+  ArrowUpRight,
+  Loader2,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+  Coins,
+} from "lucide-react";
+import type { SectorFundFlowItem } from "stock-sdk";
 import {
   EastmoneyDisabledError,
   fetchSectorFundFlowRank,
@@ -17,33 +25,33 @@ import {
   FLOW_TYPE_LABELS,
   type FlowIndicator,
   type SectorFlowType,
-} from '@/services/sectorFundFlowRank'
-import { formatMoneyCompact } from '@/lib/format'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
+} from "@/services/sectorFundFlowRank";
+import { formatMoneyCompact } from "@/lib/format";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
-const TOP_N = 8
-const SECTOR_TYPES: SectorFlowType[] = ['industry', 'concept']
-const INDICATORS: FlowIndicator[] = ['today', '3day', '5day', '10day']
+const TOP_N = 8;
+const SECTOR_TYPES: SectorFlowType[] = ["industry", "concept"];
+const INDICATORS: FlowIndicator[] = ["today", "3day", "5day", "10day"];
 
 interface Row {
-  item: SectorFundFlowItem
-  rank: number
+  item: SectorFundFlowItem;
+  rank: number;
 }
 
 function moneyColor(v: number | null): string {
-  if (v == null) return 'text-muted-foreground'
-  return v >= 0 ? 'text-up' : 'text-down'
+  if (v == null) return "text-muted-foreground";
+  return v >= 0 ? "text-up" : "text-down";
 }
 
 function changeColor(v: number | null): string {
-  if (v == null) return 'text-muted-foreground'
-  return v >= 0 ? 'text-up' : 'text-down'
+  if (v == null) return "text-muted-foreground";
+  return v >= 0 ? "text-up" : "text-down";
 }
 
-function FlowRow({ row, kind }: { row: Row; kind: 'in' | 'out' }) {
-  const { item, rank } = row
-  const inflow = item.mainNetInflow ?? 0
+const FlowRow = memo(function ({ row, kind }: { row: Row; kind: "in" | "out" }) {
+  const { item, rank } = row;
+  const inflow = item.mainNetInflow ?? 0;
   return (
     <li className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/40">
       <span className="w-5 text-center text-[11px] font-mono text-muted-foreground">{rank}</span>
@@ -56,57 +64,62 @@ function FlowRow({ row, kind }: { row: Row; kind: 'in' | 'out' }) {
           {formatMoneyCompact(inflow)}
         </div>
         <div className={`text-[10px] font-mono ${changeColor(item.changePercent)}`}>
-          {item.changePercent == null ? '-' : `${item.changePercent >= 0 ? '+' : ''}${item.changePercent.toFixed(2)}%`}
+          {item.changePercent == null
+            ? "-"
+            : `${item.changePercent >= 0 ? "+" : ""}${item.changePercent.toFixed(2)}%`}
           {item.mainNetInflowPercent != null && (
-            <span className="ml-1 text-muted-foreground">({item.mainNetInflowPercent >= 0 ? '+' : ''}{item.mainNetInflowPercent.toFixed(1)}%)</span>
+            <span className="ml-1 text-muted-foreground">
+              ({item.mainNetInflowPercent >= 0 ? "+" : ""}
+              {item.mainNetInflowPercent.toFixed(1)}%)
+            </span>
           )}
         </div>
       </div>
-      {kind === 'in' ? (
+      {kind === "in" ? (
         <ArrowUpRight className="h-3.5 w-3.5 text-up shrink-0" />
       ) : (
         <ArrowDownRight className="h-3.5 w-3.5 text-down shrink-0" />
       )}
     </li>
-  )
-}
+  );
+});
 
 export default function SectorFundFlowPanel() {
-  const [sectorType, setSectorType] = useState<SectorFlowType>('industry')
-  const [indicator, setIndicator] = useState<FlowIndicator>('today')
-  const [loading, setLoading] = useState(false)
-  const [disabled, setDisabled] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [data, setData] = useState<SectorFundFlowItem[]>([])
+  const [sectorType, setSectorType] = useState<SectorFlowType>("industry");
+  const [indicator, setIndicator] = useState<FlowIndicator>("today");
+  const [loading, setLoading] = useState(false);
+  const [disabled, setDisabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<SectorFundFlowItem[]>([]);
 
   const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    setDisabled(false)
+    setLoading(true);
+    setError(null);
+    setDisabled(false);
     try {
-      const items = await fetchSectorFundFlowRank({ sectorType, indicator })
-      setData(items)
+      const items = await fetchSectorFundFlowRank({ sectorType, indicator });
+      setData(items);
     } catch (e) {
       if (e instanceof EastmoneyDisabledError) {
-        setDisabled(true)
-        setData([])
+        setDisabled(true);
+        setData([]);
       } else {
-        setError('板块资金流获取失败')
-        setData([])
+        setError("板块资金流获取失败");
+        setData([]);
       }
     }
-    setLoading(false)
-  }, [sectorType, indicator])
+    setLoading(false);
+  }, [sectorType, indicator]);
 
   useEffect(() => {
-    load()
-  }, [load])
+    load();
+  }, [load]);
 
-  const topIn = data.slice(0, TOP_N).map((item, i) => ({ item, rank: i + 1 }))
+  const topIn = data.slice(0, TOP_N).map((item, i) => ({ item, rank: i + 1 }));
   const topOut = data
     .slice(-TOP_N)
     .reverse()
-    .map((item, i) => ({ item, rank: i + 1 }))
+    .map((item, i) => ({ item, rank: i + 1 }));
 
   return (
     <Card className="card-hover">
@@ -114,7 +127,9 @@ export default function SectorFundFlowPanel() {
         <CardTitle className="text-sm flex items-center gap-1.5">
           <Coins className="h-3.5 w-3.5 text-primary" />
           全市场板块资金流
-          <span className="text-[10px] font-normal text-muted-foreground ml-1">主力净流入 · 东财增强</span>
+          <span className="text-[10px] font-normal text-muted-foreground ml-1">
+            主力净流入 · 东财增强
+          </span>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -127,8 +142,8 @@ export default function SectorFundFlowPanel() {
                 onClick={() => setSectorType(t)}
                 className={`text-xs px-2 py-0.5 rounded border transition-colors ${
                   sectorType === t
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted'
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted"
                 }`}
               >
                 {FLOW_TYPE_LABELS[t]}
@@ -141,8 +156,8 @@ export default function SectorFundFlowPanel() {
                 onClick={() => setIndicator(ind)}
                 className={`text-xs px-2 py-0.5 rounded border transition-colors ${
                   indicator === ind
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted'
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted"
                 }`}
               >
                 {FLOW_INDICATOR_LABELS[ind]}
@@ -150,7 +165,11 @@ export default function SectorFundFlowPanel() {
             ))}
           </div>
           <Button size="sm" variant="outline" onClick={load} disabled={loading || disabled}>
-            {loading ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+            {loading ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3 mr-1" />
+            )}
             刷新
           </Button>
         </div>
@@ -158,7 +177,9 @@ export default function SectorFundFlowPanel() {
         {disabled ? (
           <div className="text-center py-10 space-y-2">
             <Coins className="h-10 w-10 mx-auto text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">板块资金流需到「设置 → 数据源」开启东财增强后展示</p>
+            <p className="text-sm text-muted-foreground">
+              板块资金流需到「设置 → 数据源」开启东财增强后展示
+            </p>
           </div>
         ) : error ? (
           <div className="text-center py-10 text-sm text-down">{error}</div>
@@ -200,5 +221,5 @@ export default function SectorFundFlowPanel() {
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

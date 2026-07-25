@@ -7,25 +7,32 @@
  * @module backtest/DailyAccuracyTrendChart
  */
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts'
-import type { DailyAccuracyPoint } from '@/services/backtest/types'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+  Legend,
+} from "recharts";
+import type { DailyAccuracyPoint } from "@/services/backtest/types";
+import { ACCURACY_SERIES_COLORS, NEUTRAL_GRAY } from "@/lib/chart-colors";
 
-const COLOR = {
-  accuracy: '#8b5cf6', // 蓝紫：准确率
-  up: '#ef4444',       // 涨红：次日平均上涨
-  down: '#22c55e',     // 跌绿：次日平均下跌
-}
+const COLOR = ACCURACY_SERIES_COLORS;
 
 export default function DailyAccuracyTrendChart({ daily }: { daily: DailyAccuracyPoint[] }) {
-  const hasAccuracy = daily.some((d) => d.accuracy != null)
-  const hasNext = daily.some((d) => d.avgNextChange != null)
+  const hasAccuracy = daily.some((d) => d.accuracy != null);
+  const hasNext = daily.some((d) => d.avgNextChange != null);
 
   if (!hasAccuracy && !hasNext) {
     return (
       <div className="flex items-center justify-center h-[240px] text-xs text-muted-foreground">
         暂无方向性样本（需 buy/sell 建议且已回填次日涨跌）
       </div>
-    )
+    );
   }
 
   const data = daily.map((d) => ({
@@ -33,9 +40,10 @@ export default function DailyAccuracyTrendChart({ daily }: { daily: DailyAccurac
     accuracy: d.accuracy != null ? Number((d.accuracy * 100).toFixed(1)) : null,
     // 涨红跌绿：正涨拆到 up，负跌拆到 down
     up: d.avgNextChange != null && d.avgNextChange > 0 ? Number(d.avgNextChange.toFixed(2)) : null,
-    down: d.avgNextChange != null && d.avgNextChange < 0 ? Number(d.avgNextChange.toFixed(2)) : null,
+    down:
+      d.avgNextChange != null && d.avgNextChange < 0 ? Number(d.avgNextChange.toFixed(2)) : null,
     sampleCount: d.sampleCount,
-  }))
+  }));
 
   return (
     <ResponsiveContainer width="100%" height={240}>
@@ -57,23 +65,35 @@ export default function DailyAccuracyTrendChart({ daily }: { daily: DailyAccurac
           width={36}
         />
         <Tooltip
-          cursor={{ strokeDasharray: '3 3' }}
+          cursor={{ strokeDasharray: "3 3" }}
           content={({ active, payload, label }) => {
-            if (!active || !payload || payload.length === 0) return null
-            const p = payload[0].payload as typeof data[number]
+            if (!active || !payload || payload.length === 0) return null;
+            const p = payload[0].payload as (typeof data)[number];
             return (
               <div className="rounded-md border bg-popover text-popover-foreground px-2 py-1.5 text-[10px] shadow-md">
                 <p className="font-medium">{label}</p>
-                {p.accuracy != null && <p>方向性准确率 <span className="font-mono">{p.accuracy}%</span></p>}
-                {p.up != null && <p className="text-up">次日平均 <span className="font-mono">+{p.up}%</span></p>}
-                {p.down != null && <p className="text-down">次日平均 <span className="font-mono">{p.down}%</span></p>}
+                {p.accuracy != null && (
+                  <p>
+                    方向性准确率 <span className="font-mono">{p.accuracy}%</span>
+                  </p>
+                )}
+                {p.up != null && (
+                  <p className="text-up">
+                    次日平均 <span className="font-mono">+{p.up}%</span>
+                  </p>
+                )}
+                {p.down != null && (
+                  <p className="text-down">
+                    次日平均 <span className="font-mono">{p.down}%</span>
+                  </p>
+                )}
                 <p className="text-muted-foreground">样本 {p.sampleCount}</p>
               </div>
-            )
+            );
           }}
         />
         <Legend wrapperStyle={{ fontSize: 10 }} />
-        <ReferenceLine yAxisId="next" y={0} stroke="#9ca3af" strokeDasharray="4 4" />
+        <ReferenceLine yAxisId="next" y={0} stroke={NEUTRAL_GRAY} strokeDasharray="4 4" />
         {hasAccuracy && (
           <Line
             yAxisId="acc"
@@ -87,12 +107,30 @@ export default function DailyAccuracyTrendChart({ daily }: { daily: DailyAccurac
           />
         )}
         {hasNext && (
-          <Line yAxisId="next" type="monotone" dataKey="up" name="次日平均涨" stroke={COLOR.up} strokeWidth={1.5} dot={false} connectNulls />
+          <Line
+            yAxisId="next"
+            type="monotone"
+            dataKey="up"
+            name="次日平均涨"
+            stroke={COLOR.up}
+            strokeWidth={1.5}
+            dot={false}
+            connectNulls
+          />
         )}
         {hasNext && (
-          <Line yAxisId="next" type="monotone" dataKey="down" name="次日平均跌" stroke={COLOR.down} strokeWidth={1.5} dot={false} connectNulls />
+          <Line
+            yAxisId="next"
+            type="monotone"
+            dataKey="down"
+            name="次日平均跌"
+            stroke={COLOR.down}
+            strokeWidth={1.5}
+            dot={false}
+            connectNulls
+          />
         )}
       </LineChart>
     </ResponsiveContainer>
-  )
+  );
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, memo } from "react";
+import { useLoadOnMount } from "@/hooks/useLoadOnMount";
 import { usePlansStore } from "@/stores/plans";
 import { useHoldingsStore } from "@/stores/holdings";
 import {
@@ -53,6 +54,46 @@ const STATUS_META: Record<PlanProgressItem["status"], { label: string; cls: stri
   disabled: { label: "已停用", cls: "bg-muted text-muted-foreground" },
 };
 
+/** 组合盈亏快照行：React.memo 包裹，避免父级重渲时整表重算 */
+const HoldingSnapshotRow = memo(function ({
+  holding: h,
+}: {
+  holding: DailyReport["holdings"][number];
+}) {
+  return (
+    <tr className="border-b border-muted/50">
+      <td className="py-1.5 pr-2">
+        <div className="font-mono text-[10px] text-muted-foreground">{h.code}</div>
+        <div className="truncate max-w-[120px]">{h.name}</div>
+      </td>
+      <td className="text-right px-2 font-mono">{h.nav.toFixed(4)}</td>
+      <td className={`text-right px-2 ${pnlColor(h.dailyChange)}`}>
+        {formatPercent(h.dailyChange)}
+      </td>
+      {h.pnlKnown ? (
+        <td className={`text-right px-2 ${pnlColor(h.returnRate)}`}>
+          {formatPercent(h.returnRate)}
+        </td>
+      ) : (
+        <td className="text-right px-2 text-muted-foreground">成本未知</td>
+      )}
+      <td className="text-right px-2 font-mono">{formatCurrency(h.marketValue)}</td>
+      <td className={`text-right px-2 ${pnlColor(h.dayPnl)}`}>
+        {formatSigned(h.dayPnl)}
+        {formatCurrency(h.dayPnl)}
+      </td>
+      {h.pnlKnown ? (
+        <td className={`text-right pl-2 ${pnlColor(h.totalPnl)}`}>
+          {formatSigned(h.totalPnl)}
+          {formatCurrency(h.totalPnl)}
+        </td>
+      ) : (
+        <td className="text-right pl-2 text-muted-foreground">成本未知</td>
+      )}
+    </tr>
+  );
+});
+
 export default function DailyReportPage() {
   const plan = usePlansStore((s) => s.plan);
   const scan = usePlansStore((s) => s.scan);
@@ -65,11 +106,9 @@ export default function DailyReportPage() {
   const [generating, setGenerating] = useState(false);
   const [holdingsReady, setHoldingsReady] = useState(false);
 
-  useEffect(() => {
-    loadPlan();
-    loadAlerts();
-    loadHoldings();
-  }, [loadPlan, loadAlerts, loadHoldings]);
+  useLoadOnMount(loadPlan);
+  useLoadOnMount(loadAlerts);
+  useLoadOnMount(loadHoldings);
 
   useEffect(() => {
     setHoldingsReady(true);
@@ -223,36 +262,7 @@ export default function DailyReportPage() {
               </thead>
               <tbody>
                 {p.holdings.map((h) => (
-                  <tr key={h.code} className="border-b border-muted/50">
-                    <td className="py-1.5 pr-2">
-                      <div className="font-mono text-[10px] text-muted-foreground">{h.code}</div>
-                      <div className="truncate max-w-[120px]">{h.name}</div>
-                    </td>
-                    <td className="text-right px-2 font-mono">{h.nav.toFixed(4)}</td>
-                    <td className={`text-right px-2 ${pnlColor(h.dailyChange)}`}>
-                      {formatPercent(h.dailyChange)}
-                    </td>
-                    {h.pnlKnown ? (
-                      <td className={`text-right px-2 ${pnlColor(h.returnRate)}`}>
-                        {formatPercent(h.returnRate)}
-                      </td>
-                    ) : (
-                      <td className="text-right px-2 text-muted-foreground">成本未知</td>
-                    )}
-                    <td className="text-right px-2 font-mono">{formatCurrency(h.marketValue)}</td>
-                    <td className={`text-right px-2 ${pnlColor(h.dayPnl)}`}>
-                      {formatSigned(h.dayPnl)}
-                      {formatCurrency(h.dayPnl)}
-                    </td>
-                    {h.pnlKnown ? (
-                      <td className={`text-right pl-2 ${pnlColor(h.totalPnl)}`}>
-                        {formatSigned(h.totalPnl)}
-                        {formatCurrency(h.totalPnl)}
-                      </td>
-                    ) : (
-                      <td className="text-right pl-2 text-muted-foreground">成本未知</td>
-                    )}
-                  </tr>
+                  <HoldingSnapshotRow key={h.code} holding={h} />
                 ))}
               </tbody>
             </table>

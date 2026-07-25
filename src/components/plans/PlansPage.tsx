@@ -1,89 +1,165 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
-import { usePlansStore } from '@/stores/plans'
-import { useHoldingsStore } from '@/stores/holdings'
-import { useSettingsStore } from '@/stores/settings'
-import { sendAlertBatch, requestNotificationPermission } from '@/services/notification'
-import { toast } from '@/components/ui/toast'
-import { ConfirmAction } from '@/components/ui/confirm-dialog'
-import { Card, CardContent } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Switch } from '@/components/ui/switch'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { useEffect, useState, useMemo, useCallback, memo } from "react";
+import { usePlansStore } from "@/stores/plans";
+import { useHoldingsStore } from "@/stores/holdings";
+import { useSettingsStore } from "@/stores/settings";
+import { sendAlertBatch, requestNotificationPermission } from "@/services/notification";
+import { toast } from "@/components/ui/toast";
+import { ConfirmAction } from "@/components/ui/confirm-dialog";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogDescription,
-  DialogHeader, DialogTitle, DialogTrigger,
-} from '@/components/ui/dialog'
-import { CheckCircle, Eye, Trash2, Plus, Play, Loader2,
-  Settings2, History, Activity, TrendingUp, Sparkles,
-} from 'lucide-react'
-import type { PlanRule, PlanRuleType, Comparator, PlanAlert } from '@/types'
-import QuickAdjustDialog from '@/components/holdings/QuickAdjustDialog'
-import type { FundHolding } from '@/types'
-import { pnlColor, formatSigned, formatCurrency } from '@/lib/format'
-import { useRealtimeQuotes, type RealtimeValuation } from '@/hooks/useRealtimeQuotes'
-import { resolveHoldingCost } from '@/lib/holdingCost'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  CheckCircle,
+  Eye,
+  Trash2,
+  Plus,
+  Play,
+  Loader2,
+  Settings2,
+  History,
+  Activity,
+  TrendingUp,
+  Sparkles,
+} from "lucide-react";
+import type { PlanRule, PlanRuleType, Comparator, PlanAlert } from "@/types";
+import QuickAdjustDialog from "@/components/holdings/QuickAdjustDialog";
+import type { FundHolding } from "@/types";
+import { pnlColor, formatSigned, formatCurrency } from "@/lib/format";
+import { useRealtimeQuotes, type RealtimeValuation } from "@/hooks/useRealtimeQuotes";
+import { resolveHoldingCost } from "@/lib/holdingCost";
+import { formatDateOnly } from "@/lib/dataTime";
 
 const RULE_TYPE_LABELS: Record<PlanRuleType, string> = {
-  return: '收益率',
-  price_diff: '净值价差',
-  daily_change: '单日涨跌幅',
-  dca: '定期定投',
-  kline_pattern: 'K 线形态',
-  trend: '趋势信号',
-}
+  return: "收益率",
+  price_diff: "净值价差",
+  daily_change: "单日涨跌幅",
+  dca: "定期定投",
+  kline_pattern: "K 线形态",
+  trend: "趋势信号",
+};
 const COMPARATOR_LABELS: Record<Comparator, string> = {
-  lt: '<', gt: '>', lte: '≤', gte: '≥',
-}
-const ACTION_LABELS: Record<string, string> = { buy: '买入', sell: '卖出' }
+  lt: "<",
+  gt: ">",
+  lte: "≤",
+  gte: "≥",
+};
+const ACTION_LABELS: Record<string, string> = { buy: "买入", sell: "卖出" };
 
 /** 智能趋势预设：覆盖"趋势好加仓 / 破位割肉 / 转弱止盈 / 大跌补仓"四类诉求 */
 const SMART_PRESETS: {
-  key: string
-  label: string
-  desc: string
-  rule: Omit<PlanRule, 'id'>
+  key: string;
+  label: string;
+  desc: string;
+  rule: Omit<PlanRule, "id">;
 }[] = [
-  { key: 'add', label: '趋势强加仓', desc: '趋势评分 ≥ 60 时，建议加仓', rule: { type: 'trend', threshold: 60, comparator: 'gte', action: 'buy', shares: 0, enabled: true } },
-  { key: 'cut', label: '趋势破位割肉', desc: '趋势评分 ≤ 40 时，建议减仓/割肉', rule: { type: 'trend', threshold: 40, comparator: 'lte', action: 'sell', shares: 0, enabled: true } },
-  { key: 'profit', label: '趋势转弱止盈', desc: '趋势评分 ≤ 45 时，建议止盈减仓', rule: { type: 'trend', threshold: 45, comparator: 'lte', action: 'sell', shares: 0, enabled: true } },
-  { key: 'dip', label: '大跌补仓', desc: '单日跌幅 ≤ -3% 时，提醒补仓', rule: { type: 'daily_change', threshold: -3, comparator: 'lte', action: 'buy', shares: 0, enabled: true } },
-]
+  {
+    key: "add",
+    label: "趋势强加仓",
+    desc: "趋势评分 ≥ 60 时，建议加仓",
+    rule: {
+      type: "trend",
+      threshold: 60,
+      comparator: "gte",
+      action: "buy",
+      shares: 0,
+      enabled: true,
+    },
+  },
+  {
+    key: "cut",
+    label: "趋势破位割肉",
+    desc: "趋势评分 ≤ 40 时，建议减仓/割肉",
+    rule: {
+      type: "trend",
+      threshold: 40,
+      comparator: "lte",
+      action: "sell",
+      shares: 0,
+      enabled: true,
+    },
+  },
+  {
+    key: "profit",
+    label: "趋势转弱止盈",
+    desc: "趋势评分 ≤ 45 时，建议止盈减仓",
+    rule: {
+      type: "trend",
+      threshold: 45,
+      comparator: "lte",
+      action: "sell",
+      shares: 0,
+      enabled: true,
+    },
+  },
+  {
+    key: "dip",
+    label: "大跌补仓",
+    desc: "单日跌幅 ≤ -3% 时，提醒补仓",
+    rule: {
+      type: "daily_change",
+      threshold: -3,
+      comparator: "lte",
+      action: "buy",
+      shares: 0,
+      enabled: true,
+    },
+  },
+];
 
 /** 判断规则是否已存在（按 类型+阈值+方向+动作 去重） */
-function ruleExists(plan: InvestmentPlan | null, r: Omit<PlanRule, 'id'>): boolean {
-  if (!plan) return false
+function ruleExists(plan: InvestmentPlan | null, r: Omit<PlanRule, "id">): boolean {
+  if (!plan) return false;
   return plan.rules.some(
     (x) =>
       x.type === r.type &&
       x.threshold === r.threshold &&
       x.comparator === r.comparator &&
       x.action === r.action,
-  )
+  );
 }
 
-function RuleForm({ rule, onSave, onCancel }: {
-  rule?: PlanRule
-  onSave: (rule: Omit<PlanRule, 'id'>) => void
-  onCancel: () => void
+function RuleForm({
+  rule,
+  onSave,
+  onCancel,
+}: {
+  rule?: PlanRule;
+  onSave: (rule: Omit<PlanRule, "id">) => void;
+  onCancel: () => void;
 }) {
-  const [type, setType] = useState<PlanRuleType>(rule?.type || 'return')
-  const [comparator, setComparator] = useState<Comparator>(rule?.comparator || 'lte')
-  const [threshold, setThreshold] = useState(String(rule?.threshold ?? ''))
-  const [action, setAction] = useState<'buy' | 'sell'>(rule?.action || 'buy')
-  const [shares, setShares] = useState(String(rule?.shares ?? ''))
-  const [error, setError] = useState('')
+  const [type, setType] = useState<PlanRuleType>(rule?.type || "return");
+  const [comparator, setComparator] = useState<Comparator>(rule?.comparator || "lte");
+  const [threshold, setThreshold] = useState(String(rule?.threshold ?? ""));
+  const [action, setAction] = useState<"buy" | "sell">(rule?.action || "buy");
+  const [shares, setShares] = useState(String(rule?.shares ?? ""));
+  const [error, setError] = useState("");
 
   const thresholdHint = {
-    return: '百分比（如 -10 = 收益率 ≤ -10%；15 = 收益率 ≥ 15%）',
-    price_diff: '净值绝对值（如 0.5 = 价差 ≥ 0.5）',
-    daily_change: '百分比（如 -3 = 单日涨跌幅 ≤ -3%）',
-    dca: '间隔天数（如 30 = 每 30 天）',
-    kline_pattern: '仅在手动 AI 诊断时使用',
-    trend: '决策引擎趋势评分（0-100，如 60 = 评分 ≥ 60 建议加仓；40 = 评分 ≤ 40 提醒割肉）',
-  }[type]
+    return: "百分比（如 -10 = 收益率 ≤ -10%；15 = 收益率 ≥ 15%）",
+    price_diff: "净值绝对值（如 0.5 = 价差 ≥ 0.5）",
+    daily_change: "百分比（如 -3 = 单日涨跌幅 ≤ -3%）",
+    dca: "间隔天数（如 30 = 每 30 天）",
+    kline_pattern: "仅在手动 AI 诊断时使用",
+    trend: "决策引擎趋势评分（0-100，如 60 = 评分 ≥ 60 建议加仓；40 = 评分 ≤ 40 提醒割肉）",
+  }[type];
 
   return (
     <div className="space-y-4">
@@ -91,10 +167,14 @@ function RuleForm({ rule, onSave, onCancel }: {
         <div className="space-y-1">
           <Label className="text-xs">触发条件</Label>
           <Select value={type} onValueChange={(v) => setType(v as PlanRuleType)}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               {Object.entries(RULE_TYPE_LABELS).map(([k, v]) => (
-                <SelectItem key={k} value={k}>{v}</SelectItem>
+                <SelectItem key={k} value={k}>
+                  {v}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -102,7 +182,9 @@ function RuleForm({ rule, onSave, onCancel }: {
         <div className="space-y-1">
           <Label className="text-xs">比较方向</Label>
           <Select value={comparator} onValueChange={(v) => setComparator(v as Comparator)}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="lte">≤（小于等于）</SelectItem>
               <SelectItem value="gte">≥（大于等于）</SelectItem>
@@ -114,19 +196,28 @@ function RuleForm({ rule, onSave, onCancel }: {
       </div>
       <div className="space-y-1">
         <Label className="text-xs">阈值</Label>
-        <Input type="number" step="0.01" value={threshold}
-          onChange={(e) => { setThreshold(e.target.value); if (error) setError('') }}
+        <Input
+          type="number"
+          step="0.01"
+          value={threshold}
+          onChange={(e) => {
+            setThreshold(e.target.value);
+            if (error) setError("");
+          }}
           placeholder={thresholdHint}
           aria-invalid={!!error}
-          className={`h-8 text-xs ${error ? 'border-destructive focus-visible:ring-destructive' : ''}`} />
+          className={`h-8 text-xs ${error ? "border-destructive focus-visible:ring-destructive" : ""}`}
+        />
         <p className="text-[10px] text-muted-foreground">{thresholdHint}</p>
         {error && <p className="text-[10px] text-destructive">{error}</p>}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label className="text-xs">操作</Label>
-          <Select value={action} onValueChange={(v) => setAction(v as 'buy' | 'sell')}>
-            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+          <Select value={action} onValueChange={(v) => setAction(v as "buy" | "sell")}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="buy">买入</SelectItem>
               <SelectItem value="sell">卖出</SelectItem>
@@ -135,95 +226,129 @@ function RuleForm({ rule, onSave, onCancel }: {
         </div>
         <div className="space-y-1">
           <Label className="text-xs">份数（0=仅提醒）</Label>
-          <Input type="number" min="0" value={shares}
+          <Input
+            type="number"
+            min="0"
+            value={shares}
             onChange={(e) => setShares(e.target.value)}
-            className="h-8 text-xs" />
+            className="h-8 text-xs"
+          />
         </div>
       </div>
       <div className="flex gap-2 justify-end">
-        <Button variant="outline" size="sm" onClick={onCancel}>取消</Button>
-        <Button size="sm" onClick={() => {
-          const t = Number(threshold)
-          // F14: 阈值留空/非法时存为 0 会建出永不当/永当的规则，需校验
-          if (threshold.trim() === '' || Number.isNaN(t)) {
-            setError('请输入有效阈值')
-            return
-          }
-          // dca 间隔天数必须 > 0；其余类型允许负数阈值（如收益率 ≤ -10%、单日跌幅 ≤ -3%）
-          if (type === 'dca' && t <= 0) {
-            setError('间隔天数需大于 0')
-            return
-          }
-          onSave({
-            type, comparator,
-            threshold: t,
-            action, shares: Number(shares) || 0,
-            enabled: rule?.enabled ?? true,
-          })
-        }}>{rule ? '更新' : '添加'}</Button>
+        <Button variant="outline" size="sm" onClick={onCancel}>
+          取消
+        </Button>
+        <Button
+          size="sm"
+          onClick={() => {
+            const t = Number(threshold);
+            // F14: 阈值留空/非法时存为 0 会建出永不当/永当的规则，需校验
+            if (threshold.trim() === "" || Number.isNaN(t)) {
+              setError("请输入有效阈值");
+              return;
+            }
+            // dca 间隔天数必须 > 0；其余类型允许负数阈值（如收益率 ≤ -10%、单日跌幅 ≤ -3%）
+            if (type === "dca" && t <= 0) {
+              setError("间隔天数需大于 0");
+              return;
+            }
+            onSave({
+              type,
+              comparator,
+              threshold: t,
+              action,
+              shares: Number(shares) || 0,
+              enabled: rule?.enabled ?? true,
+            });
+          }}
+        >
+          {rule ? "更新" : "添加"}
+        </Button>
       </div>
     </div>
-  )
+  );
 }
 
+/** 历史操作记录行：React.memo 包裹，避免父级重渲时整列重算 */
+const HistoryAlertRow = memo(function ({ alert }: { alert: PlanAlert }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 px-3 rounded hover:bg-muted/50 text-xs">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <span className="font-mono shrink-0">{alert.fundCode}</span>
+        <span className="truncate">{alert.fundName}</span>
+        <Badge variant={alert.executed ? "default" : "outline"} className="text-[10px] shrink-0">
+          {alert.executed ? "已执行" : "已忽略"}
+        </Badge>
+        <span className="text-muted-foreground truncate">{alert.reason}</span>
+      </div>
+      <span className="text-muted-foreground text-[10px] shrink-0 ml-2">
+        {formatDateOnly(new Date(alert.triggeredAt).getTime())}
+      </span>
+    </div>
+  );
+});
+
 export default function PlansPage() {
-  const plan = usePlansStore((s) => s.plan)
-  const alerts = usePlansStore((s) => s.alerts)
-  const scanning = usePlansStore((s) => s.scanning)
-  const loadPlan = usePlansStore((s) => s.loadPlan)
-  const loadAlerts = usePlansStore((s) => s.loadAlerts)
-  const addRule = usePlansStore((s) => s.addRule)
-  const updateRule = usePlansStore((s) => s.updateRule)
-  const removeRule = usePlansStore((s) => s.removeRule)
-  const togglePlanEnabled = usePlansStore((s) => s.togglePlanEnabled)
-  const scan = usePlansStore((s) => s.scan)
-  const markAlertExecuted = usePlansStore((s) => s.markAlertExecuted)
-  const dismissAlert = usePlansStore((s) => s.dismissAlert)
+  const plan = usePlansStore((s) => s.plan);
+  const alerts = usePlansStore((s) => s.alerts);
+  const scanning = usePlansStore((s) => s.scanning);
+  const loadPlan = usePlansStore((s) => s.loadPlan);
+  const loadAlerts = usePlansStore((s) => s.loadAlerts);
+  const addRule = usePlansStore((s) => s.addRule);
+  const updateRule = usePlansStore((s) => s.updateRule);
+  const removeRule = usePlansStore((s) => s.removeRule);
+  const togglePlanEnabled = usePlansStore((s) => s.togglePlanEnabled);
+  const scan = usePlansStore((s) => s.scan);
+  const markAlertExecuted = usePlansStore((s) => s.markAlertExecuted);
+  const dismissAlert = usePlansStore((s) => s.dismissAlert);
 
-  const holdings = useHoldingsStore((s) => s.holdings)
-  const settings = useSettingsStore((s) => s.settings)
-  const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
+  const holdings = useHoldingsStore((s) => s.holdings);
+  const settings = useSettingsStore((s) => s.settings);
+  const loadHoldings = useHoldingsStore((s) => s.loadHoldings);
 
-  const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [presetDialogOpen, setPresetDialogOpen] = useState(false)
-  const [editingRule, setEditingRule] = useState<PlanRule | null>(null)
-  const [activeTab, setActiveTab] = useState<'rules' | 'alerts' | 'history'>('rules')
-  const [adjustFund, setAdjustFund] = useState<FundHolding | null>(null)
-  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<PlanRule | null>(null);
+  const [activeTab, setActiveTab] = useState<"rules" | "alerts" | "history">("rules");
+  const [adjustFund, setAdjustFund] = useState<FundHolding | null>(null);
+  const [adjustOpen, setAdjustOpen] = useState(false);
 
   useEffect(() => {
-    loadPlan()
-    loadAlerts()
-    loadHoldings()
-  }, [loadPlan, loadAlerts, loadHoldings])
+    loadPlan();
+    loadAlerts();
+    loadHoldings();
+  }, [loadPlan, loadAlerts, loadHoldings]);
 
-  const pendingAlerts = useMemo(() => alerts.filter((a) => !a.executed && !a.dismissed), [alerts])
-  const historyAlerts = useMemo(() => alerts.filter((a) => a.executed || a.dismissed), [alerts])
+  const pendingAlerts = useMemo(() => alerts.filter((a) => !a.executed && !a.dismissed), [alerts]);
+  const historyAlerts = useMemo(() => alerts.filter((a) => a.executed || a.dismissed), [alerts]);
 
   // 提醒面板实时行情：用于现场重算每条提醒的成本/收益率/盈亏，覆盖陈旧快照（旧 bug 的「成本未知」）
-  const alertCodes = useMemo(() => pendingAlerts.map((a) => a.fundCode), [pendingAlerts])
-  const { valuations: alertValuations } = useRealtimeQuotes(alertCodes)
+  const alertCodes = useMemo(() => pendingAlerts.map((a) => a.fundCode), [pendingAlerts]);
+  const { valuations: alertValuations } = useRealtimeQuotes(alertCodes);
 
   const handleScan = useCallback(async () => {
-    if (!plan?.enabled) return
-    const result = await scan(holdings)
+    if (!plan?.enabled) return;
+    const result = await scan(holdings);
     if (result.length > 0) {
-      setActiveTab('alerts')
+      setActiveTab("alerts");
       // Web Push: 发送浏览器通知
       if (settings.notifications.browser) {
-        await requestNotificationPermission()
-        sendAlertBatch(result.map((a) => ({
-          fundName: a.fundCode,
-          reason: a.reason || '投资计划触发',
-        })))
+        await requestNotificationPermission();
+        sendAlertBatch(
+          result.map((a) => ({
+            fundName: a.fundCode,
+            reason: a.reason || "投资计划触发",
+          })),
+        );
       }
-      toast({ type: 'success', message: `扫描命中 ${result.length} 条提醒` })
+      toast({ type: "success", message: `扫描命中 ${result.length} 条提醒` });
     } else {
-      toast({ type: 'info', message: '扫描完成，本期无触发' })
+      toast({ type: "info", message: "扫描完成，本期无触发" });
     }
-  }, [plan, holdings, scan, settings.notifications.browser])
+  }, [plan, holdings, scan, settings.notifications.browser]);
 
-  if (!plan) return null
+  if (!plan) return null;
 
   return (
     <div className="space-y-6">
@@ -237,13 +362,19 @@ export default function PlansPage() {
         </div>
         <div className="flex items-center gap-2">
           <Switch checked={plan.enabled} onCheckedChange={togglePlanEnabled} />
-          <span className="text-xs text-muted-foreground">{plan.enabled ? '已开启' : '已关闭'}</span>
+          <span className="text-xs text-muted-foreground">
+            {plan.enabled ? "已开启" : "已关闭"}
+          </span>
           <Button
             size="sm"
             onClick={handleScan}
             disabled={scanning || !plan.enabled || holdings.length === 0}
           >
-            {scanning ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+            {scanning ? (
+              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+            ) : (
+              <Play className="h-3 w-3 mr-1" />
+            )}
             检查
           </Button>
         </div>
@@ -252,31 +383,35 @@ export default function PlansPage() {
       {/* Tabs */}
       <div className="flex gap-2 border-b pb-2">
         <button
-          className={`text-sm px-3 py-1 rounded-t ${activeTab === 'rules' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-          onClick={() => setActiveTab('rules')}
+          className={`text-sm px-3 py-1 rounded-t ${activeTab === "rules" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("rules")}
         >
-          <Settings2 className="h-3 w-3 inline mr-1" />规则配置
+          <Settings2 className="h-3 w-3 inline mr-1" />
+          规则配置
         </button>
         <button
-          className={`text-sm px-3 py-1 rounded-t ${activeTab === 'alerts' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-          onClick={() => setActiveTab('alerts')}
+          className={`text-sm px-3 py-1 rounded-t ${activeTab === "alerts" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("alerts")}
         >
           <Activity className="h-3 w-3 inline mr-1" />
           提醒面板
           {pendingAlerts.length > 0 && (
-            <Badge variant="destructive" className="ml-1 text-[10px] px-1">{pendingAlerts.length}</Badge>
+            <Badge variant="destructive" className="ml-1 text-[10px] px-1">
+              {pendingAlerts.length}
+            </Badge>
           )}
         </button>
         <button
-          className={`text-sm px-3 py-1 rounded-t ${activeTab === 'history' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground'}`}
-          onClick={() => setActiveTab('history')}
+          className={`text-sm px-3 py-1 rounded-t ${activeTab === "history" ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("history")}
         >
-          <History className="h-3 w-3 inline mr-1" />操作日志
+          <History className="h-3 w-3 inline mr-1" />
+          操作日志
         </button>
       </div>
 
       {/* Rules Tab */}
-      {activeTab === 'rules' && (
+      {activeTab === "rules" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs text-muted-foreground">{plan.rules.length} 条规则</p>
@@ -284,7 +419,8 @@ export default function PlansPage() {
               <Dialog open={presetDialogOpen} onOpenChange={setPresetDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" variant="outline" className="h-7 text-xs">
-                    <Sparkles className="h-3 w-3 mr-1" />智能预设
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    智能预设
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-sm">
@@ -296,36 +432,50 @@ export default function PlansPage() {
                   </DialogHeader>
                   <div className="space-y-2">
                     {SMART_PRESETS.map((p) => {
-                      const exists = ruleExists(plan, p.rule)
+                      const exists = ruleExists(plan, p.rule);
                       return (
-                        <div key={p.key} className="flex items-center justify-between rounded-lg border p-2.5">
+                        <div
+                          key={p.key}
+                          className="flex items-center justify-between rounded-lg border p-2.5"
+                        >
                           <div className="min-w-0">
                             <div className="text-xs font-medium">{p.label}</div>
-                            <div className="text-[10px] text-muted-foreground truncate">{p.desc}</div>
+                            <div className="text-[10px] text-muted-foreground truncate">
+                              {p.desc}
+                            </div>
                           </div>
                           <Button
                             size="sm"
-                            variant={exists ? 'ghost' : 'default'}
+                            variant={exists ? "ghost" : "default"}
                             className="h-7 text-xs shrink-0 ml-2"
                             disabled={exists}
-                            onClick={() => { addRule(p.rule); toast({ type: 'success', message: `已导入：${p.label}` }) }}
+                            onClick={() => {
+                              addRule(p.rule);
+                              toast({ type: "success", message: `已导入：${p.label}` });
+                            }}
                           >
-                            {exists ? '已存在' : '导入'}
+                            {exists ? "已存在" : "导入"}
                           </Button>
                         </div>
-                      )
+                      );
                     })}
                   </div>
                   <Button
                     size="sm"
                     className="w-full"
                     onClick={() => {
-                      let added = 0
+                      let added = 0;
                       for (const p of SMART_PRESETS) {
-                        if (!ruleExists(plan, p.rule)) { addRule(p.rule); added++ }
+                        if (!ruleExists(plan, p.rule)) {
+                          addRule(p.rule);
+                          added++;
+                        }
                       }
-                      setPresetDialogOpen(false)
-                      toast({ type: 'success', message: added > 0 ? `已导入 ${added} 条预设规则` : '预设规则均已存在' })
+                      setPresetDialogOpen(false);
+                      toast({
+                        type: "success",
+                        message: added > 0 ? `已导入 ${added} 条预设规则` : "预设规则均已存在",
+                      });
                     }}
                   >
                     一键导入全部预设
@@ -335,7 +485,8 @@ export default function PlansPage() {
               <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
                 <DialogTrigger asChild>
                   <Button size="sm" className="h-7 text-xs">
-                    <Plus className="h-3 w-3 mr-1" />添加规则
+                    <Plus className="h-3 w-3 mr-1" />
+                    添加规则
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-sm">
@@ -343,7 +494,13 @@ export default function PlansPage() {
                     <DialogTitle>添加规则</DialogTitle>
                     <DialogDescription>设置触发条件和操作</DialogDescription>
                   </DialogHeader>
-                  <RuleForm onSave={(r) => { addRule(r); setAddDialogOpen(false) }} onCancel={() => setAddDialogOpen(false)} />
+                  <RuleForm
+                    onSave={(r) => {
+                      addRule(r);
+                      setAddDialogOpen(false);
+                    }}
+                    onCancel={() => setAddDialogOpen(false)}
+                  />
                 </DialogContent>
               </Dialog>
             </div>
@@ -365,13 +522,20 @@ export default function PlansPage() {
                         checked={rule.enabled}
                         onCheckedChange={(v) => updateRule(rule.id, { enabled: v })}
                       />
-                      <Badge variant={rule.action === 'buy' ? 'default' : 'secondary'} className="text-[10px]">
+                      <Badge
+                        variant={rule.action === "buy" ? "default" : "secondary"}
+                        className="text-[10px]"
+                      >
                         {ACTION_LABELS[rule.action]}
                       </Badge>
                       <span className="text-xs font-medium">{RULE_TYPE_LABELS[rule.type]}</span>
                       <span className="text-xs text-muted-foreground">
                         {COMPARATOR_LABELS[rule.comparator]} {rule.threshold}
-                        {rule.type === 'dca' ? '天' : rule.type === 'return' || rule.type === 'daily_change' ? '%' : ''}
+                        {rule.type === "dca"
+                          ? "天"
+                          : rule.type === "return" || rule.type === "daily_change"
+                            ? "%"
+                            : ""}
                       </span>
                       {rule.shares > 0 && (
                         <span className="text-xs text-muted-foreground">{rule.shares} 份</span>
@@ -381,17 +545,30 @@ export default function PlansPage() {
                       )}
                     </div>
                     <div className="flex gap-1 shrink-0">
-                      <Button variant="ghost" size="icon" className="h-6 w-6" aria-label="编辑规则"
-                        onClick={() => setEditingRule(rule)}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        aria-label="编辑规则"
+                        onClick={() => setEditingRule(rule)}
+                      >
                         <Settings2 className="h-3 w-3" />
                       </Button>
                       <ConfirmAction
                         title="删除该规则？"
                         description="删除后该规则不再参与计划扫描。"
                         confirmText="确认删除"
-                        onConfirm={() => { removeRule(rule.id); toast({ type: 'success', message: '已删除规则' }) }}
+                        onConfirm={() => {
+                          removeRule(rule.id);
+                          toast({ type: "success", message: "已删除规则" });
+                        }}
                       >
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" aria-label="删除规则">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-destructive"
+                          aria-label="删除规则"
+                        >
                           <Trash2 className="h-3 w-3" />
                         </Button>
                       </ConfirmAction>
@@ -411,7 +588,10 @@ export default function PlansPage() {
               {editingRule && (
                 <RuleForm
                   rule={editingRule}
-                  onSave={(r) => { updateRule(editingRule.id, r); setEditingRule(null) }}
+                  onSave={(r) => {
+                    updateRule(editingRule.id, r);
+                    setEditingRule(null);
+                  }}
                   onCancel={() => setEditingRule(null)}
                 />
               )}
@@ -421,7 +601,7 @@ export default function PlansPage() {
       )}
 
       {/* Alerts Tab */}
-      {activeTab === 'alerts' && (
+      {activeTab === "alerts" && (
         <div className="space-y-3">
           {pendingAlerts.length === 0 ? (
             <Card>
@@ -433,16 +613,25 @@ export default function PlansPage() {
             </Card>
           ) : (
             pendingAlerts.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} onExecuted={markAlertExecuted} onDismiss={dismissAlert}
-                onQuickAdjust={(fund) => { setAdjustFund(fund); setAdjustOpen(true) }}
-                holdings={holdings} valuation={alertValuations[alert.fundCode]} />
+              <AlertCard
+                key={alert.id}
+                alert={alert}
+                onExecuted={markAlertExecuted}
+                onDismiss={dismissAlert}
+                onQuickAdjust={(fund) => {
+                  setAdjustFund(fund);
+                  setAdjustOpen(true);
+                }}
+                holdings={holdings}
+                valuation={alertValuations[alert.fundCode]}
+              />
             ))
           )}
         </div>
       )}
 
       {/* History Tab */}
-      {activeTab === 'history' && (
+      {activeTab === "history" && (
         <div className="space-y-1">
           {historyAlerts.length === 0 ? (
             <Card>
@@ -451,67 +640,60 @@ export default function PlansPage() {
               </CardContent>
             </Card>
           ) : (
-            historyAlerts.map((alert) => (
-              <div key={alert.id} className="flex items-center justify-between py-1.5 px-3 rounded hover:bg-muted/50 text-xs">
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className="font-mono shrink-0">{alert.fundCode}</span>
-                  <span className="truncate">{alert.fundName}</span>
-                  <Badge variant={alert.executed ? 'default' : 'outline'} className="text-[10px] shrink-0">
-                    {alert.executed ? '已执行' : '已忽略'}
-                  </Badge>
-                  <span className="text-muted-foreground truncate">{alert.reason}</span>
-                </div>
-                <span className="text-muted-foreground text-[10px] shrink-0 ml-2">
-                  {new Date(alert.triggeredAt).toLocaleDateString()}
-                </span>
-              </div>
-            ))
+            historyAlerts.map((alert) => <HistoryAlertRow key={alert.id} alert={alert} />)
           )}
         </div>
       )}
       <QuickAdjustDialog fund={adjustFund} open={adjustOpen} onOpenChange={setAdjustOpen} />
     </div>
-  )
+  );
 }
 
-function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings, valuation }: {
-  alert: PlanAlert
-  onExecuted: (id: string) => void
-  onDismiss: (id: string) => void
-  onQuickAdjust: (fund: FundHolding) => void
-  holdings: FundHolding[]
+function AlertCard({
+  alert,
+  onExecuted,
+  onDismiss,
+  onQuickAdjust,
+  holdings,
+  valuation,
+}: {
+  alert: PlanAlert;
+  onExecuted: (id: string) => void;
+  onDismiss: (id: string) => void;
+  onQuickAdjust: (fund: FundHolding) => void;
+  holdings: FundHolding[];
   /** 实时行情估值（来自 PlansPage 的 useRealtimeQuotes），用于现场重算成本/盈亏 */
-  valuation?: RealtimeValuation
+  valuation?: RealtimeValuation;
 }) {
-  const matchedHolding = holdings.find((h) => h.code === alert.fundCode)
+  const matchedHolding = holdings.find((h) => h.code === alert.fundCode);
 
   // 现场重算：用实时净值（若有）对持仓解析成本，覆盖扫描时留下的陈旧快照
-  const liveQuote = valuation?.quote ?? null
-  const live = matchedHolding ? resolveHoldingCost(matchedHolding, liveQuote?.nav ?? 0) : null
+  const liveQuote = valuation?.quote ?? null;
+  const live = matchedHolding ? resolveHoldingCost(matchedHolding, liveQuote?.nav ?? 0) : null;
 
   // 成本净值：优先实时反算，否则回退快照
-  const effCostNAV = live && live.costNAV > 0 ? live.costNAV : alert.costNAV
+  const effCostNAV = live && live.costNAV > 0 ? live.costNAV : alert.costNAV;
   // 盈亏是否可算：实时优先，否则快照有成本净值也算
-  const effPnlKnown = (live?.pnlKnown ?? false) || alert.costNAV > 0
+  const effPnlKnown = (live?.pnlKnown ?? false) || alert.costNAV > 0;
   // 收益率：实时优先（更准），否则快照值
-  const effReturnRate = live?.pnlKnown ? live.returnRate : alert.returnRate
+  const effReturnRate = live?.pnlKnown ? live.returnRate : alert.returnRate;
   // 累计盈亏：实时优先，否则快照值（旧快照可能无此字段）
-  const effTotalPnl = live?.pnlKnown ? live.totalPnl : (alert.totalPnl ?? null)
+  const effTotalPnl = live?.pnlKnown ? live.totalPnl : (alert.totalPnl ?? null);
 
-  const isUp = effReturnRate >= 0
+  const isUp = effReturnRate >= 0;
   const costLabel =
     effCostNAV > 0
       ? `¥${effCostNAV.toFixed(4)}`
       : matchedHolding && (matchedHolding.holdingAmount || 0) > 0
         ? `本金 ¥${Math.max(0, (matchedHolding.holdingAmount || 0) - (matchedHolding.holdingProfit || 0)).toFixed(2)}`
-        : '成本未知'
+        : "成本未知";
 
   const handleQuick = () => {
-    if (!matchedHolding) return
-    onQuickAdjust(matchedHolding)
-  }
+    if (!matchedHolding) return;
+    onQuickAdjust(matchedHolding);
+  };
   return (
-    <Card className={`border-l-4 ${isUp ? 'border-l-up' : 'border-l-down'}`}>
+    <Card className={`border-l-4 ${isUp ? "border-l-up" : "border-l-down"}`}>
       <CardContent className="p-3">
         <div className="flex items-start justify-between">
           <div className="space-y-1 flex-1 min-w-0">
@@ -520,8 +702,11 @@ function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings, valu
               <span className="text-sm font-medium truncate">{alert.fundName}</span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant={alert.action === 'buy' ? 'default' : 'secondary'} className="text-[10px]">
-                {alert.action === 'buy' ? '买入' : '卖出'}
+              <Badge
+                variant={alert.action === "buy" ? "default" : "secondary"}
+                className="text-[10px]"
+              >
+                {alert.action === "buy" ? "买入" : "卖出"}
                 {alert.shares > 0 && ` ${alert.shares}份`}
               </Badge>
               <span className="text-xs">{alert.reason}</span>
@@ -530,15 +715,18 @@ function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings, valu
               <span>成本: {costLabel}</span>
               <span>现价: ¥{(liveQuote?.nav ?? alert.currentNAV).toFixed(4)}</span>
               <span className={pnlColor(isUp)}>
-                收益率: {effPnlKnown ? `${formatSigned(effReturnRate)}${effReturnRate.toFixed(2)}%` : '—'}
+                收益率:{" "}
+                {effPnlKnown ? `${formatSigned(effReturnRate)}${effReturnRate.toFixed(2)}%` : "—"}
               </span>
               {effTotalPnl != null && (
                 <span className={pnlColor(effTotalPnl)}>
-                  累计盈亏: {formatSigned(effTotalPnl)}{formatCurrency(effTotalPnl)}
+                  累计盈亏: {formatSigned(effTotalPnl)}
+                  {formatCurrency(effTotalPnl)}
                 </span>
               )}
               <span className={pnlColor(alert.dailyChange)}>
-                今日: {formatSigned(alert.dailyChange)}{alert.dailyChange.toFixed(2)}%
+                今日: {formatSigned(alert.dailyChange)}
+                {alert.dailyChange.toFixed(2)}%
               </span>
             </div>
           </div>
@@ -546,18 +734,30 @@ function AlertCard({ alert, onExecuted, onDismiss, onQuickAdjust, holdings, valu
             {matchedHolding && (
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleQuick}>
                 <TrendingUp className="h-3 w-3 mr-1 text-green-500" />
-                {alert.action === 'buy' ? '快速补仓' : '快速减仓'}
+                {alert.action === "buy" ? "快速补仓" : "快速减仓"}
               </Button>
             )}
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => onExecuted(alert.id)}>
-              <CheckCircle className="h-3 w-3 mr-1" />已执行
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => onExecuted(alert.id)}
+            >
+              <CheckCircle className="h-3 w-3 mr-1" />
+              已执行
             </Button>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => onDismiss(alert.id)}>
-              <Eye className="h-3 w-3 mr-1" />已读
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => onDismiss(alert.id)}
+            >
+              <Eye className="h-3 w-3 mr-1" />
+              已读
             </Button>
           </div>
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }

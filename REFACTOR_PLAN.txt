@@ -1,0 +1,401 @@
+============================================================
+《重构计划报告》
+============================================================
+
+一、扫描概览
+扫描文件总数：120 个（src 下 .ts/.tsx，已排除 .d.ts/.map）
+源码总行数：25,481 行
+发现问题总数：17 个（P0×4 / P1×9 / P2×4）
+预估总工时：约 11 人/天
+整体健康评分（10分制）：6 分
+评分说明：数据访问层与 UI 隔离良好（无组件直接 fetch、无循环依赖、无真实密钥泄露、已有 hooks 复用范例），但存在大量巨型组件、硬编码值散落、重复逻辑与未使用依赖，拉低可维护性。
+
+二、问题分类汇总
+
+【P0 - 高危问题（影响可维护性/稳定性）】
+P0-01 巨型组件：FundDetailPage.tsx（1080 行 / 38 个 useState）
+P0-02 巨型组件：RankingPage.tsx（961 行）
+P0-03 巨型组件：EtfMappingManager.tsx（806 行 / 15 个 useState）
+P0-04 宽 Props 扇出：FundDetailPage→KlineChartCard（27+ props）→CandlestickChart，DecisionAdvisorCard（33+ props）
+
+【P1 - 中危问题（降低代码质量）】
+P1-01 未使用依赖：@radix-ui/react-accordion、react-alert-dialog、react-popover、react-scroll-area、react-toggle
+P1-02 硬编码 API 端点散落 services（ai.ts / klineAnalysis.ts / tencentKline.ts / jsonp-utils.ts / stock-api.ts / backup.ts）
+P1-03 硬编码颜色值散落（DashboardPage / CandlestickChart / ScoreScatterChart / DailyAccuracyTrendChart / AccuracyBucketChart / FundRankHistoryCard / KlineChartCard）
+P1-04 硬编码路由路径字面量（/detail/、/holdings、/notifications、/backtest、/plans、/settings 等多文件）
+P1-05 重复数据获取逻辑：K线加载 / 行情 / 评分快照 / 持仓穿透 / 板块资金流 共 5 类模式重复
+P1-06 >8 个 useState 的组件：StockDetailPage(23) / EditFundDialog(23) / PlansPage(12) / ImportDialog(11) / QuickAdjustDialog(10) / DashboardPage(9) / AddFundDialog(9) / HoldingsTable(9) / SettingsPage(9)
+P1-07 重复工具函数：LLM 调用封装(ai.ts vs klineAnalysis.ts) / 百分比格式化 / 金额格式化 / 时间解析(parseToTs vs parseDateToTs) / LLM JSON 提取
+P1-08 重复类型定义：PromptTemplateType 两处；方向联合 'up'|'down'|'neutral' 三处
+P1-09 重复 useEffect 挂载初始化：多页面 load-on-mount + loading 状态脚手架
+
+【P2 - 低风险 Quick Win（可立即修复）】
+P2-01 高频列表行组件缺 React.memo：RealtimePanel / SectorFundFlowPanel / BacktestPage / DailyReportPage / PlansPage / RankingPage
+P2-02 UI 绕过 lib/dataTime 直接 toLocaleDateString：AppLayout.tsx:46、PlansPage.tsx:465
+P2-03 useDebouncedValue 仅 1 处复用，AppLayout / AddFundDialog 仍手写 setTimeout 防抖
+P2-04 目录规范：lib/ 别名应文档化（或改 utils/），缺 constants/ 目录（与 P1-02 同源）
+
+三、详细重构方案
+
+【重构单元 #01】
+对应问题编号：P0-01
+文件路径：src/components/holdings/FundDetailPage.tsx
+当前问题：单文件 1080 行、38 个 useState，聚合 K线/信号/组合/排名/AI/调仓等多卡片与全部派生数据，违反单一职责，难以测试与维护。
+重构目标：拆分为「状态控制器 hook + 多个子卡片组件」，详情页只负责组合。
+Clean Code 原则遵循：单一职责、组合优于继承、纯函数优先。
+具体操作步骤：
+  步骤1：抽取 useFundDetailController(fund) 自定义 hook，收敛 38 个 useState 与所有数据加载 useEffect（K线/组合/信号/评分/行情）。
+  步骤2：将 KlineChartCard / DecisionAdvisorCard / TechnicalIndicatorsPanel / MarkdownModal 等已存在卡片改为接收「控制器输出」的纯展示组件。
+  步骤3：FundDetailPage 仅保留布局与 <FundDetailController.Provider> 包裹，子组件用 useFundDetailController() 取值。
+Before 代码片段：
+  export function FundDetailPage({ fundId }: { fundId: string }) {
+    const [period, setPeriod] = useState('daily');
+    const [klineData, setKlineData] = useState<KLineData[]>([]);
+    // ... 38 个 useState + 10+ useEffect 内联 ...
+    return (<div> ... <KlineChartCard klineData={klineData} period={period} .../> ... </div>);
+  }
+After 代码片段（预期）：
+  export function FundDetailPage({ fundId }: { fundId: string }) {
+    return (
+      <FundDetailControllerProvider fundId={fundId}>
+        <FundDetailLayout />   {/* 仅组合子卡片 */}
+      </FundDetailControllerProvider>
+    );
+  }
+风险等级：中
+回滚方案：保留原文件为 FundDetailPage.legacy.tsx，灰度切换后删除。
+验证方法：vite build + 手动走查各 Tab 功能不变；eslint 0 error。
+
+【重构单元 #02】
+对应问题编号：P0-02
+文件路径：src/components/ranking/RankingPage.tsx
+当前问题：961 行，聚合缺失基金/标签/筛选/评分表/板块资金流等多个区块。
+重构目标：拆分出 RankingFilters、MissingFundsCard、SectorFundFlowTab 等子组件，母页只做布局与数据编排（复用 useSnapshots 见 #06）。
+Clean Code 原则遵循：单一职责、DRY。
+具体操作步骤：
+  步骤1：抽取 useRankingData hook（加载快照 + 缺失基金 + 筛选状态）。
+  步骤2：MissingFunds 区块、筛选条、板块资金流 Tab 抽为独立组件。
+  步骤3：RankingPage 仅组合。
+Before 代码片段：
+  export function RankingPage() {
+    const [missingFunds, setMissingFunds] = useState([]);
+    const [filter, setFilter] = useState(...);
+    // 一长段 JSX 直接渲染所有区块
+  }
+After 代码片段（预期）：
+  export function RankingPage() {
+    const data = useRankingData();
+    return (<RankingFilters .../><MissingFundsCard .../><SectorFundFlowTab .../>);
+  }
+风险等级：中
+回滚方案：保留 legacy 副本，功能对照验证后删除。
+验证方法：build + 各筛选/排序交互不变。
+
+【重构单元 #03】
+对应问题编号：P0-03
+文件路径：src/components/settings/EtfMappingManager.tsx
+当前问题：806 行 / 15 个 useState，编辑/健康检查/批量导入/推荐逻辑挤在一个组件。
+重构目标：拆分表单态 useEtfMappingForm、健康检查 useEtfHealthCheck、批量导入 useEtfBatchImport 三个 hook + 子组件。
+Clean Code 原则遵循：单一职责、状态归一（useReducer 替代散 useState）。
+具体操作步骤：
+  步骤1：15 个 useState 按「表单/健康/批量/推荐」分组，用 3 个 useReducer 或自定义 hook 收敛。
+  步骤2：编辑对话框、健康结果列表、推荐面板各自抽组件。
+  步骤3：母组件组合。
+Before 代码片段：
+  const [open, setOpen] = useState(false);
+  const [editIndex, setEditIndex] = useState(-1);
+  const [draft, setDraft] = useState(...);
+  // ... 15 个散 useState ...
+After 代码片段（预期）：
+  const form = useEtfMappingForm();
+  const health = useEtfHealthCheck();
+  const batch = useEtfBatchImport();
+风险等级：中
+回滚方案：legacy 副本对照。
+验证方法：build + 编辑/导入/健康检查功能不变。
+
+【重构单元 #04】
+对应问题编号：P0-04
+文件路径：src/components/holdings/FundDetailPage.tsx → KlineChartCard.tsx → CandlestickChart.tsx；DecisionAdvisorCard.tsx
+当前问题：FundDetailPage 将 27+ 派生值逐层传给 KlineChartCard，再转给 CandlestickChart；DecisionAdvisorCard 接收 33+ props，属「宽 prop 扇出」而非深钻，仍破坏封装。
+重构目标：引入 FundDetailContext（由 #01 的控制器提供）或选择器 hook，子组件直接取值，消除跨层宽 props。
+Clean Code 原则遵循：依赖倒置、组合优于继承、最少知识。
+具体操作步骤：
+  步骤1：在 #01 的控制器中导出 Context。
+  步骤2：KlineChartCard / CandlestickChart / DecisionAdvisorCard 改为 useFundDetailController() 取所需字段，删除透传 props。
+  步骤3：保留必要交互回调（onCandleClick 等）作为 props。
+Before 代码片段：
+  <KlineChartCard klineData={klineData} period={period} showMA={showMA} showBollinger={showBollinger}
+                 etfCode={etfCode} klineDetectedPatterns={...} onCandleClick={...} ... />
+After 代码片段（预期）：
+  // KlineChartCard 内部
+  const { klineData, period, showMA, showBollinger, etfCode, klineDetectedPatterns, onCandleClick } = useFundDetailController();
+风险等级：中
+回滚方案：legacy 副本。
+验证方法：build + K线/信号交互不变。
+
+【重构单元 #05】
+对应问题编号：P1-01
+文件路径：package.json
+当前问题：5 个 @radix-ui 子包声明但 src 中零引用（accordion / alert-dialog / popover / scroll-area / toggle）。
+重构目标：从 dependencies 移除未使用项，缩小安装体积。
+Clean Code 原则遵循：DRY/简洁（不保留死依赖）。
+具体操作步骤：
+  步骤1：确认无动态引用（grep 已确认 0 引用）。
+  步骤2：npm uninstall 5 个包（需你批准，按约束不擅自删除依赖）。
+  步骤3：重新 build 验证。
+Before 代码片段：
+  "dependencies": { "@radix-ui/react-accordion": "^1.2.13", "@radix-ui/react-alert-dialog": "^1.1.16", ... }
+After 代码片段（预期）：
+  // 上述 5 项从 dependencies 中删除
+风险等级：低
+回滚方案：git revert package.json + package-lock.json。
+验证方法：npm run build；grep 确认无遗漏引用。
+
+【重构单元 #06】
+对应问题编号：P1-05
+文件路径：src/hooks/ + src/components/*（K线/行情/评分快照/持仓穿透/板块资金流）
+当前问题：5 类「useEffect + async load + loading/error 状态」模式在多个组件重复。
+重构目标：抽取 useKline(code, period, etfCode)、useFundQuotes()、useSnapshots()、usePortfolio(code)、useSectorFlow() 等自定义 hook，复用既有 useRealtimeQuotes。
+Clean Code 原则遵循：DRY、单一职责、纯函数优先（加载逻辑与组件解耦）。
+具体操作步骤：
+  步骤1：以 useRealtimeQuotes 为范本，抽取 useKline（含 15s 超时 + cancelled 守卫，合并 FundDetailPage:320 与 StockDetailPage:129 两处）。
+  步骤2：DashboardPage:127 的 loadQuotes 改为复用 useRealtimeQuotes，删除私有实现。
+  步骤3：RankingPage:105 / BacktestPage:66 / BacktestSummaryCard:21 的评分快照加载合并为 useSnapshots()。
+  步骤4：FundDetailPage:435 持仓穿透、SectorFundFlowPanel:82 板块资金流各抽 hook。
+Before 代码片段：
+  // FundDetailPage.tsx:320
+  useEffect(() => {
+    if (klineData.length === 0) return;
+    const patterns = detectPatterns(klineData);
+    setKlineDetectedPatterns(patterns); ...
+  }, [klineData]);
+  // StockDetailPage.tsx:129 几乎相同逻辑再写一遍
+After 代码片段（预期）：
+  const { klineData, klineLoading, klineDetectedPatterns, reload } = useKline(code, period, etfCode);
+风险等级：中
+回滚方案：legacy 副本；hook 内部保留原逻辑等效实现。
+验证方法：build + 各页数据加载/刷新行为不变。
+
+【重构单元 #07】
+对应问题编号：P1-02
+文件路径：src/services/ai.ts、klineAnalysis.ts、adapters/datasource/tencentKline.ts、jsonp-utils.ts、stock-api.ts、backup.ts
+当前问题：多个公开 API 端点硬编码在各 service 内，缺集中配置。
+重构目标：新建 src/constants/endpoints.ts（或 config.ts），集中所有 API base URL；service 改为引用常量。
+Clean Code 原则遵循：单一职责（配置与逻辑分离）、依赖倒置。
+具体操作步骤：
+  步骤1：新建 src/constants/endpoints.ts 导出 API_BASES 对象（deepseek/openai/groq/tencent/eastmoney/github 等）。
+  步骤2：各 service 用 import 替换字面量。
+  步骤3：build 验证。
+Before 代码片段：
+  // services/ai.ts:15
+  const endpoints = { deepseek: 'https://api.deepseek.com/v1/chat/completions', openai: 'https://api.openai.com/v1/chat/completions' };
+After 代码片段（预期）：
+  import { API_BASES } from '@/constants/endpoints';
+  const endpoints = API_BASES; // 集中管理
+风险等级：低
+回滚方案：git revert constants 文件与各 service 改动。
+验证方法：build + 真实接口联调（调用 AI/行情）。
+
+【重构单元 #08】
+对应问题编号：P1-03
+文件路径：DashboardPage.tsx、CandlestickChart.tsx、ScoreScatterChart.tsx、DailyAccuracyTrendChart.tsx、AccuracyBucketChart.tsx、FundRankHistoryCard.tsx、KlineChartCard.tsx
+当前问题：散落 60+ 个 hex/rgba 颜色字面量，仅部分复用 lib/chart-colors.ts。
+重构目标：统一从 lib/chart-colors.ts 取色（类型色/涨跌色/模式色），删除内联字面量。
+Clean Code 原则遵循：DRY、单一职责（主题/配色集中）。
+具体操作步骤：
+  步骤1：在 chart-colors.ts 增补缺失色板（TYPE_COLORS、PATTERN_COLORS、涨跌色）。
+  步骤2：逐组件替换字面量为导入常量。
+  步骤3：build + 视觉走查。
+Before 代码片段：
+  // CandlestickChart.tsx:81
+  const PATTERN_COLORS = { golden: '#f59e0b', ... };
+After 代码片段（预期）：
+  import { PATTERN_COLORS, UP_COLOR, DOWN_COLOR } from '@/lib/chart-colors';
+风险等级：低
+回滚方案：git revert 单文件。
+验证方法：build + 图表配色视觉一致。
+
+【重构单元 #09】
+对应问题编号：P1-04
+文件路径：router.tsx 及所有含字面路由的组件（AppLayout / FundDetailPage / StockDetailPage / RankingPage / DashboardPage / RealtimePanel / NotificationsPage / HoldingsTable 等）
+当前问题：路由字面量 '/detail/'、'/holdings' 等散落多文件，与 router.tsx 相对路径不一致，易漂移。
+重构目标：router.tsx 导出 ROUTES 常量对象，全量替换字面量。
+Clean Code 原则遵循：DRY、单一职责（路由集中）。
+具体操作步骤：
+  步骤1：router.tsx 导出 `export const ROUTES = { detail: (id)=>`/detail/${id}`, holdings:'/holdings', ... }`。
+  步骤2：grep 所有 '/detail/'、'/holdings' 等并替换为 ROUTES.*。
+  步骤3：build + 点击导航验证。
+Before 代码片段：
+  navigate(`/detail/${fund.id}`);
+After 代码片段（预期）：
+  navigate(ROUTES.detail(fund.id));
+风险等级：低
+回滚方案：git revert。
+验证方法：build + 全站导航回归。
+
+【重构单元 #10】
+对应问题编号：P1-06
+文件路径：StockDetailPage / EditFundDialog / PlansPage / ImportDialog / QuickAdjustDialog / DashboardPage / AddFundDialog / HoldingsTable / SettingsPage
+当前问题：9 个组件 useState 超 8 个（最高 23），状态散乱难维护。
+重构目标：按「数据 / 表单字段 / UI 开关」分组，改用 useReducer 或自定义 hook。
+Clean Code 原则遵循：单一职责、状态归一。
+具体操作步骤：
+  步骤1：对表单类（EditFundDialog/AddFundDialog/ImportDialog/QuickAdjustDialog）用 useReducer 收敛字段态。
+  步骤2：对页面类（StockDetailPage/DashboardPage/PlansPage/SettingsPage/HoldingsTable）抽取 *State hook。
+  步骤3：build 验证。
+Before 代码片段：
+  const [code,setCode]=useState(''); const [name,setName]=useState('');
+  const [market,setMarket]=useState(''); // ... 23 个
+After 代码片段（预期）：
+  const [form, dispatch] = useReducer(etfFormReducer, initialForm);
+风险等级：低
+回滚方案：legacy 副本。
+验证方法：build + 表单/交互不变。
+
+【重构单元 #11】
+对应问题编号：P1-07
+文件路径：src/services/ai.ts、klineAnalysis.ts、backtest/aiAnalysis.ts、lib/format.ts、lib/dataTime.ts、stockSdkIndicators.ts
+当前问题：LLM 调用封装、百分比/金额格式化、时间解析、JSON 提取四类重复实现。
+重构目标：合并为共享模块——src/lib/llm.ts（统一 callLLM）、lib/format.ts 扩展（formatPercent/formatCurrency 单点）、lib/dataTime.ts 复用 parseToTs、lib/json.ts（extractJsonFromLLM）。
+Clean Code 原则遵循：DRY、纯函数优先。
+具体操作步骤：
+  步骤1：ai.ts 与 klineAnalysis.ts 的 google/openai 分支合并为 callLLM(provider, messages)。
+  步骤2：RankingPage/BacktestPage 内联百分比、DashboardPage 金额格式化改用 lib/format。
+  步骤3：stockSdkIndicators.ts:29 parseDateToTs 删除，改 import parseToTs。
+  步骤4：klineAnalysis.ts:252 与 backtest/aiAnalysis.ts:150 合并为 extractJsonFromLLM。
+Before 代码片段：
+  // klineAnalysis.ts:231 与 ai.ts:62 几乎相同的 openai 兼容 fetch 块
+After 代码片段（预期）：
+  const res = await callLLM(provider, messages); // 统一入口
+风险等级：低
+回滚方案：git revert 单文件。
+验证方法：build + AI 分析/回测 AI 结果不变。
+
+【重构单元 #12】
+对应问题编号：P1-08
+文件路径：types/index.ts:326、services/prompt.ts:5、RankingPage.tsx:42、TechnicalIndicatorsPanel.tsx:7、stockSdkIndicators.ts:68
+当前问题：PromptTemplateType 两处完全重复；方向联合 'up'|'down'|'neutral' 三处重复。
+重构目标：类型单点定义于 types/index.ts，其余改为 import。
+Clean Code 原则遵循：DRY、单一职责（类型集中）。
+具体操作步骤：
+  步骤1：types/index.ts 定义并导出 PromptTemplateType 与 Tone/SignalDirection（统一命名）。
+  步骤2：services/prompt.ts、RankingPage、TechnicalIndicatorsPanel、stockSdkIndicators 改为 import。
+  步骤3：build 验证。
+Before 代码片段：
+  // services/prompt.ts:5
+  export type PromptTemplateType = 'diagnostic'|'rebalance'|'kline_enhanced';
+After 代码片段（预期）：
+  import type { PromptTemplateType } from '@/types'; // 单点来源
+风险等级：低
+回滚方案：git revert。
+验证方法：tsc --noEmit 0 错误。
+
+【重构单元 #13】
+对应问题编号：P1-09
+文件路径：FundDetailGateway.tsx:14、NotificationsPage.tsx:22、AiAnalysisPanel.tsx:96、HoldingsPage:15、DailyReportPage:68/74/78、StockDetailPage:86/100/124、DashboardPage:104/107/120 等
+当前问题：多页面重复「挂载即 loadFn() + loading 态」useEffect 脚手架。
+重构目标：抽取 useLoadOnMount(loadFn) hook（内部处理 cancelled 守卫 + 可选 loading 态）。
+Clean Code 原则遵循：DRY、纯函数优先。
+具体操作步骤：
+  步骤1：src/hooks/useLoadOnMount.ts 实现：useEffect(()=>{ let c=false; loadFn().catch(()=>{}); return ()=>{c=true}; },[loadFn])。
+  步骤2：逐页替换内联 useEffect。
+  步骤3：build 验证。
+Before 代码片段：
+  useEffect(() => { loadHoldings(); }, [loadHoldings]);
+After 代码片段（预期）：
+  useLoadOnMount(loadHoldings);
+风险等级：低
+回滚方案：git revert 单文件。
+验证方法：build + 各页加载行为不变。
+
+【重构单元 #14】
+对应问题编号：P2-01
+文件路径：RealtimePanel.tsx:126、SectorFundFlowPanel.tsx:181/195、BacktestPage.tsx:449、DailyReportPage.tsx:225/434、PlansPage.tsx:435/454、RankingPage.tsx:380
+当前问题：列表内联行 JSX，无 React.memo，高频/大列表重渲无优化。
+重构目标：抽取独立行组件并以 React.memo 包裹，昂贵计算用 useMemo。
+Clean Code 原则遵循：性能（组合 + memo）、单一职责。
+具体操作步骤：
+  步骤1：抽取 RealtimeRow / FlowRow / SnapshotRow / HoldingRow / AlertRow 等 memo 子组件。
+  步骤2：列表渲染改用 <RealtimeRow .../>。
+  步骤3：build + 性能观察。
+Before 代码片段：
+  {sorted.map(q => <div key={q.code} className="...">{q.name}{q.price}</div>)}
+After 代码片段（预期）：
+  {sorted.map(q => <RealtimeRow key={q.code} quote={q} />)} // React.memo
+风险等级：低
+回滚方案：git revert。
+验证方法：build + 交互不变。
+
+【重构单元 #15】
+对应问题编号：P2-02
+文件路径：AppLayout.tsx:46、PlansPage.tsx:465
+当前问题：直接 new Date(ts).toLocaleDateString('zh-CN') 绕过 lib/dataTime，时间格式不统一（且隐含时区风险）。
+重构目标：改用 lib/dataTime 的 formatDateOnly（已统一北京时间）。
+Clean Code 原则遵循：DRY、一致性。
+具体操作步骤：
+  步骤1：两处替换为 formatDateOnly(ts)。
+  步骤2：build 验证。
+Before 代码片段：
+  new Date(ts).toLocaleDateString('zh-CN')
+After 代码片段（预期）：
+  formatDateOnly(ts)
+风险等级：低
+回滚方案：git revert。
+验证方法：build + 日期显示一致。
+
+【重构单元 #16】
+对应问题编号：P2-03
+文件路径：src/hooks/useDebouncedValue.ts、AppLayout.tsx、AddFundDialog.tsx
+当前问题：useDebouncedValue 仅 1 处复用，两处仍手写 setTimeout 防抖。
+重构目标：统一复用 useDebouncedValue。
+Clean Code 原则遵循：DRY。
+具体操作步骤：
+  步骤1：AppLayout/AddFundDialog 搜索输入改用 useDebouncedValue(value, 300)。
+  步骤2：build 验证。
+Before 代码片段：
+  const [kw,setKw]=useState(''); useEffect(()=>{ const t=setTimeout(()=>search(kw),300); return ()=>clearTimeout(t); },[kw]);
+After 代码片段（预期）：
+  const kw = useDebouncedValue(rawKw, 300);
+风险等级：低
+回滚方案：git revert。
+验证方法：build + 搜索防抖不变。
+
+【重构单元 #17】
+对应问题编号：P2-04
+文件路径：src 目录结构
+当前问题：lib/ 别名未文档化（功能等同 utils/）；缺 constants/ 目录（与 P1-02 同源）。
+重构目标：文档化 lib/ 用途；借 #07 建立 constants/ 目录；页面按 *Page.tsx 命名保留（可接受）。
+Clean Code 原则遵循：单一职责、可发现性。
+具体操作步骤：
+  步骤1：在 README/约定文档注明 lib/ = utils 层（不强制改名以避免大规模 import 改动）。
+  步骤2：#07 落地时新建 src/constants/。
+  步骤3：build 验证。
+Before 代码片段：
+  // 无 constants 目录，端点散落
+After 代码片段（预期）：
+  src/constants/endpoints.ts 集中配置
+风险等级：低
+回滚方案：纯新增，无破坏。
+验证方法：文档审阅 + build。
+
+四、推荐执行顺序
+按风险从低到高排列：
+1. 先执行（P2 Quick Win，低风险、纯新增/局部替换）：
+   P2-01（列表 memo）、P2-02（formatDateOnly）、P2-03（useDebouncedValue 复用）、P2-04（目录/constants 文档化，含 #07 落地）
+2. 再执行（P1 中危，局部重构/去重）：
+   P1-01（删未用依赖，需批准）→ P1-02（endpoints 常量）→ P1-03（颜色常量）→ P1-04（ROUTES 常量）→ P1-07（工具去重）→ P1-08（类型去重）→ P1-09（useLoadOnMount）→ P1-05（数据 hook 抽取）→ P1-06（useState 收敛）
+3. 最后执行（P0 高危，组件拆分，需回归测试）：
+   P0-04（Context 消宽 props，依赖 #01）→ P0-01（FundDetailPage 拆分）→ P0-02（RankingPage 拆分）→ P0-03（EtfMappingManager 拆分）
+
+五、需要我决策的事项
+- 依赖清理：P1-01 的 5 个未使用 @radix-ui 包是否批准移除？（按你的约束，删除第三方依赖需你明确批准）
+- 目录改名：lib/ 是否改为 utils/？建议仅文档化不动（避免 @/lib→@/utils 的大规模 import 改动）；如坚持改名将单独走批量重命名并全量 build。
+- 巨型组件拆分粒度：P0 三个组件是否同意按「控制器 hook + 子卡片组件」拆分？拆分期间功能需逐 Tab 回归（你本地跑 dev server 验证），AI 不自动部署。
+- 路由常量方案：是否同意从 router.tsx 导出 ROUTES 并替换所有字面量（涉及约 12 处文件改动）？
+- 循环依赖确认：madge 未安装（npx --no-install 退出码 1），人工遍历未发现环；是否批准安装 madge（dev 工具）做一次完整穷举确认？
+- 常量目录：是否同意新建 src/constants/ 并以 #07 收敛端点（多 service 文件改动）？
+
+============================================================
+计划输出完毕。
+============================================================

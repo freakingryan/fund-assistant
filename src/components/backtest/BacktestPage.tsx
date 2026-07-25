@@ -7,7 +7,7 @@
  * @module backtest/BacktestPage
  */
 
-import { useEffect, useMemo, useState, useCallback, Fragment, useRef } from "react";
+import { useEffect, useMemo, useState, useCallback, Fragment, useRef, memo } from "react";
 import {
   captureDailySnapshots,
   reconcileSnapshots,
@@ -52,6 +52,45 @@ function fmtRate(v: number | null): string {
   if (v == null) return "-";
   return `${(v * 100).toFixed(1)}%`;
 }
+
+/** 回测明细行：React.memo 包裹，避免父级筛选/排序时整表重渲 */
+const SnapshotRow = memo(function ({ snapshot: s }: { snapshot: ScoreSnapshot }) {
+  return (
+    <tr className="border-b border-border/40 hover:bg-muted/30">
+      <td className="py-1.5 px-2 font-mono text-[10px] text-muted-foreground">{s.date}</td>
+      <td className="py-1.5 px-2">
+        <div className="truncate max-w-[140px]">{s.fundName}</div>
+        <div className="font-mono text-[10px] text-muted-foreground">{s.fundCode}</div>
+      </td>
+      <td className="py-1.5 px-2 text-right font-mono font-medium">{s.score}</td>
+      <td className="py-1.5 px-2">
+        <span
+          className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${REC_COLOR[s.recommendation]}`}
+        >
+          {recommendationLabel(s.recommendation)}
+        </span>
+      </td>
+      <td className="py-1.5 px-2 text-right font-mono">
+        {s.closeValue != null ? s.closeValue.toFixed(3) : "-"}
+        <span className="text-[9px] text-muted-foreground ml-1">
+          {s.valueSource === "etf" ? "ETF" : s.valueSource === "nav" ? "净值" : ""}
+        </span>
+      </td>
+      <td
+        className={`py-1.5 px-2 text-right font-mono ${s.nextChangePct != null ? (s.nextChangePct >= 0 ? "text-up" : "text-down") : "text-muted-foreground"}`}
+      >
+        {fmtPct(s.nextChangePct)}
+      </td>
+      <td className="py-1.5 px-2">
+        <span
+          className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${OUTCOME_COLOR[s.outcome]}`}
+        >
+          {outcomeLabel(s.outcome)}
+        </span>
+      </td>
+    </tr>
+  );
+});
 
 export default function BacktestPage() {
   const [snapshots, setSnapshots] = useState<ScoreSnapshot[]>([]);
@@ -447,49 +486,7 @@ export default function BacktestPage() {
                         </td>
                       </tr>
                       {rows.map((s) => (
-                        <tr key={s.id} className="border-b border-border/40 hover:bg-muted/30">
-                          <td className="py-1.5 px-2 font-mono text-[10px] text-muted-foreground">
-                            {s.date}
-                          </td>
-                          <td className="py-1.5 px-2">
-                            <div className="truncate max-w-[140px]">{s.fundName}</div>
-                            <div className="font-mono text-[10px] text-muted-foreground">
-                              {s.fundCode}
-                            </div>
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-medium">
-                            {s.score}
-                          </td>
-                          <td className="py-1.5 px-2">
-                            <span
-                              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${REC_COLOR[s.recommendation]}`}
-                            >
-                              {recommendationLabel(s.recommendation)}
-                            </span>
-                          </td>
-                          <td className="py-1.5 px-2 text-right font-mono">
-                            {s.closeValue != null ? s.closeValue.toFixed(3) : "-"}
-                            <span className="text-[9px] text-muted-foreground ml-1">
-                              {s.valueSource === "etf"
-                                ? "ETF"
-                                : s.valueSource === "nav"
-                                  ? "净值"
-                                  : ""}
-                            </span>
-                          </td>
-                          <td
-                            className={`py-1.5 px-2 text-right font-mono ${s.nextChangePct != null ? (s.nextChangePct >= 0 ? "text-up" : "text-down") : "text-muted-foreground"}`}
-                          >
-                            {fmtPct(s.nextChangePct)}
-                          </td>
-                          <td className="py-1.5 px-2">
-                            <span
-                              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${OUTCOME_COLOR[s.outcome]}`}
-                            >
-                              {outcomeLabel(s.outcome)}
-                            </span>
-                          </td>
-                        </tr>
+                        <SnapshotRow key={s.id} snapshot={s} />
                       ))}
                     </Fragment>
                   ))}

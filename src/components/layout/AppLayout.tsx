@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { ROUTES } from "@/constants/routes";
 import {
   LayoutDashboard,
   WalletCards,
@@ -18,130 +19,147 @@ import {
   CheckCircle2,
   AlertTriangle,
   Info,
-} from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
-import { TooltipProvider } from '@/components/ui/tooltip'
-import { Input } from '@/components/ui/input'
-import { useEffect, useRef, useState } from 'react'
-import { cn } from '@/lib/utils'
-import { useSettingsStore } from '@/stores/settings'
-import { useNotificationsStore, selectUnreadCount } from '@/stores/notifications'
-import type { AppNotification } from '@/types'
-import { dataSourceService } from '@/adapters/datasource/service'
-import { toast } from '@/components/ui/toast'
-import InstallPrompt from './InstallPrompt'
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Input } from "@/components/ui/input";
+import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settings";
+import { useNotificationsStore, selectUnreadCount } from "@/stores/notifications";
+import type { AppNotification } from "@/types";
+import { dataSourceService } from "@/adapters/datasource/service";
+import { toast } from "@/components/ui/toast";
+import InstallPrompt from "./InstallPrompt";
+import { formatDateOnly } from "@/lib/dataTime";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 /** 相对时间格式化（用于通知列表） */
 function formatRelativeTime(ts: number): string {
-  const diff = Date.now() - ts
-  const min = Math.floor(diff / 60000)
-  if (min < 1) return '刚刚'
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day === 1) return '昨天'
-  if (day < 7) return `${day} 天前`
-  return new Date(ts).toLocaleDateString('zh-CN')
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "刚刚";
+  if (min < 60) return `${min} 分钟前`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小时前`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return "昨天";
+  if (day < 7) return `${day} 天前`;
+  return formatDateOnly(ts);
 }
 
 /** 通知类型对应的图标与配色 */
-function NotifIcon({ type }: { type: AppNotification['type'] }) {
-  const cls = 'h-4 w-4 shrink-0 mt-0.5'
-  if (type === 'success') return <CheckCircle2 className={cn(cls, 'text-green-500')} />
-  if (type === 'error') return <AlertTriangle className={cn(cls, 'text-destructive')} />
-  if (type === 'warning') return <AlertTriangle className={cn(cls, 'text-amber-500')} />
-  return <Info className={cn(cls, 'text-primary')} />
+function NotifIcon({ type }: { type: AppNotification["type"] }) {
+  const cls = "h-4 w-4 shrink-0 mt-0.5";
+  if (type === "success") return <CheckCircle2 className={cn(cls, "text-green-500")} />;
+  if (type === "error") return <AlertTriangle className={cn(cls, "text-destructive")} />;
+  if (type === "warning") return <AlertTriangle className={cn(cls, "text-amber-500")} />;
+  return <Info className={cn(cls, "text-primary")} />;
 }
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: '概览', end: true },
-  { to: '/holdings', icon: WalletCards, label: '持仓管理' },
-  { to: '/detail', icon: LineChart, label: '基金详情' },
-  { to: '/plans', icon: TrendingUp, label: '投资计划' },
-  { to: '/ranking', icon: Trophy, label: '排行榜' },
-  { to: '/daily', icon: CalendarDays, label: '每日日报' },
-  { to: '/notifications', icon: Bell, label: '通知' },
-  { to: '/backtest', icon: Target, label: '评分回测' },
-  { to: '/settings', icon: Settings, label: '设置' },
-]
+  { to: ROUTES.home, icon: LayoutDashboard, label: "概览", end: true },
+  { to: ROUTES.holdings, icon: WalletCards, label: "持仓管理" },
+  { to: ROUTES.detailGateway, icon: LineChart, label: "基金详情" },
+  { to: ROUTES.plans, icon: TrendingUp, label: "投资计划" },
+  { to: ROUTES.ranking, icon: Trophy, label: "排行榜" },
+  { to: ROUTES.daily, icon: CalendarDays, label: "每日日报" },
+  { to: ROUTES.notifications, icon: Bell, label: "通知" },
+  { to: ROUTES.backtest, icon: Target, label: "评分回测" },
+  { to: ROUTES.settings, icon: Settings, label: "设置" },
+];
 
 export default function AppLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const theme = useSettingsStore((s) => s.settings.theme)
-  const updateSettings = useSettingsStore((s) => s.updateSettings)
-  const navigate = useNavigate()
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const theme = useSettingsStore((s) => s.settings.theme);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
+  const navigate = useNavigate();
 
   // 通知铃铛浮窗
-  const [notifOpen, setNotifOpen] = useState(false)
-  const notifRef = useRef<HTMLDivElement>(null)
-  const notifications = useNotificationsStore((s) => s.notifications)
-  const unreadCount = useNotificationsStore(selectUnreadCount)
-  const markRead = useNotificationsStore((s) => s.markRead)
-  const markAllRead = useNotificationsStore((s) => s.markAllRead)
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const notifications = useNotificationsStore((s) => s.notifications);
+  const unreadCount = useNotificationsStore(selectUnreadCount);
+  const markRead = useNotificationsStore((s) => s.markRead);
+  const markAllRead = useNotificationsStore((s) => s.markAllRead);
 
   // 全局搜索
-  const [globalSearch, setGlobalSearch] = useState('')
-  const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([])
-  const [searchLoading, setSearchLoading] = useState(false)
-  const [searchNoResults, setSearchNoResults] = useState(false)
-  const searchRef = useRef<HTMLDivElement>(null)
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<{ code: string; name: string }[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchNoResults, setSearchNoResults] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
 
+  const debouncedGlobalSearch = useDebouncedValue(globalSearch, 300);
+
+  // 防抖搜索：依赖防抖值变化的副作用，setState 发生于 effect 内属预期行为
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!globalSearch.trim() || globalSearch.trim().length < 2) {
-      if (searchResults.length > 0) setSearchResults([])
-      setSearchNoResults(false)
-      return
+    if (!debouncedGlobalSearch.trim() || debouncedGlobalSearch.trim().length < 2) {
+      if (searchResults.length > 0) setSearchResults([]);
+      setSearchNoResults(false);
+      return;
     }
-    const t = setTimeout(async () => {
-      setSearchLoading(true)
-      try {
-        const results = await dataSourceService.searchFunds(globalSearch.trim())
-        setSearchResults(results.slice(0, 15))
-        setSearchNoResults(globalSearch.trim().length >= 2 && results.length === 0)
-      } catch { toast({ type: 'error', message: '搜索失败，请稍后重试' }); setSearchResults([]); setSearchNoResults(false) }
-      setSearchLoading(false)
-    }, 300)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-  }, [globalSearch])
+    let active = true;
+    setSearchLoading(true);
+    dataSourceService
+      .searchFunds(debouncedGlobalSearch.trim())
+      .then((results) => {
+        if (!active) return;
+        setSearchResults(results.slice(0, 15));
+        setSearchNoResults(results.length === 0);
+      })
+      .catch(() => {
+        if (!active) return;
+        toast({ type: "error", message: "搜索失败，请稍后重试" });
+        setSearchResults([]);
+        setSearchNoResults(false);
+      })
+      .finally(() => {
+        if (active) setSearchLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [debouncedGlobalSearch]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // 点击外部关闭搜索结果
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setSearchResults([])
+        setSearchResults([]);
       }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   // 点击外部关闭通知浮窗
   useEffect(() => {
-    if (!notifOpen) return
+    if (!notifOpen) return;
     const handler = (e: MouseEvent) => {
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setNotifOpen(false)
+        setNotifOpen(false);
       }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [notifOpen])
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [notifOpen]);
 
   const handleSearchSelect = (code: string) => {
-    setGlobalSearch('')
-    setSearchResults([])
-    navigate(`/holdings?highlight=${encodeURIComponent(code)}`)
-  }
+    setGlobalSearch("");
+    setSearchResults([]);
+    navigate(`${ROUTES.holdings}?highlight=${encodeURIComponent(code)}`);
+  };
 
   const cycleTheme = () => {
-    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light'
-    updateSettings({ theme: next })
-  }
+    const next = theme === "light" ? "dark" : theme === "dark" ? "system" : "light";
+    updateSettings({ theme: next });
+  };
 
-  const themeLabel = theme === 'dark' ? '深色' : theme === 'light' ? '浅色' : '跟随系统'
+  const themeLabel = theme === "dark" ? "深色" : theme === "light" ? "浅色" : "跟随系统";
 
   return (
     <TooltipProvider>
@@ -157,8 +175,8 @@ export default function AppLayout() {
         {/* Sidebar */}
         <aside
           className={cn(
-            'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-card border-r transition-transform duration-200 lg:static lg:translate-x-0',
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+            "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-card border-r transition-transform duration-200 lg:static lg:translate-x-0",
+            sidebarOpen ? "translate-x-0" : "-translate-x-full",
           )}
         >
           {/* Logo */}
@@ -179,10 +197,10 @@ export default function AppLayout() {
                 onClick={() => setSidebarOpen(false)}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                     isActive
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   )
                 }
               >
@@ -232,7 +250,9 @@ export default function AppLayout() {
                       className="w-full flex items-center gap-3 px-3 py-2 text-xs hover:bg-accent text-left cursor-pointer"
                       onClick={() => handleSearchSelect(r.code)}
                     >
-                      <span className="font-mono text-[10px] text-muted-foreground w-20">{r.code.replace(/^(SZ|SH)/, '')}</span>
+                      <span className="font-mono text-[10px] text-muted-foreground w-20">
+                        {r.code.replace(/^(SZ|SH)/, "")}
+                      </span>
                       <span className="truncate">{r.name}</span>
                     </button>
                   ))}
@@ -257,7 +277,7 @@ export default function AppLayout() {
                 <Bell className="h-4 w-4" />
                 {unreadCount > 0 && (
                   <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
-                    {unreadCount > 9 ? '9+' : unreadCount}
+                    {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
               </button>
@@ -290,18 +310,20 @@ export default function AppLayout() {
                           key={n.id}
                           onClick={() => markRead(n.id)}
                           className={cn(
-                            'flex w-full gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/60',
-                            !n.read && 'bg-primary/5'
+                            "flex w-full gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-muted/60",
+                            !n.read && "bg-primary/5",
                           )}
                         >
                           <NotifIcon type={n.type} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">
-                              {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />}
+                              {!n.read && (
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                              )}
                               <span
                                 className={cn(
-                                  'truncate text-xs',
-                                  !n.read ? 'font-semibold' : 'font-medium'
+                                  "truncate text-xs",
+                                  !n.read ? "font-semibold" : "font-medium",
                                 )}
                               >
                                 {n.title}
@@ -325,8 +347,8 @@ export default function AppLayout() {
                   <div className="border-t px-3 py-2 text-right">
                     <button
                       onClick={() => {
-                        setNotifOpen(false)
-                        navigate('/notifications')
+                        setNotifOpen(false);
+                        navigate(ROUTES.notifications);
                       }}
                       className="text-[11px] text-primary transition-opacity hover:opacity-80"
                     >
@@ -356,5 +378,5 @@ export default function AppLayout() {
       </div>
       <InstallPrompt />
     </TooltipProvider>
-  )
+  );
 }

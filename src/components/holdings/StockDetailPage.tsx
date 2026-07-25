@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useLoadOnMount } from "@/hooks/useLoadOnMount";
 import { useParams, useNavigate } from "react-router-dom";
+import { ROUTES } from "@/constants/routes";
 import { dataSourceService } from "@/adapters/datasource/service";
 import {
   getKlineCache,
@@ -121,9 +123,7 @@ export default function StockDetailPage() {
     setRefreshing((s) => ({ ...s, quote: false }));
   }, [code]);
 
-  useEffect(() => {
-    handleRefreshQuote();
-  }, [handleRefreshQuote]);
+  useLoadOnMount(handleRefreshQuote);
 
   // ─── K 线数据加载 ─────────────────────────────
   useEffect(() => {
@@ -231,7 +231,7 @@ export default function StockDetailPage() {
   if (!code) {
     return (
       <div className="space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/holdings")}>
+        <Button variant="ghost" size="sm" onClick={() => navigate(ROUTES.holdings)}>
           <ArrowLeft className="h-3 w-3 mr-1" />
           返回持仓
         </Button>

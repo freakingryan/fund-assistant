@@ -14,21 +14,22 @@
  * @module stockSdkIndicators
  */
 
-import type { KLineData } from '@/types'
+import type { KLineData, SignalDirection } from "@/types";
+import { parseToTs } from "@/lib/dataTime";
 import {
   addIndicators,
   type AnyHistoryKline,
   type IndicatorOptions,
   type KlineWithIndicators,
-} from 'stock-sdk/indicators'
-import { calcSignals, type Signal, type SignalType } from 'stock-sdk/signals'
+} from "stock-sdk/indicators";
+import { calcSignals, type Signal, type SignalType } from "stock-sdk/signals";
 
 // ─── 输入映射 ─────────────────────────────────────
 
-/** KLineData.date (YYYY-MM-DD, A 股) → 北京时间 00:00 的 UTC 毫秒（calcSignals 需要非 null） */
+/** KLineData.date (YYYY-MM-DD, A 股) → 北京时间 00:00 的 UTC 毫秒（calcSignals 需要非 null）。
+ *  复用 lib/dataTime 的 parseToTs（date-only 同样按北京时间零点解析），解析失败兜底 0。 */
 function parseDateToTs(date: string): number {
-  const t = Date.parse(`${date}T00:00:00+08:00`)
-  return Number.isNaN(t) ? 0 : t
+  return parseToTs(date) ?? 0;
 }
 
 /** 项目 KLineData → stock-sdk HistoryKline（A 股时区，可缺字段置 null） */
@@ -36,8 +37,8 @@ function toSdkKline(k: KLineData): AnyHistoryKline {
   return {
     date: k.date,
     timestamp: parseDateToTs(k.date),
-    tz: 'Asia/Shanghai',
-    code: '',
+    tz: "Asia/Shanghai",
+    code: "",
     open: k.open,
     high: k.high,
     low: k.low,
@@ -48,40 +49,38 @@ function toSdkKline(k: KLineData): AnyHistoryKline {
     changePercent: null,
     change: null,
     turnoverRate: null,
-  }
+  };
 }
 
 // ─── 输出类型 ─────────────────────────────────────
 
 export interface IndicatorSnapshot {
-  kdj?: { k: number | null; d: number | null; j: number | null }
-  wr?: Record<string, number | null>
-  cci?: number | null
-  bias?: Record<string, number | null>
-  atr?: { tr: number | null; atr: number | null }
-  dmi?: { pdi: number | null; mdi: number | null; adx: number | null; adxr: number | null }
-  sar?: { sar: number | null; trend: 1 | -1 | null }
-  kc?: { mid: number | null; upper: number | null; lower: number | null; width: number | null }
-  roc?: { roc: number | null; signal: number | null }
+  kdj?: { k: number | null; d: number | null; j: number | null };
+  wr?: Record<string, number | null>;
+  cci?: number | null;
+  bias?: Record<string, number | null>;
+  atr?: { tr: number | null; atr: number | null };
+  dmi?: { pdi: number | null; mdi: number | null; adx: number | null; adxr: number | null };
+  sar?: { sar: number | null; trend: 1 | -1 | null };
+  kc?: { mid: number | null; upper: number | null; lower: number | null; width: number | null };
+  roc?: { roc: number | null; signal: number | null };
 }
 
-export type SignalDirection = 'up' | 'down' | 'neutral'
-
 export interface SignalEvent {
-  type: SignalType
-  label: string
-  date: string
-  direction: SignalDirection
-  detail?: Record<string, number>
+  type: SignalType;
+  label: string;
+  date: string;
+  direction: SignalDirection;
+  detail?: Record<string, number>;
 }
 
 export interface StockSdkIndicatorsResult {
   /** 是否存在真实 OHLC 区间（ETF 真实 K 线 = true；净值走势 = false） */
-  ohlcAvailable: boolean
+  ohlcAvailable: boolean;
   /** 各指标最新非空值快照 */
-  latest: IndicatorSnapshot
+  latest: IndicatorSnapshot;
   /** 最近的技术事件信号（按日期倒序） */
-  signals: SignalEvent[]
+  signals: SignalEvent[];
 }
 
 // ─── 计算选项 ─────────────────────────────────────
@@ -89,7 +88,7 @@ export interface StockSdkIndicatorsResult {
 const NAV_INDICATORS: IndicatorOptions = {
   bias: true,
   roc: true,
-}
+};
 
 const FULL_INDICATORS: IndicatorOptions = {
   ma: true,
@@ -106,7 +105,7 @@ const FULL_INDICATORS: IndicatorOptions = {
   dmi: true,
   sar: true,
   kc: true,
-}
+};
 
 const SIGNAL_OPTIONS = {
   ma: { fast: 5, slow: 20 },
@@ -115,26 +114,26 @@ const SIGNAL_OPTIONS = {
   rsi: { period: 6, overbought: 70, oversold: 30 },
   boll: true,
   sar: true,
-}
+};
 
 const SIGNAL_LABELS: Record<SignalType, { label: string; direction: SignalDirection }> = {
-  ma_golden_cross: { label: 'MA 金叉', direction: 'up' },
-  ma_death_cross: { label: 'MA 死叉', direction: 'down' },
-  macd_golden_cross: { label: 'MACD 金叉', direction: 'up' },
-  macd_death_cross: { label: 'MACD 死叉', direction: 'down' },
-  kdj_golden_cross: { label: 'KDJ 金叉', direction: 'up' },
-  kdj_death_cross: { label: 'KDJ 死叉', direction: 'down' },
-  kdj_overbought: { label: 'KDJ 超买', direction: 'down' },
-  kdj_oversold: { label: 'KDJ 超卖', direction: 'up' },
-  rsi_overbought: { label: 'RSI 超买', direction: 'down' },
-  rsi_oversold: { label: 'RSI 超卖', direction: 'up' },
-  boll_break_upper: { label: '布林上轨突破', direction: 'up' },
-  boll_break_lower: { label: '布林下轨突破', direction: 'down' },
-  sar_reversal_up: { label: 'SAR 反转向上', direction: 'up' },
-  sar_reversal_down: { label: 'SAR 反转向下', direction: 'down' },
-}
+  ma_golden_cross: { label: "MA 金叉", direction: "up" },
+  ma_death_cross: { label: "MA 死叉", direction: "down" },
+  macd_golden_cross: { label: "MACD 金叉", direction: "up" },
+  macd_death_cross: { label: "MACD 死叉", direction: "down" },
+  kdj_golden_cross: { label: "KDJ 金叉", direction: "up" },
+  kdj_death_cross: { label: "KDJ 死叉", direction: "down" },
+  kdj_overbought: { label: "KDJ 超买", direction: "down" },
+  kdj_oversold: { label: "KDJ 超卖", direction: "up" },
+  rsi_overbought: { label: "RSI 超买", direction: "down" },
+  rsi_oversold: { label: "RSI 超卖", direction: "up" },
+  boll_break_upper: { label: "布林上轨突破", direction: "up" },
+  boll_break_lower: { label: "布林下轨突破", direction: "down" },
+  sar_reversal_up: { label: "SAR 反转向上", direction: "up" },
+  sar_reversal_down: { label: "SAR 反转向下", direction: "down" },
+};
 
-const MIN_BARS = 10
+const MIN_BARS = 10;
 
 // ─── 主入口 ───────────────────────────────────────
 
@@ -147,54 +146,57 @@ export function computeStockSdkIndicators(
   klines: KLineData[],
   maxSignals = 12,
 ): StockSdkIndicatorsResult {
-  const empty: StockSdkIndicatorsResult = { ohlcAvailable: false, latest: {}, signals: [] }
-  if (!klines || klines.length < MIN_BARS) return empty
+  const empty: StockSdkIndicatorsResult = { ohlcAvailable: false, latest: {}, signals: [] };
+  if (!klines || klines.length < MIN_BARS) return empty;
 
-  const ohlcAvailable = klines.some((k) => k.high > k.low)
-  const sdkKlines = klines.map(toSdkKline)
+  const ohlcAvailable = klines.some((k) => k.high > k.low);
+  const sdkKlines = klines.map(toSdkKline);
 
-  const withInds = addIndicators(sdkKlines, ohlcAvailable ? FULL_INDICATORS : NAV_INDICATORS)
-  const latest = extractLatest(withInds, ohlcAvailable)
+  const withInds = addIndicators(sdkKlines, ohlcAvailable ? FULL_INDICATORS : NAV_INDICATORS);
+  const latest = extractLatest(withInds, ohlcAvailable);
 
-  let signals: SignalEvent[] = []
+  let signals: SignalEvent[] = [];
   if (ohlcAvailable) {
     signals = toSignalEvents(calcSignals(withInds, SIGNAL_OPTIONS), klines)
       .slice(-maxSignals)
-      .reverse()
+      .reverse();
   }
 
-  return { ohlcAvailable, latest, signals }
+  return { ohlcAvailable, latest, signals };
 }
 
 // ─── 内部工具 ─────────────────────────────────────
 
-function extractLatest(klines: KlineWithIndicators<AnyHistoryKline>[], ohlcAvailable: boolean): IndicatorSnapshot {
-  const last = klines[klines.length - 1]
-  const snap: IndicatorSnapshot = {}
-  if (last.bias) snap.bias = last.bias
-  if (last.roc) snap.roc = last.roc
-  if (!ohlcAvailable) return snap
-  if (last.kdj) snap.kdj = last.kdj
-  if (last.wr) snap.wr = last.wr
-  if (last.cci) snap.cci = last.cci.cci
-  if (last.atr) snap.atr = last.atr
-  if (last.dmi) snap.dmi = last.dmi
-  if (last.sar) snap.sar = { sar: last.sar.sar, trend: last.sar.trend }
-  if (last.kc) snap.kc = last.kc
-  return snap
+function extractLatest(
+  klines: KlineWithIndicators<AnyHistoryKline>[],
+  ohlcAvailable: boolean,
+): IndicatorSnapshot {
+  const last = klines[klines.length - 1];
+  const snap: IndicatorSnapshot = {};
+  if (last.bias) snap.bias = last.bias;
+  if (last.roc) snap.roc = last.roc;
+  if (!ohlcAvailable) return snap;
+  if (last.kdj) snap.kdj = last.kdj;
+  if (last.wr) snap.wr = last.wr;
+  if (last.cci) snap.cci = last.cci.cci;
+  if (last.atr) snap.atr = last.atr;
+  if (last.dmi) snap.dmi = last.dmi;
+  if (last.sar) snap.sar = { sar: last.sar.sar, trend: last.sar.trend };
+  if (last.kc) snap.kc = last.kc;
+  return snap;
 }
 
 function toSignalEvents(signals: Signal[], klines: KLineData[]): SignalEvent[] {
   return signals
     .filter((s) => s.index >= 0 && s.index < klines.length)
     .map((s) => {
-      const meta = SIGNAL_LABELS[s.type]
+      const meta = SIGNAL_LABELS[s.type];
       return {
         type: s.type,
         label: meta.label,
         date: klines[s.index].date,
         direction: meta.direction,
         detail: s.detail,
-      }
-    })
+      };
+    });
 }

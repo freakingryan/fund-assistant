@@ -6,8 +6,9 @@
  * @module ranking/RankingPage
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, memo, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { ROUTES } from "@/constants/routes";
 import {
   Trophy,
   Camera,
@@ -29,7 +30,7 @@ import type { CaptureReport, ScoreSnapshot } from "@/services/backtest/types";
 import type { Rating } from "@/services/decision/types";
 import { useHoldingsStore } from "@/stores/holdings";
 import { useSettingsStore } from "@/stores/settings";
-import type { FundHolding } from "@/types";
+import type { FundHolding, SignalDirection } from "@/types";
 import { TYPE_LABELS } from "@/lib/labels";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,28 +40,26 @@ import { parseToTs } from "@/lib/dataTime";
 import DataAsOf from "@/components/ui/DataAsOf";
 import SectorFundFlowPanel from "@/components/ranking/SectorFundFlowPanel";
 
-type Tone = "up" | "down" | "neutral";
-
-const TONE_CLASS: Record<Tone, string> = {
+const TONE_CLASS: Record<SignalDirection, string> = {
   up: "text-up bg-up/10 border-up/30",
   neutral: "text-amber-500 bg-amber-500/10 border-amber-500/30",
   down: "text-down bg-down/10 border-down/30",
 };
 
-function ratingTone(rating: Rating): Tone {
+function ratingTone(rating: Rating): SignalDirection {
   if (rating === "strong_buy" || rating === "buy") return "up";
   if (rating === "hold") return "neutral";
   return "down";
 }
 
-function capitalTone(v: number | null | undefined): Tone | null {
+function capitalTone(v: number | null | undefined): SignalDirection | null {
   if (v == null) return null;
   if (v >= 60) return "up";
   if (v < 45) return "down";
   return "neutral";
 }
 
-function sectorTone(v: number | null | undefined): Tone | null {
+function sectorTone(v: number | null | undefined): SignalDirection | null {
   if (v == null) return null;
   if (v >= 60) return "up";
   if (v < 45) return "down";
@@ -68,7 +67,7 @@ function sectorTone(v: number | null | undefined): Tone | null {
 }
 
 /** 同类排名百分位色调：越小越好（前 25% 红 / 后 50% 绿 / 中间黄） */
-function rankTone(v: number | null | undefined): Tone | null {
+function rankTone(v: number | null | undefined): SignalDirection | null {
   if (v == null) return null;
   if (v <= 25) return "up";
   if (v > 50) return "down";
@@ -86,6 +85,37 @@ function calcReturnPct(snap: ScoreSnapshot, holding?: FundHolding): number | nul
   if (snap.closeValue == null) return null;
   return ((snap.closeValue - holding.costNAV) / holding.costNAV) * 100;
 }
+
+interface MissingFundRowProps {
+  fund: { code: string; name: string; source: string | null; reason: string };
+}
+
+/** 未纳入评分基金行：React.memo 包裹，避免父级重渲时整列重算 */
+const MissingFundRow = memo(function ({ fund: m }: MissingFundRowProps) {
+  return (
+    <li className="text-[11px] flex items-center gap-2 flex-wrap">
+      <span className="font-medium truncate max-w-[150px]">{m.name}</span>
+      <span className="font-mono text-muted-foreground">{m.code}</span>
+      <span
+        className={`px-1.5 py-0.5 rounded border text-[10px] ${
+          m.source === "eastmoney"
+            ? "text-down border-down/30 bg-down/10"
+            : m.source === "tencent"
+              ? "text-amber-500 border-amber-500/30 bg-amber-500/10"
+              : "text-muted-foreground border-border/40"
+        }`}
+        title={m.reason}
+      >
+        {m.source === "eastmoney"
+          ? "东财不可达"
+          : m.source === "tencent"
+            ? "腾讯K线失败"
+            : "未采集"}
+      </span>
+      <span className="text-muted-foreground truncate">{m.reason}</span>
+    </li>
+  );
+});
 
 export default function RankingPage() {
   const [allSnapshots, setAllSnapshots] = useState<ScoreSnapshot[]>([]);
@@ -378,27 +408,7 @@ export default function RankingPage() {
                 </p>
                 <ul className="space-y-1">
                   {missingFunds.map((m) => (
-                    <li key={m.code} className="text-[11px] flex items-center gap-2 flex-wrap">
-                      <span className="font-medium truncate max-w-[150px]">{m.name}</span>
-                      <span className="font-mono text-muted-foreground">{m.code}</span>
-                      <span
-                        className={`px-1.5 py-0.5 rounded border text-[10px] ${
-                          m.source === "eastmoney"
-                            ? "text-down border-down/30 bg-down/10"
-                            : m.source === "tencent"
-                              ? "text-amber-500 border-amber-500/30 bg-amber-500/10"
-                              : "text-muted-foreground border-border/40"
-                        }`}
-                        title={m.reason}
-                      >
-                        {m.source === "eastmoney"
-                          ? "东财不可达"
-                          : m.source === "tencent"
-                            ? "腾讯K线失败"
-                            : "未采集"}
-                      </span>
-                      <span className="text-muted-foreground truncate">{m.reason}</span>
-                    </li>
+                    <MissingFundRow key={m.code} fund={m} />
                   ))}
                 </ul>
               </CardContent>
@@ -586,7 +596,7 @@ export default function RankingPage() {
                                       className="hover:text-primary hover:underline truncate"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        navigate(`/detail/${jumpId}`);
+                                        navigate(ROUTES.detail(jumpId));
                                       }}
                                     >
                                       {s.fundName}

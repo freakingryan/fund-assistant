@@ -1,41 +1,50 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react'
-import type { KLineData } from '@/types'
-import { MA_COLORS, MA_LABELS } from '@/lib/chart-colors'
-import type { DetectedPattern, KlinePattern } from '@/services/klinePatterns'
-import { getPatternLabel } from '@/services/klinePatterns'
-import { calculateAll, type TechnicalIndicators } from '@/services/technicalIndicators'
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import type { KLineData } from "@/types";
+import { MA_COLORS, MA_LABELS } from "@/lib/chart-colors";
+import type { DetectedPattern, KlinePattern } from "@/services/klinePatterns";
+import {
+  PATTERN_STYLES,
+  BAND_FILL,
+  BAND_STROKE,
+  BAND_STROKE_SOFT,
+  CANDLE_SELECTED_UP,
+  CANDLE_SELECTED_DOWN,
+  LEGEND_SWATCH,
+} from "@/lib/chart-colors";
+import { getPatternLabel } from "@/services/klinePatterns";
+import { calculateAll, type TechnicalIndicators } from "@/services/technicalIndicators";
 
 interface Props {
-  data: KLineData[]
-  width?: number
-  height?: number
-  patterns?: DetectedPattern[]
+  data: KLineData[];
+  width?: number;
+  height?: number;
+  patterns?: DetectedPattern[];
   /** 外部联动：鼠标悬停时通知父组件当前 K 线索引 (hoverIndex, 无悬停时为 null) */
-  onHover?: (index: number | null) => void
+  onHover?: (index: number | null) => void;
   /** 外部选中回调：点击 K 线时同步父组件的持久化选中状态 */
-  onCandleClick?: (index: number | null) => void
+  onCandleClick?: (index: number | null) => void;
   /** 外部高亮索引（来自 K 线形态分析等组件），非 chart 自身交互 */
-  externalHighlightIndex?: number | null
+  externalHighlightIndex?: number | null;
   /** 显示 MA5/MA10/MA20/MA60 均线 */
-  showMA?: boolean
+  showMA?: boolean;
   /** 显示布林带 (Bollinger Bands) */
-  showBollinger?: boolean
+  showBollinger?: boolean;
   /** 预计算的技术指标（如果传入则使用，否则内部自动计算） */
-  technicals?: TechnicalIndicators
+  technicals?: TechnicalIndicators;
 }
 
-const MARGIN = { top: 24, right: 16, bottom: 30, left: 56 }
-const VOL_HEIGHT = 50
-const LABEL_OFFSET = 16
-const INFO_BAR_H = 42
+const MARGIN = { top: 24, right: 16, bottom: 30, left: 56 };
+const VOL_HEIGHT = 50;
+const LABEL_OFFSET = 16;
+const INFO_BAR_H = 42;
 
 // 价格轴留白比例与最小留白（防止单一价格数据除零）
-const Y_PADDING_RATIO = 0.05
-const Y_PADDING_MIN = 0.01
+const Y_PADDING_RATIO = 0.05;
+const Y_PADDING_MIN = 0.01;
 // 图表主区与技术指标区域之间的间距
-const CHART_BOTTOM_GAP = 8
+const CHART_BOTTOM_GAP = 8;
 // Y 轴刻度段数（含两端共 Y_TICK_COUNT + 1 条）
-const Y_TICK_COUNT = 5
+const Y_TICK_COUNT = 5;
 
 /** 将指标数值序列转为 SVG polyline points（正向） */
 function buildLinePoints(
@@ -45,16 +54,16 @@ function buildLinePoints(
   yMin: number,
   yMax: number,
 ): string | null {
-  const range = yMax - yMin || 1
-  const pts: string[] = []
+  const range = yMax - yMin || 1;
+  const pts: string[] = [];
   for (let i = 0; i < values.length; i++) {
-    const v = values[i]
-    if (v === null) continue
-    const x = MARGIN.left + i * stepX
-    const y = MARGIN.top + chartHeight - ((v - yMin) / range) * chartHeight
-    pts.push(`${x},${y}`)
+    const v = values[i];
+    if (v === null) continue;
+    const x = MARGIN.left + i * stepX;
+    const y = MARGIN.top + chartHeight - ((v - yMin) / range) * chartHeight;
+    pts.push(`${x},${y}`);
   }
-  return pts.length > 1 ? pts.join(' ') : null
+  return pts.length > 1 ? pts.join(" ") : null;
 }
 
 /** 与 buildLinePoints 相同，但按索引逆序拼接（用于布林带填充闭合路径） */
@@ -65,212 +74,255 @@ function buildLinePointsRev(
   yMin: number,
   yMax: number,
 ): string {
-  const range = yMax - yMin || 1
-  const pts: string[] = []
+  const range = yMax - yMin || 1;
+  const pts: string[] = [];
   for (let i = values.length - 1; i >= 0; i--) {
-    const v = values[i]
-    if (v === null) continue
-    const x = MARGIN.left + i * stepX
-    const y = MARGIN.top + chartHeight - ((v - yMin) / range) * chartHeight
-    pts.push(`${x},${y}`)
+    const v = values[i];
+    if (v === null) continue;
+    const x = MARGIN.left + i * stepX;
+    const y = MARGIN.top + chartHeight - ((v - yMin) / range) * chartHeight;
+    pts.push(`${x},${y}`);
   }
-  return pts.join(' ')
-}
-
-const PATTERN_STYLES: Partial<Record<KlinePattern, { bg: string; text: string; border: string }>> = {
-  hammer: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
-  bullish_marubozu: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
-  lower_shadow_yang: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
-  lower_shadow_yin: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
-  t_line: { bg: 'rgba(239,68,68,0.12)', text: '#dc2626', border: '#fca5a5' },
-  shooting_star: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a', border: '#86efac' },
-  bearish_marubozu: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a', border: '#86efac' },
-  upper_shadow_yin: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a', border: '#86efac' },
-  inverted_t_line: { bg: 'rgba(34,197,94,0.12)', text: '#16a34a', border: '#86efac' },
-  doji: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', border: '#d1d5db' },
-  long_legged_doji: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', border: '#d1d5db' },
-  upper_shadow_yang: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', border: '#d1d5db' },
-  small_yang: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', border: '#d1d5db' },
-  small_yin: { bg: 'rgba(156,163,175,0.12)', text: '#6b7280', border: '#d1d5db' },
+  return pts.join(" ");
 }
 
 /** 蜡烛图组件 — SVG 内嵌 + 底部信息栏（不遮挡图表 + 深色模式适配 + 触屏支持 + 技术指标叠加） */
 export default function CandlestickChart({
-  data, width = 480, height = 320, patterns = [], onHover, onCandleClick, showMA = false, showBollinger = false,
-  technicals: externalTechnicals, externalHighlightIndex = null,
+  data,
+  width = 480,
+  height = 320,
+  patterns = [],
+  onHover,
+  onCandleClick,
+  showMA = false,
+  showBollinger = false,
+  technicals: externalTechnicals,
+  externalHighlightIndex = null,
 }: Props) {
   // 悬停（临时）和选中（持久）分开管理
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // 点击外部取消选中（触屏 & 桌面通用）
   useEffect(() => {
-    if (selectedIndex === null) return
+    if (selectedIndex === null) return;
     const handler = (e: MouseEvent | TouchEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setSelectedIndex(null)
+        setSelectedIndex(null);
       }
-    }
+    };
     const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handler)
-      document.addEventListener('touchstart', handler)
-    }, 100)
+      document.addEventListener("mousedown", handler);
+      document.addEventListener("touchstart", handler);
+    }, 100);
     return () => {
-      clearTimeout(timer)
-      document.removeEventListener('mousedown', handler)
-      document.removeEventListener('touchstart', handler)
-    }
-  }, [selectedIndex])
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [selectedIndex]);
 
   const toggleSelect = useCallback((i: number) => {
-    setSelectedIndex((prev) => (prev === i ? null : i))
-  }, [])
+    setSelectedIndex((prev) => (prev === i ? null : i));
+  }, []);
 
-  const chartWidth = width - MARGIN.left - MARGIN.right
-  const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - CHART_BOTTOM_GAP
+  const chartWidth = width - MARGIN.left - MARGIN.right;
+  const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - CHART_BOTTOM_GAP;
 
   const { yScale, candles } = useMemo(() => {
-    if (data.length === 0) return { yScale: { min: 0, max: 0 }, candles: [] }
+    if (data.length === 0) return { yScale: { min: 0, max: 0 }, candles: [] };
 
-    const high = Math.max(...data.map((d) => d.high))
-    const low = Math.min(...data.map((d) => d.low))
-    const pad = (high - low) * Y_PADDING_RATIO || Y_PADDING_MIN
-    const yMin = low - pad
-    const yMax = high + pad
+    const high = Math.max(...data.map((d) => d.high));
+    const low = Math.min(...data.map((d) => d.low));
+    const pad = (high - low) * Y_PADDING_RATIO || Y_PADDING_MIN;
+    const yMin = low - pad;
+    const yMax = high + pad;
 
-    const stepX = chartWidth / Math.max(data.length - 1, 1)
-    const candleWidth = Math.max(3, stepX * 0.6)
-    const scaleY = (v: number) => MARGIN.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight
+    const stepX = chartWidth / Math.max(data.length - 1, 1);
+    const candleWidth = Math.max(3, stepX * 0.6);
+    const scaleY = (v: number) =>
+      MARGIN.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight;
 
     const computedCandles = data.map((d, i) => {
-      const cx = MARGIN.left + i * stepX
-      const o = scaleY(d.open)
-      const c = scaleY(d.close)
-      const hi = scaleY(d.high)
-      const lo = scaleY(d.low)
-      const isUp = d.close >= d.open
-      return { d, cx, o, c, hi, lo, isUp, candleWidth }
-    })
+      const cx = MARGIN.left + i * stepX;
+      const o = scaleY(d.open);
+      const c = scaleY(d.close);
+      const hi = scaleY(d.high);
+      const lo = scaleY(d.low);
+      const isUp = d.close >= d.open;
+      return { d, cx, o, c, hi, lo, isUp, candleWidth };
+    });
 
-    return { yScale: { min: yMin, max: yMax }, candles: computedCandles }
-  }, [data, chartWidth, chartHeight])
+    return { yScale: { min: yMin, max: yMax }, candles: computedCandles };
+  }, [data, chartWidth, chartHeight]);
 
-  const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data])
-  const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT
+  const maxVol = useMemo(() => Math.max(...data.map((d) => d.volume || 0), 1), [data]);
+  const scaleVol = (v: number) => (v / maxVol) * VOL_HEIGHT;
 
   // 有效显示索引：点击选中 > 外部高亮 > 鼠标悬停
-  const effectiveIndex = selectedIndex !== null ? selectedIndex : (externalHighlightIndex !== null ? externalHighlightIndex : hoverIndex)
-  const selected = effectiveIndex !== null ? data[effectiveIndex] : null
-  const selectedCandle = effectiveIndex !== null ? candles[effectiveIndex] : null
-  const selectedPattern = effectiveIndex !== null ? getPatternLabel(patterns, effectiveIndex) : null
+  const effectiveIndex =
+    selectedIndex !== null
+      ? selectedIndex
+      : externalHighlightIndex !== null
+        ? externalHighlightIndex
+        : hoverIndex;
+  const selected = effectiveIndex !== null ? data[effectiveIndex] : null;
+  const selectedCandle = effectiveIndex !== null ? candles[effectiveIndex] : null;
+  const selectedPattern =
+    effectiveIndex !== null ? getPatternLabel(patterns, effectiveIndex) : null;
 
-  const handleHover = useCallback((i: number | null) => {
-    setHoverIndex(i)
-    onHover?.(i)
-  }, [onHover])
+  const handleHover = useCallback(
+    (i: number | null) => {
+      setHoverIndex(i);
+      onHover?.(i);
+    },
+    [onHover],
+  );
 
   // 技术指标计算（外部传入优先，否则内部自动计算）
   const technicals = useMemo(() => {
-    if (externalTechnicals) return externalTechnicals
-    if (!showMA && !showBollinger) return null
-    return calculateAll(data)
-  }, [data, showMA, showBollinger, externalTechnicals])
+    if (externalTechnicals) return externalTechnicals;
+    if (!showMA && !showBollinger) return null;
+    return calculateAll(data);
+  }, [data, showMA, showBollinger, externalTechnicals]);
 
   // 均线颜色 / 标签来自 src/lib/chart-colors（数据可视化专用，非主题色）
 
   // 均线 / 布林带 polyline 由模块级纯函数 buildLinePoints / buildLinePointsRev 生成
 
-  if (data.length === 0) return null
+  if (data.length === 0) return null;
 
   const ticks = (() => {
-    const { min, max } = yScale
-    const step = (max - min) / Y_TICK_COUNT
+    const { min, max } = yScale;
+    const step = (max - min) / Y_TICK_COUNT;
     return Array.from({ length: Y_TICK_COUNT + 1 }, (_, i) => ({
       value: min + step * i,
-      y: MARGIN.top + chartHeight - (step * i / (max - min)) * chartHeight,
-    }))
-  })()
+      y: MARGIN.top + chartHeight - ((step * i) / (max - min)) * chartHeight,
+    }));
+  })();
 
-  const fmt = (v: number) => v.toFixed(v >= 100 ? 2 : 4)
+  const fmt = (v: number) => v.toFixed(v >= 100 ? 2 : 4);
 
   return (
-    <div ref={containerRef} className="relative inline-block" style={{ touchAction: 'manipulation' }}>
+    <div
+      ref={containerRef}
+      className="relative inline-block"
+      style={{ touchAction: "manipulation" }}
+    >
       {/* SVG 图表（tooltip 置于外部，绝不遮挡） */}
       <div style={{ width }}>
         <svg width={width} height={height} className="overflow-visible select-none">
           {/* Y axis */}
           {ticks.map((t, i) => (
             <g key={i}>
-              <text x={MARGIN.left - 6} y={t.y + 4} textAnchor="end" className="fill-muted-foreground text-[10px] dark:fill-muted-foreground">
+              <text
+                x={MARGIN.left - 6}
+                y={t.y + 4}
+                textAnchor="end"
+                className="fill-muted-foreground text-[10px] dark:fill-muted-foreground"
+              >
                 {fmt(t.value)}
               </text>
               {i > 0 && (
-                <line x1={MARGIN.left} y1={t.y} x2={MARGIN.left + chartWidth} y2={t.y}
-                  className="stroke-border/50 dark:stroke-border/30" strokeWidth={0.5} />
+                <line
+                  x1={MARGIN.left}
+                  y1={t.y}
+                  x2={MARGIN.left + chartWidth}
+                  y2={t.y}
+                  className="stroke-border/50 dark:stroke-border/30"
+                  strokeWidth={0.5}
+                />
               )}
             </g>
           ))}
 
           {/* Bollinger Bands 填充 */}
-          {showBollinger && technicals && (() => {
-            const stepX = chartWidth / Math.max(data.length - 1, 1)
-            const upperPts = buildLinePoints(technicals.bollinger.upper, stepX, chartHeight, yScale.min, yScale.max)
-            const lowerPts = buildLinePoints(technicals.bollinger.lower, stepX, chartHeight, yScale.min, yScale.max)
-            if (!upperPts || !lowerPts) return null
-            const lowerRev = buildLinePointsRev(technicals.bollinger.lower, stepX, chartHeight, yScale.min, yScale.max)
-            if (!lowerRev.trim()) return null
-            return (
-              <path
-                d={`M ${upperPts} L ${lowerRev.trim()} Z`}
-                fill="rgba(59,130,246,0.06)"
-                stroke="none"
-                pointerEvents="none"
-              />
-            )
-          })()}
+          {showBollinger &&
+            technicals &&
+            (() => {
+              const stepX = chartWidth / Math.max(data.length - 1, 1);
+              const upperPts = buildLinePoints(
+                technicals.bollinger.upper,
+                stepX,
+                chartHeight,
+                yScale.min,
+                yScale.max,
+              );
+              const lowerPts = buildLinePoints(
+                technicals.bollinger.lower,
+                stepX,
+                chartHeight,
+                yScale.min,
+                yScale.max,
+              );
+              if (!upperPts || !lowerPts) return null;
+              const lowerRev = buildLinePointsRev(
+                technicals.bollinger.lower,
+                stepX,
+                chartHeight,
+                yScale.min,
+                yScale.max,
+              );
+              if (!lowerRev.trim()) return null;
+              return (
+                <path
+                  d={`M ${upperPts} L ${lowerRev.trim()} Z`}
+                  fill={BAND_FILL}
+                  stroke="none"
+                  pointerEvents="none"
+                />
+              );
+            })()}
 
           {/* Bollinger Lines */}
-          {showBollinger && technicals && ['upper', 'middle', 'lower'].map((band) => {
-            const values = technicals!.bollinger[band as keyof typeof technicals.bollinger]
-            const stepX = chartWidth / Math.max(data.length - 1, 1)
-            const pts = buildLinePoints(values as (number | null)[], stepX, chartHeight, yScale.min, yScale.max)
-            if (!pts) return null
-            return (
-              <polyline
-                key={`bb-${band}`}
-                points={pts}
-                fill="none"
-                stroke={band === 'middle' ? '#3b82f6' : '#93c5fd'}
-                strokeWidth={band === 'middle' ? 1 : 0.5}
-                strokeDasharray={band === 'middle' ? 'none' : '4,3'}
-                pointerEvents="none"
-              />
-            )
-          })}
+          {showBollinger &&
+            technicals &&
+            ["upper", "middle", "lower"].map((band) => {
+              const values = technicals!.bollinger[band as keyof typeof technicals.bollinger];
+              const stepX = chartWidth / Math.max(data.length - 1, 1);
+              const pts = buildLinePoints(
+                values as (number | null)[],
+                stepX,
+                chartHeight,
+                yScale.min,
+                yScale.max,
+              );
+              if (!pts) return null;
+              return (
+                <polyline
+                  key={`bb-${band}`}
+                  points={pts}
+                  fill="none"
+                  stroke={band === "middle" ? BAND_STROKE : BAND_STROKE_SOFT}
+                  strokeWidth={band === "middle" ? 1 : 0.5}
+                  strokeDasharray={band === "middle" ? "none" : "4,3"}
+                  pointerEvents="none"
+                />
+              );
+            })}
 
           {/* MA Lines */}
-          {showMA && technicals && [
-            technicals.ma.ma5,
-            technicals.ma.ma10,
-            technicals.ma.ma20,
-            technicals.ma.ma60,
-          ].map((maArr, mi) => {
-            if (!maArr) return null
-            const stepX = chartWidth / Math.max(data.length - 1, 1)
-            const pts = buildLinePoints(maArr, stepX, chartHeight, yScale.min, yScale.max)
-            if (!pts) return null
-            return (
-              <polyline
-                key={`ma-${mi}`}
-                points={pts}
-                fill="none"
-                stroke={MA_COLORS[mi]}
-                strokeWidth={1.2}
-                pointerEvents="none"
-              />
-            )
-          })}
+          {showMA &&
+            technicals &&
+            [technicals.ma.ma5, technicals.ma.ma10, technicals.ma.ma20, technicals.ma.ma60].map(
+              (maArr, mi) => {
+                if (!maArr) return null;
+                const stepX = chartWidth / Math.max(data.length - 1, 1);
+                const pts = buildLinePoints(maArr, stepX, chartHeight, yScale.min, yScale.max);
+                if (!pts) return null;
+                return (
+                  <polyline
+                    key={`ma-${mi}`}
+                    points={pts}
+                    fill="none"
+                    stroke={MA_COLORS[mi]}
+                    strokeWidth={1.2}
+                    pointerEvents="none"
+                  />
+                );
+              },
+            )}
 
           {/* Volume bars */}
           {candles.map((c, i) => (
@@ -280,19 +332,24 @@ export default function CandlestickChart({
               y={chartHeight + MARGIN.top + VOL_HEIGHT - scaleVol(c.d.volume || 0)}
               width={c.candleWidth * 0.5}
               height={scaleVol(c.d.volume || 0)}
-              className={c.isUp ? 'fill-red-200/60 dark:fill-red-900/40' : 'fill-green-200/60 dark:fill-green-900/40'}
+              className={
+                c.isUp
+                  ? "fill-red-200/60 dark:fill-red-900/40"
+                  : "fill-green-200/60 dark:fill-green-900/40"
+              }
               pointerEvents="none"
             />
           ))}
 
           {/* Candlesticks */}
           {candles.map((c, i) => {
-            const bodyTop = Math.min(c.o, c.c)
-            const bodyBottom = Math.max(c.o, c.c)
-            const label = patterns.length > 0 ? getPatternLabel(patterns, i) : null
-            const style = label ? PATTERN_STYLES[label as KlinePattern] : null
-            const isSelected = selectedIndex === i || externalHighlightIndex === i || hoverIndex === i
-            const hitW = Math.max(c.candleWidth, 12) * 2
+            const bodyTop = Math.min(c.o, c.c);
+            const bodyBottom = Math.max(c.o, c.c);
+            const label = patterns.length > 0 ? getPatternLabel(patterns, i) : null;
+            const style = label ? PATTERN_STYLES[label as KlinePattern] : null;
+            const isSelected =
+              selectedIndex === i || externalHighlightIndex === i || hoverIndex === i;
+            const hitW = Math.max(c.candleWidth, 12) * 2;
             return (
               <g key={`c-${i}`}>
                 {/* Wider invisible hit area */}
@@ -305,19 +362,39 @@ export default function CandlestickChart({
                   className="cursor-crosshair"
                   onMouseEnter={() => handleHover(i)}
                   onMouseLeave={() => handleHover(null)}
-                  onClick={() => { toggleSelect(i); onCandleClick?.(selectedIndex === i ? null : i) }}
-                  onTouchEnd={(e) => { e.preventDefault(); toggleSelect(i); onCandleClick?.(selectedIndex === i ? null : i) }}
+                  onClick={() => {
+                    toggleSelect(i);
+                    onCandleClick?.(selectedIndex === i ? null : i);
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    toggleSelect(i);
+                    onCandleClick?.(selectedIndex === i ? null : i);
+                  }}
                 />
-                <line x1={c.cx} y1={c.hi} x2={c.cx} y2={c.lo}
-                  className={c.isUp ? 'stroke-red-500 dark:stroke-red-400' : 'stroke-green-500 dark:stroke-green-400'}
-                  strokeWidth={isSelected ? 2 : 1} />
+                <line
+                  x1={c.cx}
+                  y1={c.hi}
+                  x2={c.cx}
+                  y2={c.lo}
+                  className={
+                    c.isUp
+                      ? "stroke-red-500 dark:stroke-red-400"
+                      : "stroke-green-500 dark:stroke-green-400"
+                  }
+                  strokeWidth={isSelected ? 2 : 1}
+                />
                 <rect
                   x={c.cx - c.candleWidth / 2}
                   y={bodyTop}
                   width={c.candleWidth}
                   height={Math.max(bodyBottom - bodyTop, 1)}
-                  className={c.isUp ? 'fill-red-500 dark:fill-red-400' : 'fill-green-500 dark:fill-green-400'}
-                  stroke={isSelected ? (c.isUp ? '#991b1b' : '#166534') : 'none'}
+                  className={
+                    c.isUp ? "fill-red-500 dark:fill-red-400" : "fill-green-500 dark:fill-green-400"
+                  }
+                  stroke={
+                    isSelected ? (c.isUp ? CANDLE_SELECTED_UP : CANDLE_SELECTED_DOWN) : "none"
+                  }
                   strokeWidth={isSelected ? 1 : 0}
                   pointerEvents="none"
                 />
@@ -348,13 +425,16 @@ export default function CandlestickChart({
                   </g>
                 )}
               </g>
-            )
+            );
           })}
 
           {/* X-axis labels (last 5 dates) */}
           {(() => {
-            const n = data.length
-            const indices = n <= 5 ? Array.from({ length: n }, (_, i) => i) : [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor(3 * n / 4), n - 1]
+            const n = data.length;
+            const indices =
+              n <= 5
+                ? Array.from({ length: n }, (_, i) => i)
+                : [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor((3 * n) / 4), n - 1];
             return indices.map((i) => (
               <text
                 key={`x-${i}`}
@@ -363,9 +443,9 @@ export default function CandlestickChart({
                 textAnchor="middle"
                 className="fill-muted-foreground text-[10px] dark:fill-muted-foreground"
               >
-                {data[i]?.date?.slice(5) || ''}
+                {data[i]?.date?.slice(5) || ""}
               </text>
-            ))
+            ));
           })()}
         </svg>
       </div>
@@ -376,21 +456,33 @@ export default function CandlestickChart({
           {/* Bollinger 图例 */}
           {showBollinger && (
             <span className="flex items-center gap-1">
-              <span className="inline-block w-3 h-0.5 rounded" style={{ background: '#93c5fd', opacity: 0.7 }} />
+              <span
+                className="inline-block w-3 h-0.5 rounded"
+                style={{ background: LEGEND_SWATCH, opacity: 0.7 }}
+              />
               <span className="text-muted-foreground">BOLL (20,2)</span>
             </span>
           )}
           {/* MA 图例 */}
-          {showMA && [0, 1, 2, 3].map((mi) => {
-            const maArr = [technicals!.ma.ma5, technicals!.ma.ma10, technicals!.ma.ma20, technicals!.ma.ma60][mi]
-            if (!maArr?.some((v) => v !== null)) return null
-            return (
-              <span key={`ma-legend-${mi}`} className="flex items-center gap-1">
-                <span className="inline-block w-3 h-0.5 rounded" style={{ background: MA_COLORS[mi] }} />
-                <span style={{ color: MA_COLORS[mi] }}>{MA_LABELS[mi]}</span>
-              </span>
-            )
-          })}
+          {showMA &&
+            [0, 1, 2, 3].map((mi) => {
+              const maArr = [
+                technicals!.ma.ma5,
+                technicals!.ma.ma10,
+                technicals!.ma.ma20,
+                technicals!.ma.ma60,
+              ][mi];
+              if (!maArr?.some((v) => v !== null)) return null;
+              return (
+                <span key={`ma-legend-${mi}`} className="flex items-center gap-1">
+                  <span
+                    className="inline-block w-3 h-0.5 rounded"
+                    style={{ background: MA_COLORS[mi] }}
+                  />
+                  <span style={{ color: MA_COLORS[mi] }}>{MA_LABELS[mi]}</span>
+                </span>
+              );
+            })}
         </div>
       )}
 
@@ -405,7 +497,9 @@ export default function CandlestickChart({
             </span>
             <span className="shrink-0 flex items-center gap-1">
               <span className="text-muted-foreground">收</span>
-              <span className={`font-medium ${selected.close >= selected.open ? 'text-up' : 'text-down'}`}>
+              <span
+                className={`font-medium ${selected.close >= selected.open ? "text-up" : "text-down"}`}
+              >
                 {fmt(selected.close)}
               </span>
             </span>
@@ -419,14 +513,16 @@ export default function CandlestickChart({
             </span>
             <span className="shrink-0 flex items-center gap-1">
               <span className="text-muted-foreground">量</span>
-              <span className="font-medium text-foreground">{(selected.volume || 0).toLocaleString()}</span>
+              <span className="font-medium text-foreground">
+                {(selected.volume || 0).toLocaleString()}
+              </span>
             </span>
             {selectedPattern && (
-              <span className={`shrink-0 font-medium px-1.5 py-0.5 rounded text-[11px] ${
-                selected.close >= selected.open
-                  ? 'bg-up/10 text-up'
-                  : 'bg-down/10 text-down'
-              }`}>
+              <span
+                className={`shrink-0 font-medium px-1.5 py-0.5 rounded text-[11px] ${
+                  selected.close >= selected.open ? "bg-up/10 text-up" : "bg-down/10 text-down"
+                }`}
+              >
                 {selectedPattern}
               </span>
             )}
@@ -439,5 +535,5 @@ export default function CandlestickChart({
         )}
       </div>
     </div>
-  )
+  );
 }

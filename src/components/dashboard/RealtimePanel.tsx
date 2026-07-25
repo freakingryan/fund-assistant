@@ -4,8 +4,9 @@
  * 展示所有持仓的实时估值，按 ETF 映射优先获取实时行情。
  * 数据来源：stock-api（内置）→ EastMoney 自动兜底
  */
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { ROUTES } from "@/constants/routes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useRealtimeQuotes } from "@/hooks/useRealtimeQuotes";
@@ -20,8 +21,87 @@ interface Props {
   holdings: FundHolding[];
 }
 
-export default function RealtimePanel({ holdings }: Props) {
+interface RealtimeRowProps {
+  holdingId: string;
+  name: string;
+  code: string;
+  quote: FundQuote | undefined;
+  mv: number;
+  pnl: number;
+  pnlRate: number;
+  loading: boolean;
+}
+
+/** 持仓实时估值行：React.memo 包裹，避免父级重渲时整表重算 */
+const RealtimeRow = memo(function ({
+  holdingId,
+  name,
+  code,
+  quote,
+  mv,
+  pnl,
+  pnlRate,
+  loading,
+}: RealtimeRowProps) {
   const navigate = useNavigate();
+  const isProfit = pnl >= 0;
+  const isUp = (quote?.dailyChange ?? 0) >= 0;
+  return (
+    <div
+      onClick={() => navigate(ROUTES.detail(holdingId))}
+      className="flex items-center gap-3 px-4 py-2 text-xs hover:bg-muted/40 cursor-pointer transition-colors"
+    >
+      {/* 名称 + 代码 */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className="font-medium truncate">{name}</span>
+          <span className="font-mono text-[10px] text-muted-foreground shrink-0">{code}</span>
+        </div>
+      </div>
+
+      {/* 最新价 */}
+      <div className="w-[96px] text-right shrink-0">
+        {loading ? (
+          <span className="text-muted-foreground">加载中...</span>
+        ) : quote ? (
+          <span className={`font-mono font-medium ${pnlColor(isUp)}`}>¥{quote.nav.toFixed(4)}</span>
+        ) : (
+          <span className="text-muted-foreground">-</span>
+        )}
+      </div>
+
+      {/* 涨跌幅 */}
+      <div className="w-[80px] text-right shrink-0">
+        {quote && (
+          <span className={`font-mono ${pnlColor(isUp)}`}>
+            {formatSigned(quote.dailyChange)}
+            {quote.dailyChange.toFixed(2)}%
+          </span>
+        )}
+      </div>
+
+      {/* 盈亏 */}
+      <div className="w-[140px] text-right shrink-0 whitespace-nowrap">
+        <span className={`font-mono ${pnlColor(isProfit)}`}>
+          {pnl >= 0 ? "+" : "-"}¥{Math.abs(pnl).toFixed(2)}
+        </span>
+        <span className={`font-mono text-[10px] ml-1 ${pnlColor(isProfit)}`}>
+          ({formatSigned(pnlRate)}
+          {pnlRate.toFixed(2)}%)
+        </span>
+      </div>
+
+      {/* 持仓市值标签 */}
+      <div className="w-[96px] text-right shrink-0 text-muted-foreground">
+        <Badge variant="outline" className="text-[10px] font-mono">
+          ¥{mv.toFixed(0)}
+        </Badge>
+      </div>
+    </div>
+  );
+});
+
+export default function RealtimePanel({ holdings }: Props) {
   const codes = useMemo(() => holdings.map((h) => h.code), [holdings]);
   const { valuations, refresh, loading, lastUpdated } = useRealtimeQuotes(codes, 0);
   const panelQuotes = useMemo(
@@ -123,68 +203,19 @@ export default function RealtimePanel({ holdings }: Props) {
           />
         </div>
         <div className="divide-y overflow-x-auto">
-          {sorted.map(({ holding, quote, mv, pnl, pnlRate, loading: itemLoading }) => {
-            const isProfit = pnl >= 0;
-            const isUp = (quote?.dailyChange ?? 0) >= 0;
-            return (
-              <div
-                key={holding.id}
-                onClick={() => navigate(`/detail/${holding.id}`)}
-                className="flex items-center gap-3 px-4 py-2 text-xs hover:bg-muted/40 cursor-pointer transition-colors"
-              >
-                {/* 名称 + 代码 */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    <span className="font-medium truncate">{holding.name || holding.code}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground shrink-0">
-                      {holding.code}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 最新价 */}
-                <div className="w-[96px] text-right shrink-0">
-                  {itemLoading ? (
-                    <span className="text-muted-foreground">加载中...</span>
-                  ) : quote ? (
-                    <span className={`font-mono font-medium ${pnlColor(isUp)}`}>
-                      ¥{quote.nav.toFixed(4)}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">-</span>
-                  )}
-                </div>
-
-                {/* 涨跌幅 */}
-                <div className="w-[80px] text-right shrink-0">
-                  {quote && (
-                    <span className={`font-mono ${pnlColor(isUp)}`}>
-                      {formatSigned(quote.dailyChange)}
-                      {quote.dailyChange.toFixed(2)}%
-                    </span>
-                  )}
-                </div>
-
-                {/* 盈亏 */}
-                <div className="w-[140px] text-right shrink-0 whitespace-nowrap">
-                  <span className={`font-mono ${pnlColor(isProfit)}`}>
-                    {pnl >= 0 ? "+" : "-"}¥{Math.abs(pnl).toFixed(2)}
-                  </span>
-                  <span className={`font-mono text-[10px] ml-1 ${pnlColor(isProfit)}`}>
-                    ({formatSigned(pnlRate)}
-                    {pnlRate.toFixed(2)}%)
-                  </span>
-                </div>
-
-                {/* 持仓市值标签 */}
-                <div className="w-[96px] text-right shrink-0 text-muted-foreground">
-                  <Badge variant="outline" className="text-[10px] font-mono">
-                    ¥{mv.toFixed(0)}
-                  </Badge>
-                </div>
-              </div>
-            );
-          })}
+          {sorted.map(({ holding, quote, mv, pnl, pnlRate, loading: itemLoading }) => (
+            <RealtimeRow
+              key={holding.id}
+              holdingId={holding.id}
+              name={holding.name || holding.code}
+              code={holding.code}
+              quote={quote}
+              mv={mv}
+              pnl={pnl}
+              pnlRate={pnlRate}
+              loading={itemLoading}
+            />
+          ))}
         </div>
 
         {/* 汇总行 */}

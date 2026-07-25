@@ -1,11 +1,13 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { ROUTES } from "@/constants/routes";
 import { useHoldingsStore } from "@/stores/holdings";
 import { usePlansStore } from "@/stores/plans";
 import { useSettingsStore } from "@/stores/settings";
 import { useRealtimeQuotes } from "@/hooks/useRealtimeQuotes";
 import { dataSourceService } from "@/adapters/datasource/service";
-import { generatePrompt, type PromptTemplateType } from "@/services/prompt";
+import { generatePrompt } from "@/services/prompt";
+import type { PromptTemplateType } from "@/types";
 import {
   getKlineCache,
   setKlineCache,
@@ -94,11 +96,11 @@ export default function FundDetailPage() {
 
   useEffect(() => {
     if (holdings.length > 0 && fund && fund.id !== id) {
-      navigate(`/detail/${fund.id}`, { replace: true });
+      navigate(ROUTES.detail(fund.id), { replace: true });
     }
   }, [holdings, fund, id, navigate]);
 
-  const handleSwitchFund = (newId: string) => navigate(`/detail/${newId}`);
+  const handleSwitchFund = (newId: string) => navigate(ROUTES.detail(newId));
 
   // ─── 状态 ─────────────────────────────────────
   const [period, setPeriod] = useState("3m");
@@ -571,7 +573,7 @@ export default function FundDetailPage() {
   if (!fund) {
     return (
       <div className="space-y-6">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/holdings")}>
+        <Button variant="ghost" size="sm" onClick={() => navigate(ROUTES.holdings)}>
           <ArrowLeft className="h-3 w-3 mr-1" />
           返回持仓
         </Button>
@@ -875,7 +877,7 @@ export default function FundDetailPage() {
                       {portfolio.holdings.map((h, i) => (
                         <div
                           key={h.code}
-                          onClick={() => navigate(`/stock/${h.code}`)}
+                          onClick={() => navigate(ROUTES.stock(h.code))}
                           className="group flex items-center justify-between text-xs py-1 px-2 rounded hover:bg-muted/40 cursor-pointer transition-colors"
                           title="查看个股详情"
                         >

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { KLineData, FundQuote } from "@/types";
 import { pnlColor } from "@/lib/format";
-import { MA_COLORS, MA_LABELS } from "@/lib/chart-colors";
+import { MA_COLORS, MA_LABELS, KLINE_LINE } from "@/lib/chart-colors";
 import type { DetectedPattern } from "@/services/klinePatterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -317,7 +317,7 @@ export default function KlineChartCard({
             <polyline
               points={navLinePoints}
               fill="none"
-              stroke="#3b82f6"
+              stroke={KLINE_LINE}
               strokeWidth={2}
               vectorEffect="non-scaling-stroke"
             />

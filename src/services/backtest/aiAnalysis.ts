@@ -15,6 +15,7 @@
 
 import { callAI, getDefaultAI } from "@/services/ai";
 import { db } from "@/stores/db";
+import { extractJsonFromLLM } from "@/lib/json";
 import type { BacktestStats, SourceAccuracy } from "./stats";
 import { computeBacktestStats, computeDailyAccuracySeries } from "./stats";
 import type { AiBacktestAnalysis, DailyAccuracyPoint, ScoreSnapshot } from "./types";
@@ -150,23 +151,18 @@ export class NoAIConfiguredError extends Error {
 function parseAnalysisJson(
   text: string,
 ): { weaknesses: string[]; suggestions: string[]; summary: string } | null {
-  const m = text.match(/\{[\s\S]*\}/);
-  const raw = m ? m[0] : text;
-  try {
-    const obj = JSON.parse(raw);
-    if (
-      Array.isArray(obj.weaknesses) &&
-      Array.isArray(obj.suggestions) &&
-      typeof obj.summary === "string"
-    ) {
-      return {
-        weaknesses: obj.weaknesses.map(String),
-        suggestions: obj.suggestions.map(String),
-        summary: String(obj.summary),
-      };
-    }
-  } catch {
-    // 解析失败：保留 raw，由调用方决定降级
+  const obj = extractJsonFromLLM(text);
+  if (!obj) return null;
+  if (
+    Array.isArray(obj.weaknesses) &&
+    Array.isArray(obj.suggestions) &&
+    typeof obj.summary === "string"
+  ) {
+    return {
+      weaknesses: (obj.weaknesses as unknown[]).map(String),
+      suggestions: (obj.suggestions as unknown[]).map(String),
+      summary: String(obj.summary),
+    };
   }
   return null;
 }

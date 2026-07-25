@@ -7,29 +7,44 @@
  * @module backtest/AiAnalysisPanel
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { analyzeBacktestWithAI, buildBacktestAnalysisPrompt, deleteAiAnalysis, getAllAiAnalyses, NoAIConfiguredError } from '@/services/backtest/aiAnalysis'
-import { computeBacktestStats, computeDailyAccuracySeries } from '@/services/backtest/stats'
-import type { AiBacktestAnalysis, ScoreSnapshot } from '@/services/backtest/types'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Loader2, Sparkles, Trash2, ChevronDown, ChevronUp, AlertTriangle, Copy, Check } from 'lucide-react'
-import { toast } from '@/components/ui/toast'
+import { useCallback, useMemo, useState } from "react";
+import { useLoadOnMount } from "@/hooks/useLoadOnMount";
+import {
+  analyzeBacktestWithAI,
+  buildBacktestAnalysisPrompt,
+  deleteAiAnalysis,
+  getAllAiAnalyses,
+  NoAIConfiguredError,
+} from "@/services/backtest/aiAnalysis";
+import { computeBacktestStats, computeDailyAccuracySeries } from "@/services/backtest/stats";
+import type { AiBacktestAnalysis, ScoreSnapshot } from "@/services/backtest/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import {
+  Loader2,
+  Sparkles,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Copy,
+  Check,
+} from "lucide-react";
+import { toast } from "@/components/ui/toast";
 
-function Chip({ children, tone }: { children: React.ReactNode; tone: 'weak' | 'suggest' }) {
-  const cls = tone === 'weak'
-    ? 'bg-down/10 text-down border-down/30'
-    : 'bg-up/10 text-up border-up/30'
+function Chip({ children, tone }: { children: React.ReactNode; tone: "weak" | "suggest" }) {
+  const cls =
+    tone === "weak" ? "bg-down/10 text-down border-down/30" : "bg-up/10 text-up border-up/30";
   return (
     <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] leading-tight ${cls}`}>
       {children}
     </span>
-  )
+  );
 }
 
 function AnalysisCard({ a, onDelete }: { a: AiBacktestAnalysis; onDelete: (id: string) => void }) {
-  const [open, setOpen] = useState(false)
-  const hasContent = a.weaknesses.length > 0 || a.suggestions.length > 0
+  const [open, setOpen] = useState(false);
+  const hasContent = a.weaknesses.length > 0 || a.suggestions.length > 0;
 
   return (
     <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
@@ -38,9 +53,13 @@ function AnalysisCard({ a, onDelete }: { a: AiBacktestAnalysis; onDelete: (id: s
           <div className="flex items-center gap-1.5 text-xs font-medium">
             <Sparkles className="h-3 w-3 text-primary" />
             <span>{a.date}</span>
-            <span className="text-[10px] text-muted-foreground font-normal">{a.provider}/{a.model}</span>
+            <span className="text-[10px] text-muted-foreground font-normal">
+              {a.provider}/{a.model}
+            </span>
           </div>
-          {a.summary && <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{a.summary}</p>}
+          {a.summary && (
+            <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{a.summary}</p>
+          )}
         </div>
         <button
           onClick={() => onDelete(a.id)}
@@ -52,13 +71,23 @@ function AnalysisCard({ a, onDelete }: { a: AiBacktestAnalysis; onDelete: (id: s
       </div>
 
       {!hasContent && (
-        <p className="text-[10px] text-muted-foreground">AI 未返回结构化结论（可能样本不足），可展开查看原始返回。</p>
+        <p className="text-[10px] text-muted-foreground">
+          AI 未返回结构化结论（可能样本不足），可展开查看原始返回。
+        </p>
       )}
 
       {hasContent && (
         <div className="flex flex-wrap gap-1">
-          {a.weaknesses.map((w, i) => <Chip key={`w${i}`} tone="weak">{w}</Chip>)}
-          {a.suggestions.map((s, i) => <Chip key={`s${i}`} tone="suggest">{s}</Chip>)}
+          {a.weaknesses.map((w, i) => (
+            <Chip key={`w${i}`} tone="weak">
+              {w}
+            </Chip>
+          ))}
+          {a.suggestions.map((s, i) => (
+            <Chip key={`s${i}`} tone="suggest">
+              {s}
+            </Chip>
+          ))}
         </div>
       )}
 
@@ -67,92 +96,113 @@ function AnalysisCard({ a, onDelete }: { a: AiBacktestAnalysis; onDelete: (id: s
         className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
       >
         {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        {open ? '收起原始返回' : '查看原始返回'}
+        {open ? "收起原始返回" : "查看原始返回"}
       </button>
       {open && (
         <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words bg-background/60 rounded p-2 max-h-48 overflow-auto">
-{a.raw}
+          {a.raw}
         </pre>
       )}
     </div>
-  )
+  );
 }
 
 export default function AiAnalysisPanel({ snapshots }: { snapshots: ScoreSnapshot[] }) {
-  const [analyses, setAnalyses] = useState<AiBacktestAnalysis[]>([])
-  const [analyzing, setAnalyzing] = useState(false)
-  const [promptText, setPromptText] = useState<string | null>(null)
-  const [promptOpen, setPromptOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [analyses, setAnalyses] = useState<AiBacktestAnalysis[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [promptText, setPromptText] = useState<string | null>(null);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const reload = useCallback(async () => {
     try {
-      setAnalyses(await getAllAiAnalyses())
+      setAnalyses(await getAllAiAnalyses());
     } catch {
-      setAnalyses([])
+      setAnalyses([]);
     }
-  }, [])
+  }, []);
 
-  useEffect(() => { reload().catch(() => {}) }, [reload]) // eslint-disable-line react-hooks/set-state-in-effect
+  useLoadOnMount(reload);
 
   const settled = useMemo(
-    () => snapshots.filter((s) => s.outcome === 'correct' || s.outcome === 'wrong' || s.outcome === 'neutral').length,
+    () =>
+      snapshots.filter(
+        (s) => s.outcome === "correct" || s.outcome === "wrong" || s.outcome === "neutral",
+      ).length,
     [snapshots],
-  )
+  );
 
   const handleAnalyze = async () => {
-    if (analyzing) return
-    setAnalyzing(true)
+    if (analyzing) return;
+    setAnalyzing(true);
     try {
-      const result = await analyzeBacktestWithAI(snapshots)
-      toast({ type: 'success', message: `AI 分析完成（${result.date}）` })
-      await reload()
+      const result = await analyzeBacktestWithAI(snapshots);
+      toast({ type: "success", message: `AI 分析完成（${result.date}）` });
+      await reload();
     } catch (e) {
       if (e instanceof NoAIConfiguredError) {
-        toast({ type: 'error', message: e.message })
+        toast({ type: "error", message: e.message });
       } else {
-        toast({ type: 'error', message: e instanceof Error ? e.message : 'AI 分析失败' })
+        toast({ type: "error", message: e instanceof Error ? e.message : "AI 分析失败" });
       }
     }
-    setAnalyzing(false)
-  }
+    setAnalyzing(false);
+  };
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteAiAnalysis(id)
-      await reload()
+      await deleteAiAnalysis(id);
+      await reload();
     } catch {
-      toast({ type: 'error', message: '删除失败' })
+      toast({ type: "error", message: "删除失败" });
     }
-  }
+  };
 
   /** 仅生成结构化 Prompt（不调用 LLM），复制到剪贴板并展示，便于粘贴到任意 AI 对话 */
   const handleGeneratePrompt = useCallback(() => {
-    const stats = computeBacktestStats(snapshots)
-    const daily = computeDailyAccuracySeries(snapshots)
-    const prompt = buildBacktestAnalysisPrompt(stats, daily, snapshots)
-    setPromptText(prompt)
-    setPromptOpen(true)
-    setCopied(false)
+    const stats = computeBacktestStats(snapshots);
+    const daily = computeDailyAccuracySeries(snapshots);
+    const prompt = buildBacktestAnalysisPrompt(stats, daily, snapshots);
+    setPromptText(prompt);
+    setPromptOpen(true);
+    setCopied(false);
     navigator.clipboard?.writeText(prompt).then(
-      () => { setCopied(true); toast({ type: 'success', message: 'Prompt 已复制到剪贴板' }) },
-      () => toast({ type: 'error', message: '复制失败，请手动选择文本复制' }),
-    )
-  }, [snapshots])
+      () => {
+        setCopied(true);
+        toast({ type: "success", message: "Prompt 已复制到剪贴板" });
+      },
+      () => toast({ type: "error", message: "复制失败，请手动选择文本复制" }),
+    );
+  }, [snapshots]);
 
   return (
     <Card className="card-hover">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-sm flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5" />AI 辅助算法分析
+            <Sparkles className="h-3.5 w-3.5" />
+            AI 辅助算法分析
           </CardTitle>
-          <Button size="sm" variant="outline" onClick={handleGeneratePrompt} disabled={snapshots.length === 0}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleGeneratePrompt}
+            disabled={snapshots.length === 0}
+          >
             <Copy className="h-3 w-3 mr-1" />
             生成 Prompt
           </Button>
-          <Button size="sm" variant="default" onClick={handleAnalyze} disabled={analyzing || snapshots.length === 0}>
-            {analyzing ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+          <Button
+            size="sm"
+            variant="default"
+            onClick={handleAnalyze}
+            disabled={analyzing || snapshots.length === 0}
+          >
+            {analyzing ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Sparkles className="h-3 w-3 mr-1" />
+            )}
             AI 分析算法
           </Button>
         </div>
@@ -182,30 +232,37 @@ export default function AiAnalysisPanel({ snapshots }: { snapshots: ScoreSnapsho
                 onClick={() => setPromptOpen((v) => !v)}
                 className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
               >
-                {promptOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                {promptOpen ? '收起 Prompt' : '查看 Prompt'}
+                {promptOpen ? (
+                  <ChevronUp className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+                {promptOpen ? "收起 Prompt" : "查看 Prompt"}
               </button>
               <button
                 onClick={() => {
                   navigator.clipboard?.writeText(promptText).then(
-                    () => { setCopied(true); toast({ type: 'success', message: 'Prompt 已复制' }) },
-                    () => toast({ type: 'error', message: '复制失败，请手动复制' }),
-                  )
+                    () => {
+                      setCopied(true);
+                      toast({ type: "success", message: "Prompt 已复制" });
+                    },
+                    () => toast({ type: "error", message: "复制失败，请手动复制" }),
+                  );
                 }}
                 className="flex items-center gap-1 text-[10px] text-primary hover:underline"
               >
                 {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                {copied ? '已复制' : '复制'}
+                {copied ? "已复制" : "复制"}
               </button>
             </div>
             {promptOpen && (
               <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words bg-background/60 rounded p-2 max-h-64 overflow-auto">
-{promptText}
+                {promptText}
               </pre>
             )}
           </div>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }

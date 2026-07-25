@@ -1,5 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useLoadOnMount } from "@/hooks/useLoadOnMount";
 import { useNavigate } from "react-router-dom";
+import { ROUTES } from "@/constants/routes";
 import { useHoldingsStore } from "@/stores/holdings";
 import { usePlansStore } from "@/stores/plans";
 import { useSettingsStore } from "@/stores/settings";
@@ -46,31 +48,7 @@ import { asOfFromQuotes } from "@/lib/dataTime";
 import DataAsOf from "@/components/ui/DataAsOf";
 import RealtimePanel from "./RealtimePanel";
 import BacktestSummaryCard from "./BacktestSummaryCard";
-
-const TYPE_COLORS: Record<string, string> = {
-  stock: "#ef4444",
-  mixed: "#f97316",
-  bond: "#22c55e",
-  index: "#3b82f6",
-  qdii: "#a855f7",
-  money: "#06b6d4",
-  etf: "#eab308",
-  other: "#6b7280",
-};
-const SECTOR_COLORS = [
-  "#3b82f6",
-  "#ef4444",
-  "#22c55e",
-  "#f97316",
-  "#a855f7",
-  "#06b6d4",
-  "#eab308",
-  "#ec4899",
-  "#8b5cf6",
-  "#10b981",
-  "#f43f5e",
-  "#6b7280",
-];
+import { TYPE_COLORS, SECTOR_COLORS, TYPE_FALLBACK } from "@/lib/chart-colors";
 
 export default function DashboardPage() {
   const holdings = useHoldingsStore((s) => s.holdings);
@@ -101,12 +79,8 @@ export default function DashboardPage() {
     return m?.exchangeCode || null;
   }, [selectedFund, etfMappings]);
 
-  useEffect(() => {
-    loadHoldings();
-  }, [loadHoldings]);
-  useEffect(() => {
-    loadAlerts();
-  }, [loadAlerts]);
+  useLoadOnMount(loadHoldings);
+  useLoadOnMount(loadAlerts);
 
   /** 尝试读取行情缓存时间（调用接口 / 缓存写入时间） */
   const updateQuotesTime = useCallback(async () => {
@@ -151,9 +125,7 @@ export default function DashboardPage() {
     [holdings],
   );
 
-  useEffect(() => {
-    loadQuotes().catch(() => {});
-  }, [loadQuotes]);
+  useLoadOnMount(loadQuotes);
 
   // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线（带安全超时）
   useEffect(() => {
@@ -405,7 +377,7 @@ export default function DashboardPage() {
                   dataKey="value"
                 >
                   {typeDistribution.map((entry, i) => (
-                    <Cell key={i} fill={TYPE_COLORS[entry.type] || "#6b7280"} />
+                    <Cell key={i} fill={TYPE_COLORS[entry.type] || TYPE_FALLBACK} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v: any) => formatCurrency(Number(v) || 0)} />
@@ -458,7 +430,7 @@ export default function DashboardPage() {
               {holdings.slice(0, 5).map((h) => (
                 <div
                   key={h.id}
-                  onClick={() => navigate("/detail/" + h.id)}
+                  onClick={() => navigate(ROUTES.detail(h.id))}
                   className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
