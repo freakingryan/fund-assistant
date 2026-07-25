@@ -274,7 +274,7 @@ function useFundDetailController(fundId: string): FundDetailController {
 
   const etfCode = useMemo(() => {
     if (!fund) return null;
-    const m = etfMappings.find((mapping) => mapping.otfCode === fund.code);
+    const m = etfMappings.find((mapping) => mapping.otcCode === fund.code);
     return m?.exchangeCode || null;
   }, [fund, etfMappings]);
 
@@ -561,7 +561,7 @@ function useFundDetailController(fundId: string): FundDetailController {
   // ─── Prompt ───────────────────────────────────
   /** 依据当前模板类型与时间序列构建分析 Prompt（供「生成」与「直接调用 AI」复用） */
   const buildPrompt = useCallback(() => {
-    const etfMappingsForFund = etfMappings.filter((m) => m.otfCode === fund?.code);
+    const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund?.code);
     const klineDataMap: Record<string, KLineData[]> = {};
     for (const m of etfMappingsForFund) {
       if (klineData.length > 0) klineDataMap[m.exchangeCode] = klineData;
@@ -591,7 +591,7 @@ function useFundDetailController(fundId: string): FundDetailController {
 
   const handleGenerateKlinePrompt = useCallback(() => {
     setTemplateType("kline_enhanced");
-    const etfMappingsForFund = etfMappings.filter((m) => m.otfCode === fund?.code);
+    const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund?.code);
     const klineDataMap: Record<string, KLineData[]> = {};
     for (const m of etfMappingsForFund) {
       if (klineData.length > 0) klineDataMap[m.exchangeCode] = klineData;
