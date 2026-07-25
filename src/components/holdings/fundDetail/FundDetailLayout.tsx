@@ -6,12 +6,12 @@ import { ROUTES } from "@/constants/routes";
 import { useFundDetail } from "@/hooks/useFundDetailController";
 import EditFundDialog from "@/components/holdings/EditFundDialog";
 import QuickAdjustDialog from "@/components/holdings/QuickAdjustDialog";
-import KlineChartCard from "@/components/holdings/KlineChartCard";
-import KlinePatternCard from "@/components/holdings/KlinePatternCard";
-import SignalScoreCard from "@/components/holdings/SignalScoreCard";
 import { TechnicalIndicatorsPanel } from "@/components/holdings/TechnicalIndicatorsPanel";
-import { DecisionAdvisorCard } from "@/components/holdings/DecisionAdvisorCard";
 import FundRankHistoryCard from "@/components/holdings/FundRankHistoryCard";
+import FundKlineChartCard from "./FundKlineChartCard";
+import FundKlinePatternCard from "./FundKlinePatternCard";
+import FundSignalScoreCard from "./FundSignalScoreCard";
+import FundDecisionAdvisorCard from "./FundDecisionAdvisorCard";
 import FundHeader from "./FundHeader";
 import HoldingInfoCard from "./HoldingInfoCard";
 import FundPortfolioCard from "./FundPortfolioCard";
@@ -49,80 +49,20 @@ export default function FundDetailLayout() {
       <QuickAdjustDialog fund={fund} open={ctrl.adjustOpen} onOpenChange={ctrl.setAdjustOpen} />
 
       {/* 智能决策建议：紧随持仓信息，独占整行 */}
-      <DecisionAdvisorCard
-        klines={ctrl.klineData}
-        patterns={ctrl.klineDetectedPatterns}
-        signalResult={ctrl.signalResult}
-        isRealKline={ctrl.isRealKline}
-        em={ctrl.emFactors}
-        regime={ctrl.regime}
-        asOf={ctrl.klineAsOf}
-        fetchedAt={ctrl.klineFetchedAt}
-      />
+      <FundDecisionAdvisorCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-4">
-          <KlineChartCard
-            klineData={ctrl.klineData}
-            klineLoading={ctrl.klineLoading}
-            asOf={ctrl.klineAsOf}
-            fetchedAt={ctrl.klineFetchedAt}
-            etfCode={ctrl.etfCode}
-            etfQuote={ctrl.etfCode ? ctrl.valuations[ctrl.etfCode]?.quote || null : null}
-            onRefreshQuote={ctrl.handleRefreshQuotes}
-            quoteRefreshing={ctrl.refreshing.quotes}
-            useEtfKline={ctrl.useEtfKline}
-            setUseEtfKline={ctrl.setUseEtfKline}
-            period={ctrl.period}
-            setPeriod={ctrl.setPeriod}
-            showMA={ctrl.showMA}
-            setShowMA={ctrl.setShowMA}
-            showBollinger={ctrl.showBollinger}
-            setShowBollinger={ctrl.setShowBollinger}
-            refreshing={ctrl.refreshing}
-            handleRefreshKline={ctrl.handleRefreshKline}
-            klineDetectedPatterns={ctrl.klineDetectedPatterns}
-            onHover={ctrl.setHoveredKlineIndex}
-            externalHighlightIndex={ctrl.effectiveKlineHighlight}
-            onCandleClick={ctrl.handlePatternClick}
-            etfKlineError={ctrl.etfKlineError}
-          />
-          <KlinePatternCard
-            klineData={ctrl.klineData}
-            klineDetectedPatterns={ctrl.klineDetectedPatterns}
-            klinePatterns={ctrl.klinePatterns}
-            klineAnalysis={ctrl.klineAnalysis}
-            klineAnalyzing={ctrl.klineAnalyzing}
-            klineAnalysisError={ctrl.klineAnalysisError}
-            hoveredKlineIndex={ctrl.hoveredKlineIndex}
-            selectedKlineIndex={ctrl.selectedKlineIndex}
-            onPatternHover={ctrl.setHoveredKlineIndex}
-            onPatternSelect={ctrl.handlePatternClick}
-            onAnalyzeKline={ctrl.handleAnalyzeKline}
-            onGenerateKlinePrompt={ctrl.handleGenerateKlinePrompt}
-            isRealKline={ctrl.isRealKline}
-            etfCode={ctrl.etfCode}
-            loading={ctrl.useEtfKline && ctrl.klineLoading}
-            etfKlineError={ctrl.etfKlineError}
-            onSwitchToRealKline={() => {
-              ctrl.setEtfKlineError(null);
-              ctrl.setKlineRefreshKey((k) => k + 1);
-              ctrl.setUseEtfKline(true);
-            }}
-          />
+          <FundKlineChartCard />
+          <FundKlinePatternCard />
           <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
               <span className="inline-block transition-transform group-open:rotate-90">▶</span>
               分析明细（综合评分 / 技术指标 / 形态）
             </summary>
             <div className="mt-3 space-y-4">
-              <SignalScoreCard
-                signalResult={ctrl.signalResult}
-                showSignalDetail={ctrl.showSignalDetail}
-                setShowSignalDetail={ctrl.setShowSignalDetail}
-                isRealKline={ctrl.isRealKline}
-              />
+              <FundSignalScoreCard />
               <TechnicalIndicatorsPanel klines={ctrl.klineData} />
             </div>
           </details>
