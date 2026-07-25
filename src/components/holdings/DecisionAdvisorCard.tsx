@@ -18,6 +18,8 @@ import {
   TrendingUp,
   Activity,
   Layers,
+  Scale,
+  ShieldAlert,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { KLineData } from "@/types";
@@ -25,7 +27,7 @@ import type { DetectedPattern } from "@/services/klinePatterns";
 import type { SignalResult } from "@/services/signalEngine";
 import { computeStockSdkIndicators } from "@/services/stockSdkIndicators";
 import { evaluateStrategies } from "@/services/strategyLayer";
-import { buildDecision } from "@/services/decision/decisionEngine";
+import { buildDecision, ACTION_META } from "@/services/decision/decisionEngine";
 import { computeNavFactors } from "@/services/decision/navFactors";
 import type { SignalCategory, EmFactors, MarketRegime } from "@/services/decision/types";
 import DataAsOf from "@/components/ui/DataAsOf";
@@ -103,7 +105,7 @@ export function DecisionAdvisorCard({
 
   if (!decision) return null;
 
-  const style = RATING_STYLE[decision.ratingColor];
+  const style = RATING_STYLE[decision.actionColor];
   const bullPct = Math.round(decision.bullRatio * 100);
   const bearPct = 100 - bullPct;
   const showEmDelta = decision.emDelta !== 0;
@@ -121,13 +123,16 @@ export function DecisionAdvisorCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* 评级 + 评分 + 状态徽章 */}
+        {/* 八态 action 徽章 + 评分 + 状态徽章 */}
         <div className="flex items-center gap-3">
           <div
             className={`px-3 py-1.5 rounded-lg text-base font-bold border ${style.text} ${style.bg} ${style.border}`}
           >
-            {decision.ratingLabel}
+            {decision.actionLabel}
           </div>
+          <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/40 border border-border/40">
+            评级 {decision.ratingLabel}
+          </span>
           <div className="flex flex-col">
             <span className="text-[10px] text-muted-foreground">综合评分 (0-100)</span>
             <span className={`text-lg font-bold leading-none ${style.text}`}>
@@ -178,6 +183,54 @@ export function DecisionAdvisorCard({
               className="h-full bg-down transition-all duration-500 ease-out"
               style={{ width: `${bearPct}%` }}
             />
+          </div>
+        </div>
+
+        {/* 决策校准（八态 action + 护栏原因，可解释） */}
+        <div className="rounded-md border border-border/50 p-2.5 space-y-2 bg-muted/10">
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Scale className="h-3 w-3" />
+            决策校准（评分 / 动作演变 + 护栏原因）
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <div className="text-[9px] text-muted-foreground mb-0.5">评分</div>
+              <div className="text-[11px] font-semibold">
+                <span className="text-muted-foreground/70">{decision.rawScore}</span>
+                <span className="mx-1 text-muted-foreground/40">→</span>
+                <span className={style.text}>{decision.adjustedScore}</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] text-muted-foreground mb-0.5">动作</div>
+              <div className="text-[11px] font-semibold">
+                <span className="text-muted-foreground/70">
+                  {ACTION_META[decision.rawAction].label}
+                </span>
+                <span className="mx-1 text-muted-foreground/40">→</span>
+                <span className={style.text}>{decision.actionLabel}</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div className="text-[9px] text-muted-foreground mb-0.5">
+              护栏原因（数据降级 → 决策降级 + 显式原因）
+            </div>
+            {decision.guardrails.length === 0 ? (
+              <p className="text-[10px] text-muted-foreground/70">评分与动作一致，无护栏调整</p>
+            ) : (
+              <ul className="space-y-1">
+                {decision.guardrails.map((g, i) => (
+                  <li
+                    key={i}
+                    className="flex items-start gap-1 text-[10px] text-amber-600 dark:text-amber-400 leading-snug"
+                  >
+                    <ShieldAlert className="h-3 w-3 shrink-0 mt-0.5" />
+                    <span>{g.description}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
 

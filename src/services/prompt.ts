@@ -8,6 +8,10 @@ import type {
 } from "@/types";
 import { detectPatterns, formatPatternsSummary } from "@/services/klinePatterns";
 import { type AnalysisStrategy, strategiesToPromptSection } from "@/services/analysisStrategies";
+import {
+  type AnalysisContextPack,
+  contextPackToPromptSection,
+} from "@/services/decision/contextPack";
 import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from "@/lib/labels";
 
 export interface GeneratePromptOptions {
@@ -21,6 +25,8 @@ export interface GeneratePromptOptions {
   klineDataMap?: Record<string, KLineData[]>; // key = exchangeCode
   /** 可选：选中的分析策略透镜（P0-A 多策略问股），追加为「附加分析策略」章节 */
   strategies?: AnalysisStrategy[];
+  /** 可选：分析上下文包（P0-B 数据质量透出），追加为「数据齐备度」章节 */
+  contextPack?: AnalysisContextPack;
 }
 
 function fmt(v: number): string {
@@ -245,6 +251,7 @@ export function generatePrompt(options: GeneratePromptOptions): string {
     alerts,
     klineDataMap,
     strategies,
+    contextPack,
   } = options;
 
   const selected = holdings.filter((h) => selectedIds.includes(h.id));
@@ -264,7 +271,9 @@ export function generatePrompt(options: GeneratePromptOptions): string {
   }
 
   const strategySection = strategiesToPromptSection(strategies ?? []);
-  return strategySection ? `${body}\n\n${strategySection}` : body;
+  const packSection = contextPackToPromptSection(contextPack);
+  const extras = [strategySection, packSection].filter(Boolean).join("\n\n");
+  return extras ? `${body}\n\n${extras}` : body;
 }
 
 export function promptPreview(options: GeneratePromptOptions): string {

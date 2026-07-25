@@ -22,6 +22,7 @@ import type { StrategyHit } from "../strategyLayer";
 import type {
   AnalysisSignal,
   Decision,
+  DecisionAction,
   DecisionInputs,
   Direction,
   Rating,
@@ -29,6 +30,8 @@ import type {
   SignalCategory,
   NavFactors,
   EmFactors,
+  GuardrailReason,
+  MarketRegime,
 } from "./types";
 
 // ─── 类别权重（基础维度；navmom 仅净值模式动态加入；overlay 类不计入基础权重） ───────────
@@ -354,6 +357,96 @@ const RATING_META: Record<Rating, { label: string; color: "up" | "down" | "neutr
   strong_sell: { label: "强烈卖出", color: "down" },
 };
 
+/** 八态 action 元信息（涨红跌绿 / 中性 / 观察 / 回避） */
+export const ACTION_META: Record<
+  DecisionAction,
+  { label: string; color: "up" | "down" | "neutral" }
+> = {
+  buy: { label: "买入", color: "up" },
+  add: { label: "加仓", color: "up" },
+  hold: { label: "持有", color: "neutral" },
+  watch: { label: "观察", color: "neutral" },
+  reduce: { label: "减仓", color: "down" },
+  sell: { label: "卖出", color: "down" },
+  avoid: { label: "回避", color: "down" },
+  alert: { label: "预警", color: "neutral" },
+};
+
+/** 评分 ↔ 八态 action 校准（80/60/45/30 四档；watch/avoid/alert 由护栏/特殊态产生） */
+export function scoreToRawAction(score: number): DecisionAction {
+  if (score >= 80) return "buy";
+  if (score >= 60) return "add";
+  if (score >= 45) return "hold";
+  if (score >= 30) return "reduce";
+  return "sell";
+}
+
+/**
+ * 护栏：基于数据质量 / 上下文，把原始动作降级（数据降级 → 决策降级 + 显式原因）。
+ * 确定性、可解释；每条触发都附带中文原因（含中性动作的显式理由）。
+ */
+export function applyGuardrails(
+  raw: DecisionAction,
+  ctx: {
+    lowConfidence: boolean;
+    conflict: boolean;
+    trendBearish: boolean;
+    regime?: MarketRegime;
+    regimeAdjusted: boolean;
+    hasKline: boolean;
+  },
+): { action: DecisionAction; reasons: GuardrailReason[] } {
+  const reasons: GuardrailReason[] = [];
+  // 无 K 线 → 无法决策，直接回避
+  if (!ctx.hasKline) {
+    return {
+      action: "avoid",
+      reasons: [
+        {
+          kind: "data_missing",
+          description: "无可用行情 / K 线数据，无法形成可靠决策，建议补充数据后重试",
+        },
+      ],
+    };
+  }
+  let action = raw;
+  // 1. 多空冲突：偏多侧降级为观察，避免误判
+  if (ctx.conflict && (action === "buy" || action === "add")) {
+    action = "watch";
+    reasons.push({
+      kind: "conflict",
+      description: "多空信号显著分歧，结论可靠性下降，降级为「观察」",
+    });
+  }
+  // 2. 空头趋势：不追高，偏多侧降一档
+  if (ctx.trendBearish && (action === "buy" || action === "add")) {
+    action = action === "buy" ? "add" : "hold";
+    reasons.push({
+      kind: "trend_bearish",
+      description: "处于空头排列趋势，反弹空间受限，不宜追高",
+    });
+  }
+  // 3. 低置信（净值模式）：偏多动一档 / 中性转观察
+  if (ctx.lowConfidence && (action === "buy" || action === "add" || action === "hold")) {
+    action = action === "buy" ? "add" : action === "add" ? "hold" : "watch";
+    reasons.push({
+      kind: "low_confidence",
+      description: "基于净值走势（无盘中区间），指标置信度较低，建议切换 ETF 真实 K 线复核",
+    });
+  }
+  // 4. 市场 regime 折扣（与引擎 discount 对齐）：空头市对乐观打折、多头市对悲观打折
+  if (ctx.regimeAdjusted && ctx.regime) {
+    if (ctx.regime.trend === "bear" && (action === "buy" || action === "add")) {
+      action = action === "buy" ? "add" : "hold";
+      reasons.push({ kind: "regime", description: "空头市环境下对乐观信号打折，下调一档" });
+    } else if (ctx.regime.trend === "bull" && (action === "reduce" || action === "sell")) {
+      action = action === "sell" ? "reduce" : "hold";
+      reasons.push({ kind: "regime", description: "多头市环境下对悲观信号打折，上调一档" });
+    }
+  }
+  return { action, reasons };
+}
+
 /**
  * 融合四套分析为单一决策建议。
  */
@@ -410,6 +503,8 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   }
   let score = Math.round(50 + 50 * (scoreRaw / TOTAL_WEIGHT));
   score = clamp(score, 0, 100);
+  // 校准基准：折扣前纯分（置信压缩 / 东财叠加 / regime 折扣之前）
+  const rawScore = score;
 
   const total = bullPower + bearPower;
   const bullRatio = total > 0 ? bullPower / total : 0.5;
@@ -511,6 +606,17 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   const bullReasons = bulls.map(toReason);
   const bearReasons = bears.map(toReason);
 
+  // 八态 action 校准 + 护栏（数据降级 → 决策降级 + 显式原因）
+  const rawAction = scoreToRawAction(rawScore);
+  const { action: finalAction, reasons: guardrails } = applyGuardrails(rawAction, {
+    lowConfidence: isLowConf,
+    conflict,
+    trendBearish,
+    regime,
+    regimeAdjusted,
+    hasKline: klines.length > 0,
+  });
+
   const summary = buildSummary(rating, conflict, trendBearish, bullReasons, bearReasons, isLowConf);
 
   return {
@@ -518,6 +624,13 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     ratingLabel: RATING_META[rating].label,
     ratingColor: RATING_META[rating].color,
     score,
+    rawScore,
+    adjustedScore: score,
+    rawAction,
+    finalAction,
+    actionLabel: ACTION_META[finalAction].label,
+    actionColor: ACTION_META[finalAction].color,
+    guardrails,
     bullPower,
     bearPower,
     bullRatio,

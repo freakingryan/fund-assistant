@@ -59,6 +59,34 @@ export interface ReasonItem {
 
 export type Rating = "strong_buy" | "buy" | "hold" | "reduce" | "strong_sell";
 
+/**
+ * 决策动作（8 态，移植自 DSA DecisionSignal）——
+ * 相比 5 态 `Rating` 更细粒度，并引入 watch/avoid/alert 等护栏/特殊态。
+ * `buy/add/hold/reduce/sell` 由评分校准得到；`watch/avoid/alert` 由护栏或数据缺失态产生。
+ */
+export type DecisionAction =
+  | "buy" // 买入
+  | "add" // 加仓
+  | "hold" // 持有
+  | "watch" // 观察（信号不足/分歧，暂不动）
+  | "reduce" // 减仓
+  | "sell" // 卖出
+  | "avoid" // 回避（数据不足，无法决策）
+  | "alert"; // 预警（需关注）
+
+/** 护栏原因：解释为何从 raw_action 调整为 final_action（含中性动作的显式理由） */
+export interface GuardrailReason {
+  kind:
+    | "low_confidence"
+    | "conflict"
+    | "trend_bearish"
+    | "regime"
+    | "data_missing"
+    | "neutral_mandated";
+  /** 中文解释（直接面向用户/模型） */
+  description: string;
+}
+
 /** 融合后的决策建议 */
 export interface Decision {
   rating: Rating;
@@ -67,6 +95,20 @@ export interface Decision {
   ratingColor: "up" | "down" | "neutral";
   /** 综合评分 0~100 */
   score: number;
+  /** 校准：加权合成后的纯分（置信压缩 / 东财叠加 / regime 折扣之前） */
+  rawScore: number;
+  /** 校准：最终评分（已含全部折扣），即 display score */
+  adjustedScore: number;
+  /** 校准：由 rawScore 经分档得到的原始 8 态动作（未施加护栏） */
+  rawAction: DecisionAction;
+  /** 校准：施加护栏后的最终 8 态动作（决策出口） */
+  finalAction: DecisionAction;
+  /** finalAction 中文标签 */
+  actionLabel: string;
+  /** finalAction 配色语义：涨红跌绿、中性 */
+  actionColor: "up" | "down" | "neutral";
+  /** 护栏原因列表（数据降级 → 决策降级 + 显式原因）；空表示评分与动作一致 */
+  guardrails: GuardrailReason[];
   bullPower: number;
   bearPower: number;
   /** 多头力量占比 0~1 */

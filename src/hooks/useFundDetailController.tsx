@@ -42,6 +42,7 @@ import { detectPatterns, formatPatternsSummary } from "@/services/klinePatterns"
 import { captureSnapshotForFund } from "@/services/backtest/decisionSnapshot";
 import { collectEastmoneyFactors } from "@/services/decision/eastmoneyFactors";
 import { computeMarketRegime } from "@/services/decision/regimeFactor";
+import { buildContextPack, type AnalysisContextPack } from "@/services/decision/contextPack";
 import type { EmFactors, MarketRegime } from "@/services/decision/types";
 import type { DetectedPattern } from "@/services/klinePatterns";
 import { analyzeKline } from "@/services/klineAnalysis";
@@ -149,6 +150,8 @@ export interface FundDetailController {
   handleRefreshQuotes: () => void;
 
   // Prompt / AI
+  /** 分析上下文包（P0-B 数据质量透出）：供 PromptAiCard 的「数据齐备度」面板消费 */
+  contextPack: AnalysisContextPack;
   prompt: string;
   setPrompt: (v: string) => void;
   copied: boolean;
@@ -574,6 +577,38 @@ function useFundDetailController(fundId: string): FundDetailController {
   }, [fund?.code, portfolioRefreshKey]);
 
   // ─── Prompt ───────────────────────────────────
+  /** Analysis Context Pack（P0-B 数据质量透出）：从既有状态构建，喂给 Prompt 与 UI */
+  const contextPack = useMemo<AnalysisContextPack>(() => {
+    const fundQuote = fund ? valuations[fund.code]?.quote : null;
+    const emAvailable =
+      !!emFactors &&
+      (emFactors.capitalFlow.available ||
+        emFactors.sector.available ||
+        emFactors.peerRank.available);
+    return buildContextPack({
+      hasQuote: !!fundQuote,
+      quoteAsOf: quotesAsOf,
+      klineData,
+      isRealKline,
+      hasTechnical: klineData.length > 0,
+      hasFundamental: portfolio != null,
+      fundamentalAsOf: portfolioAsOf,
+      emAvailable,
+      regimeAvailable: regime != null,
+      hasNews: false,
+    });
+  }, [
+    fund,
+    valuations,
+    quotesAsOf,
+    klineData,
+    isRealKline,
+    portfolio,
+    portfolioAsOf,
+    emFactors,
+    regime,
+  ]);
+
   /** 依据当前模板类型与时间序列构建分析 Prompt（供「生成」与「直接调用 AI」复用） */
   const buildPrompt = useCallback(() => {
     const etfMappingsForFund = etfMappings.filter((m) => m.otcCode === fund?.code);
@@ -593,8 +628,18 @@ function useFundDetailController(fundId: string): FundDetailController {
       alerts,
       klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
       strategies: getStrategiesByIds(selectedStrategyIds),
+      contextPack,
     });
-  }, [fund, templateType, valuations, etfMappings, alerts, klineData, selectedStrategyIds]);
+  }, [
+    fund,
+    templateType,
+    valuations,
+    etfMappings,
+    alerts,
+    klineData,
+    selectedStrategyIds,
+    contextPack,
+  ]);
 
   const handleGenerate = useCallback(() => {
     const p = buildPrompt();
@@ -624,13 +669,14 @@ function useFundDetailController(fundId: string): FundDetailController {
       alerts,
       klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
       strategies: getStrategiesByIds(selectedStrategyIds),
+      contextPack,
     });
     setPrompt(result);
     setCopied(false);
     setAiResponse("");
     setAiError(null);
     setActiveTab("prompt");
-  }, [fund, valuations, etfMappings, alerts, klineData, selectedStrategyIds]);
+  }, [fund, valuations, etfMappings, alerts, klineData, selectedStrategyIds, contextPack]);
 
   /** 直接调用已配置的 AI 平台，将生成的 Prompt 提交并返回 AI 的回复 */
   const handleCallAI = useCallback(async () => {
@@ -761,6 +807,7 @@ function useFundDetailController(fundId: string): FundDetailController {
     setSelectedStrategyIds,
     toggleStrategy,
     clearStrategies,
+    contextPack,
   };
 }
 

@@ -4,13 +4,28 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import Markdown from "@/components/ui/Markdown";
 import MarkdownModal from "@/components/ui/MarkdownModal";
-import { Sparkles, Copy, CheckCircle, FileText, Maximize2, Loader2, Layers, X } from "lucide-react";
+import {
+  Sparkles,
+  Copy,
+  CheckCircle,
+  FileText,
+  Maximize2,
+  Loader2,
+  Layers,
+  X,
+  Database,
+} from "lucide-react";
 import { useFundDetail, TEMPLATE_HINTS } from "@/hooks/useFundDetailController";
 import {
   STRATEGY_GROUPS,
   STRATEGY_CATEGORY_LABELS,
   STRATEGY_DATA_LABELS,
 } from "@/services/analysisStrategies";
+import type {
+  AnalysisContextPack,
+  ContextBlockStatus,
+  ContextQuality,
+} from "@/services/decision/contextPack";
 
 /** 分析 Prompt 生成 / 直接调用 AI：消费详情控制器，依赖 prompt/ai 状态与 handler */
 export default function PromptAiCard() {
@@ -37,6 +52,7 @@ export default function PromptAiCard() {
     selectedStrategyIds,
     toggleStrategy,
     clearStrategies,
+    contextPack,
   } = useFundDetail();
   if (!fund) return null;
 
@@ -158,6 +174,9 @@ export default function PromptAiCard() {
           )}
         </div>
 
+        {/* 数据齐备度面板（P0-B Analysis Context Pack：透明透出数据缺失/降级，避免模型幻觉） */}
+        <DataCompletenessPanel pack={contextPack} />
+
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "prompt" | "ai")}>
           <TabsList className="w-full">
             <TabsTrigger value="prompt" className="flex-1">
@@ -244,5 +263,57 @@ export default function PromptAiCard() {
         />
       </CardContent>
     </Card>
+  );
+}
+
+/** 单块状态 → 配色（可用=红/绿上行语义的 up；降级=琥珀；缺失/失败=警示红） */
+const STATUS_STYLE: Record<ContextBlockStatus, { label: string; cls: string }> = {
+  available: { label: "可用", cls: "text-up bg-up/10 border-up/30" },
+  missing: { label: "缺失", cls: "text-destructive bg-destructive/10 border-destructive/30" },
+  fallback: { label: "降级", cls: "text-amber-500 bg-amber-500/10 border-amber-500/30" },
+  stale: { label: "过期", cls: "text-amber-500 bg-amber-500/10 border-amber-500/30" },
+  estimated: { label: "估算", cls: "text-amber-500 bg-amber-500/10 border-amber-500/30" },
+  partial: { label: "部分", cls: "text-amber-500 bg-amber-500/10 border-amber-500/30" },
+  fetch_failed: { label: "失败", cls: "text-destructive bg-destructive/10 border-destructive/30" },
+};
+
+const QUALITY_STYLE: Record<ContextQuality, { label: string; cls: string }> = {
+  good: { label: "充足", cls: "text-up bg-up/10 border-up/30" },
+  usable: { label: "可用", cls: "text-up bg-up/10 border-up/30" },
+  limited: { label: "有限", cls: "text-amber-500 bg-amber-500/10 border-amber-500/30" },
+  poor: { label: "不足", cls: "text-destructive bg-destructive/10 border-destructive/30" },
+};
+
+/** 数据齐备度面板：消费控制器构建的 AnalysisContextPack，透明展示各数据块状态与整体质量 */
+function DataCompletenessPanel({ pack }: { pack: AnalysisContextPack }) {
+  const q = QUALITY_STYLE[pack.quality];
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-medium flex items-center gap-1 text-foreground/80">
+          <Database className="h-3 w-3" />
+          数据齐备度
+        </span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${q.cls}`} title={pack.summary}>
+          整体 {q.label}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {pack.blocks.map((b) => {
+          const s = STATUS_STYLE[b.status];
+          return (
+            <span
+              key={b.key}
+              title={b.detail}
+              aria-label={`${b.label}：${s.label}${b.detail ? `，${b.detail}` : ""}`}
+              className={`text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 transition-colors ${s.cls}`}
+            >
+              {b.label}
+              <span className="opacity-70">{s.label}</span>
+            </span>
+          );
+        })}
+      </div>
+    </div>
   );
 }
