@@ -7,10 +7,10 @@
  * @module eastmoneySdk
  */
 
-import StockSDK from 'stock-sdk'
-import type { EastmoneyDataSourceConfig } from '@/types'
+import StockSDK from "stock-sdk";
+import type { EastmoneyDataSourceConfig } from "@/types";
 
-const EASTMONEY_HOST_RE = /^https?:\/\/([^/?#]+\.)*eastmoney\.com/i
+const EASTMONEY_HOST_RE = /^https?:\/\/([^/?#]+\.)*eastmoney\.com/i;
 
 /**
  * 构建带可选 Worker 代理的 StockSDK 实例。
@@ -19,19 +19,25 @@ const EASTMONEY_HOST_RE = /^https?:\/\/([^/?#]+\.)*eastmoney\.com/i
  * - 否则：直连东财（当前用户网络已实测可达，无需 Worker）。
  */
 export function buildEastmoneySdk(config: EastmoneyDataSourceConfig): StockSDK {
-  if (config.mode === 'proxy' && config.proxyUrl) {
-    const proxyBase = config.proxyUrl.replace(/\/+$/, '')
+  if (config.mode === "proxy" && config.proxyUrl) {
+    const proxyBase = config.proxyUrl.replace(/\/+$/, "");
     const proxyFetch: typeof fetch = async (input, init) => {
-      const url =
-        typeof input === 'string'
-          ? input
-          : input instanceof URL
-            ? input.href
-            : (input as Request).url
-      const rewritten = EASTMONEY_HOST_RE.test(url) ? url.replace(EASTMONEY_HOST_RE, proxyBase) : url
-      return fetch(rewritten, init)
-    }
-    return new StockSDK({ fetchImpl: proxyFetch } as any)
+      let url: string;
+      if (typeof input === "string") url = input;
+      else if (input instanceof URL) url = input.href;
+      else return fetch(input as Request, init); // Request 对象透传（stock-sdk 一般不走此分支）
+
+      if (EASTMONEY_HOST_RE.test(url)) {
+        // 把原始东财 host 通过请求头带给 Worker，Worker 据此转发到正确的上游
+        const origHost = new URL(url).host;
+        const headers = new Headers(init?.headers);
+        headers.set("x-upstream-host", origHost);
+        const rewritten = url.replace(EASTMONEY_HOST_RE, proxyBase);
+        return fetch(rewritten, { ...init, headers });
+      }
+      return fetch(url, init);
+    };
+    return new StockSDK({ fetchImpl: proxyFetch } as any);
   }
-  return new StockSDK()
+  return new StockSDK();
 }

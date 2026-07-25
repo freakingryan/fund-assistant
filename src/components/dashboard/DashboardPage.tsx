@@ -1,202 +1,285 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useHoldingsStore } from '@/stores/holdings'
-import { usePlansStore } from '@/stores/plans'
-import { useSettingsStore } from '@/stores/settings'
-import { dataSourceService } from '@/adapters/datasource/service'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { useEffect, useState, useMemo, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useHoldingsStore } from "@/stores/holdings";
+import { usePlansStore } from "@/stores/plans";
+import { useSettingsStore } from "@/stores/settings";
+import { dataSourceService } from "@/adapters/datasource/service";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Legend,
-} from 'recharts'
+  PieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 import {
-  TrendingUp, Wallet, BarChart3, PieChartIcon,
-  DollarSign, Percent, Loader2, AlertCircle,
-} from 'lucide-react'
-import type { FundQuote, FundHolding } from '@/types'
-import { calcValue, calcCost, pnlColor, formatPercent } from '@/lib/format'
-import { TYPE_LABELS, SECTOR_LABELS } from '@/lib/labels'
-import { RefreshButton } from '@/components/ui/refresh-button'
-import { toast } from '@/components/ui/toast'
-import { getKlineCache, setKlineCache, getQuotesCache, setQuotesCache, deleteQuotesCache, getQuotesCacheTime, formatCacheTime } from '@/services/klineCache'
-import RealtimePanel from './RealtimePanel'
-import BacktestSummaryCard from './BacktestSummaryCard'
+  TrendingUp,
+  Wallet,
+  BarChart3,
+  PieChartIcon,
+  DollarSign,
+  Percent,
+  Loader2,
+  AlertCircle,
+} from "lucide-react";
+import type { FundQuote, FundHolding } from "@/types";
+import { calcValue, calcCost, pnlColor, formatPercent } from "@/lib/format";
+import { TYPE_LABELS, SECTOR_LABELS } from "@/lib/labels";
+import { RefreshButton } from "@/components/ui/refresh-button";
+import { toast } from "@/components/ui/toast";
+import {
+  getKlineCache,
+  setKlineCache,
+  getQuotesCache,
+  setQuotesCache,
+  deleteQuotesCache,
+  getQuotesCacheTime,
+} from "@/services/klineCache";
+import { asOfFromQuotes } from "@/lib/dataTime";
+import DataAsOf from "@/components/ui/DataAsOf";
+import RealtimePanel from "./RealtimePanel";
+import BacktestSummaryCard from "./BacktestSummaryCard";
 
 const TYPE_COLORS: Record<string, string> = {
-  stock: '#ef4444', mixed: '#f97316', bond: '#22c55e', index: '#3b82f6',
-  qdii: '#a855f7', money: '#06b6d4', etf: '#eab308', other: '#6b7280',
-}
-const SECTOR_COLORS = ['#3b82f6','#ef4444','#22c55e','#f97316','#a855f7','#06b6d4','#eab308','#ec4899','#8b5cf6','#10b981','#f43f5e','#6b7280']
+  stock: "#ef4444",
+  mixed: "#f97316",
+  bond: "#22c55e",
+  index: "#3b82f6",
+  qdii: "#a855f7",
+  money: "#06b6d4",
+  etf: "#eab308",
+  other: "#6b7280",
+};
+const SECTOR_COLORS = [
+  "#3b82f6",
+  "#ef4444",
+  "#22c55e",
+  "#f97316",
+  "#a855f7",
+  "#06b6d4",
+  "#eab308",
+  "#ec4899",
+  "#8b5cf6",
+  "#10b981",
+  "#f43f5e",
+  "#6b7280",
+];
 
 export default function DashboardPage() {
-  const holdings = useHoldingsStore((s) => s.holdings)
-  const loadHoldings = useHoldingsStore((s) => s.loadHoldings)
-  const loading = useHoldingsStore((s) => s.loading)
-  const etfMappings = useSettingsStore((s) => s.settings.etfMappings)
-  const alerts = usePlansStore((s) => s.alerts)
-  const loadAlerts = usePlansStore((s) => s.loadAlerts)
-  const markAlertExecuted = usePlansStore((s) => s.markAlertExecuted)
-  const dismissAlert = usePlansStore((s) => s.dismissAlert)
-  const navigate = useNavigate()
+  const holdings = useHoldingsStore((s) => s.holdings);
+  const loadHoldings = useHoldingsStore((s) => s.loadHoldings);
+  const loading = useHoldingsStore((s) => s.loading);
+  const etfMappings = useSettingsStore((s) => s.settings.etfMappings);
+  const alerts = usePlansStore((s) => s.alerts);
+  const loadAlerts = usePlansStore((s) => s.loadAlerts);
+  const markAlertExecuted = usePlansStore((s) => s.markAlertExecuted);
+  const dismissAlert = usePlansStore((s) => s.dismissAlert);
+  const navigate = useNavigate();
 
-  const [quotes, setQuotes] = useState<FundQuote[]>([])
-  const [quotesLoading, setQuotesLoading] = useState(false)
-  const [quotesRefreshing, setQuotesRefreshing] = useState(false)
-  const [selectedFund] = useState<FundHolding | null>(null)
-  const [selectedPeriod] = useState('3m')
-  const [, setKlineData] = useState<any[]>([])
-  const [, setKlineLoading] = useState(false)
-  const [useEtfKline] = useState(true)
-  const [quotesUpdateTime, setQuotesUpdateTime] = useState<string | null>(null)
+  const [quotes, setQuotes] = useState<FundQuote[]>([]);
+  const [quotesLoading, setQuotesLoading] = useState(false);
+  const [quotesRefreshing, setQuotesRefreshing] = useState(false);
+  const [selectedFund] = useState<FundHolding | null>(null);
+  const [selectedPeriod] = useState("3m");
+  const [, setKlineData] = useState<any[]>([]);
+  const [, setKlineLoading] = useState(false);
+  const [useEtfKline] = useState(true);
+  const [quotesFetchedAt, setQuotesFetchedAt] = useState<number | null>(null);
+  const quotesAsOf = useMemo(() => asOfFromQuotes(quotes), [quotes]);
 
   // 当前选中基金的场内 ETF 映射代码
   const etfCode = useMemo(() => {
-    if (!selectedFund) return null
-    const m = etfMappings.find((mapping) => mapping.otcCode === selectedFund.code)
-    return m?.exchangeCode || null
-  }, [selectedFund, etfMappings])
+    if (!selectedFund) return null;
+    const m = etfMappings.find((mapping) => mapping.otcCode === selectedFund.code);
+    return m?.exchangeCode || null;
+  }, [selectedFund, etfMappings]);
 
-  useEffect(() => { loadHoldings() }, [loadHoldings])
-  useEffect(() => { loadAlerts() }, [loadAlerts])
+  useEffect(() => {
+    loadHoldings();
+  }, [loadHoldings]);
+  useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
 
-  /** 尝试读取行情更新时间 */
+  /** 尝试读取行情缓存时间（调用接口 / 缓存写入时间） */
   const updateQuotesTime = useCallback(async () => {
-    if (holdings.length === 0) return
-    const codes = holdings.map((h) => h.code)
-    const ts = await getQuotesCacheTime(codes)
-    setQuotesUpdateTime(ts ? formatCacheTime(ts) : null)
-  }, [holdings])
+    if (holdings.length === 0) return;
+    const codes = holdings.map((h) => h.code);
+    const ts = await getQuotesCacheTime(codes);
+    setQuotesFetchedAt(ts);
+  }, [holdings]);
 
-  // 初始加载时也获取更新时间
-  useEffect(() => { if (!quotesUpdateTime) { updateQuotesTime().catch(() => {}) } }, [updateQuotesTime, quotesUpdateTime])
+  // 初始加载时也获取缓存时间
+  useEffect(() => {
+    if (!quotesFetchedAt) {
+      updateQuotesTime().catch(() => {});
+    }
+  }, [updateQuotesTime, quotesFetchedAt]);
 
   // Load quotes（带缓存 + 手动刷新）
-  const loadQuotes = useCallback(async (force = false) => {
-    if (holdings.length === 0) return
-    const codes = holdings.map((h) => h.code)
-    setQuotesLoading(true)
+  const loadQuotes = useCallback(
+    async (force = false) => {
+      if (holdings.length === 0) return;
+      const codes = holdings.map((h) => h.code);
+      setQuotesLoading(true);
 
-    if (!force) {
-      const cached = await getQuotesCache(codes)
-      if (cached?.quotes?.length) {
-        setQuotes(cached.quotes as FundQuote[])
-        setQuotesLoading(false)
-        return
+      if (!force) {
+        const cached = await getQuotesCache(codes);
+        if (cached?.quotes?.length) {
+          setQuotes(cached.quotes as FundQuote[]);
+          setQuotesLoading(false);
+          return;
+        }
       }
-    }
 
-    try {
-      const data = await dataSourceService.fetchQuotes(codes)
-      setQuotes(data)
-      if (data.length > 0) setQuotesCache(codes, data)
-    } catch {
-      toast({ type: 'error', message: '行情加载失败，已展示缓存数据' })
-    }
-    setQuotesLoading(false)
-  }, [holdings])
+      try {
+        const data = await dataSourceService.fetchQuotes(codes);
+        setQuotes(data);
+        if (data.length > 0) setQuotesCache(codes, data);
+      } catch {
+        toast({ type: "error", message: "行情加载失败，已展示缓存数据" });
+      }
+      setQuotesLoading(false);
+    },
+    [holdings],
+  );
 
-  useEffect(() => { loadQuotes().catch(() => {}) }, [loadQuotes])
+  useEffect(() => {
+    loadQuotes().catch(() => {});
+  }, [loadQuotes]);
 
   // Load K-line for selected fund — 优先使用缓存 + 场内 ETF 真实 K 线（带安全超时）
   useEffect(() => {
-    if (!selectedFund) return
-    let cancelled = false
-    setKlineLoading(true)
+    if (!selectedFund) return;
+    let cancelled = false;
+    setKlineLoading(true);
 
-    const timer = setTimeout(() => { if (!cancelled) setKlineLoading(false) }, 15000)
+    const timer = setTimeout(() => {
+      if (!cancelled) setKlineLoading(false);
+    }, 15000);
 
     const loadKline = async () => {
-      const etfCacheKey = `etf_${etfCode}`
-      const navCacheKey = selectedFund.code
-      const _cacheKey = useEtfKline ? etfCacheKey : navCacheKey
+      const etfCacheKey = `etf_${etfCode}`;
+      const navCacheKey = selectedFund.code;
+      const _cacheKey = useEtfKline ? etfCacheKey : navCacheKey;
 
       const [cached, navCached] = await Promise.all([
         getKlineCache(etfCacheKey, selectedPeriod),
         getKlineCache(navCacheKey, selectedPeriod),
-      ])
+      ]);
       if (!cancelled) {
-        if (useEtfKline && cached?.length) { clearTimeout(timer); setKlineData(cached); setKlineLoading(false); return }
-        if (!useEtfKline && navCached?.length) { clearTimeout(timer); setKlineData(navCached); setKlineLoading(false); return }
+        if (useEtfKline && cached?.length) {
+          clearTimeout(timer);
+          setKlineData(cached);
+          setKlineLoading(false);
+          return;
+        }
+        if (!useEtfKline && navCached?.length) {
+          clearTimeout(timer);
+          setKlineData(navCached);
+          setKlineLoading(false);
+          return;
+        }
       }
 
       const [etfData, navData] = await Promise.all([
         etfCode ? dataSourceService.fetchEtfKLine(etfCode, selectedPeriod) : Promise.resolve([]),
         dataSourceService.fetchKLine(selectedFund.code, selectedPeriod),
-      ])
+      ]);
       if (!cancelled) {
-        if (etfData.length > 0) setKlineCache(etfCacheKey, selectedPeriod, etfData)
-        if (navData.length > 0) setKlineCache(navCacheKey, selectedPeriod, navData)
-        clearTimeout(timer)
-        setKlineData(useEtfKline && etfData.length > 0 ? etfData : navData)
-        setKlineLoading(false)
+        if (etfData.length > 0) setKlineCache(etfCacheKey, selectedPeriod, etfData);
+        if (navData.length > 0) setKlineCache(navCacheKey, selectedPeriod, navData);
+        clearTimeout(timer);
+        setKlineData(useEtfKline && etfData.length > 0 ? etfData : navData);
+        setKlineLoading(false);
       }
-    }
-    loadKline()
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [selectedFund, selectedPeriod, etfCode, useEtfKline])
+    };
+    loadKline();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [selectedFund, selectedPeriod, etfCode, useEtfKline]);
 
   // 手动刷新行情
   const handleRefreshQuotes = async () => {
-    setQuotesRefreshing(true)
-    await deleteQuotesCache()
-    await loadQuotes(true)
-    setQuotesUpdateTime(null)
-    await updateQuotesTime()
-    setQuotesRefreshing(false)
-  }
+    setQuotesRefreshing(true);
+    await deleteQuotesCache();
+    await loadQuotes(true);
+    setQuotesFetchedAt(null);
+    await updateQuotesTime();
+    setQuotesRefreshing(false);
+  };
 
   // Calc summary
   const summary = useMemo(() => {
-    const totalValue = holdings.reduce((s, h) => s + calcValue(h), 0)
-    const totalCost = holdings.reduce((s, h) => s + calcCost(h), 0)
-    const totalProfit = totalValue - totalCost
-    const avgReturn = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0
+    const totalValue = holdings.reduce((s, h) => s + calcValue(h), 0);
+    const totalCost = holdings.reduce((s, h) => s + calcCost(h), 0);
+    const totalProfit = totalValue - totalCost;
+    const avgReturn = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
     // C2 fix: 确保 totalValue > 0 才计算，正确换算为百分比
-    const todayChange = totalValue > 0 && quotes.length > 0
-      ? holdings.reduce((s, h) => {
-          const q = quotes.find((quote) => quote.code === h.code)
-          return s + (q ? calcValue(h) * q.dailyChange / 100 : 0)
-        }, 0) / totalValue * 100
-      : 0
-    return { totalValue, totalCost, totalProfit, avgReturn, todayChange }
-  }, [holdings, quotes])
+    const todayChange =
+      totalValue > 0 && quotes.length > 0
+        ? (holdings.reduce((s, h) => {
+            const q = quotes.find((quote) => quote.code === h.code);
+            return s + (q ? (calcValue(h) * q.dailyChange) / 100 : 0);
+          }, 0) /
+            totalValue) *
+          100
+        : 0;
+    return { totalValue, totalCost, totalProfit, avgReturn, todayChange };
+  }, [holdings, quotes]);
 
   // Distribution data
   const typeDistribution = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, number>();
     for (const h of holdings) {
-      map.set(h.type, (map.get(h.type) || 0) + calcValue(h))
+      map.set(h.type, (map.get(h.type) || 0) + calcValue(h));
     }
     return Array.from(map.entries()).map(([type, value]) => ({
-      name: TYPE_LABELS[type] || type, value, type,
-    }))
-  }, [holdings])
+      name: TYPE_LABELS[type] || type,
+      value,
+      type,
+    }));
+  }, [holdings]);
 
   const sectorDistribution = useMemo(() => {
-    const map = new Map<string, number>()
+    const map = new Map<string, number>();
     for (const h of holdings) {
-      map.set(h.sector, (map.get(h.sector) || 0) + calcValue(h))
+      map.set(h.sector, (map.get(h.sector) || 0) + calcValue(h));
     }
     return Array.from(map.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([sector, value]) => ({
-        name: SECTOR_LABELS[sector] || sector, value,
-      }))
-  }, [holdings])
+        name: SECTOR_LABELS[sector] || sector,
+        value,
+      }));
+  }, [holdings]);
 
   const topHoldings = useMemo(() => {
     return holdings
       .map((h) => ({ name: h.name || h.code, value: calcValue(h), code: h.code }))
       .sort((a, b) => b.value - a.value)
-      .slice(0, 10)
-  }, [holdings])
+      .slice(0, 10);
+  }, [holdings]);
 
-  const formatCurrency = (v: number) => `¥${Math.abs(v).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-  const dataSourceLabel = 'stock-api 实时行情'
+  const formatCurrency = (v: number) =>
+    `¥${Math.abs(v).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const dataSourceLabel = "stock-api 实时行情";
 
   if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   if (holdings.length === 0) {
@@ -213,7 +296,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -224,9 +307,11 @@ export default function DashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight">数据看板</h1>
           <div className="text-sm text-muted-foreground mt-1">
             持仓总览 · 共 {holdings.length} 只基金
-            <Badge variant="outline" className="ml-2 text-[10px]">{dataSourceLabel}</Badge>
+            <Badge variant="outline" className="ml-2 text-[10px]">
+              {dataSourceLabel}
+            </Badge>
             {quotesLoading && <Loader2 className="h-3 w-3 inline ml-1 animate-spin" />}
-            {quotesUpdateTime && <span className="text-[10px] text-muted-foreground ml-2">数据更新于 {quotesUpdateTime}</span>}
+            <DataAsOf asOf={quotesAsOf} fetchedAt={quotesFetchedAt} inline />
           </div>
         </div>
         <RefreshButton onClick={handleRefreshQuotes} loading={quotesRefreshing} label="刷新数据" />
@@ -237,7 +322,8 @@ export default function DashboardPage() {
         <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <DollarSign className="h-3 w-3" />持仓市值
+              <DollarSign className="h-3 w-3" />
+              持仓市值
             </div>
             <p className="text-xl font-bold tracking-tight">{formatCurrency(summary.totalValue)}</p>
           </CardContent>
@@ -246,10 +332,12 @@ export default function DashboardPage() {
         <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <TrendingUp className="h-3 w-3" />持仓盈亏
+              <TrendingUp className="h-3 w-3" />
+              持仓盈亏
             </div>
             <p className={`text-xl font-bold tracking-tight ${pnlColor(summary.totalProfit)}`}>
-              {summary.totalProfit >= 0 ? '+' : '-'}{formatCurrency(summary.totalProfit)}
+              {summary.totalProfit >= 0 ? "+" : "-"}
+              {formatCurrency(summary.totalProfit)}
             </p>
           </CardContent>
         </Card>
@@ -257,7 +345,8 @@ export default function DashboardPage() {
         <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <Percent className="h-3 w-3" />持仓收益率
+              <Percent className="h-3 w-3" />
+              持仓收益率
             </div>
             <p className={`text-xl font-bold tracking-tight ${pnlColor(summary.avgReturn)}`}>
               {formatPercent(summary.avgReturn)}
@@ -268,7 +357,8 @@ export default function DashboardPage() {
         <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <BarChart3 className="h-3 w-3" />今日涨跌
+              <BarChart3 className="h-3 w-3" />
+              今日涨跌
             </div>
             <p className={`text-xl font-bold tracking-tight ${pnlColor(summary.todayChange)}`}>
               {formatPercent(summary.todayChange)}
@@ -279,9 +369,13 @@ export default function DashboardPage() {
         <Card className="card-hover">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-              <PieChartIcon className="h-3 w-3" />持仓基金
+              <PieChartIcon className="h-3 w-3" />
+              持仓基金
             </div>
-            <p className="text-xl font-bold tracking-tight whitespace-nowrap">{holdings.length}<span className="text-xs text-muted-foreground font-normal ml-1">只</span></p>
+            <p className="text-xl font-bold tracking-tight whitespace-nowrap">
+              {holdings.length}
+              <span className="text-xs text-muted-foreground font-normal ml-1">只</span>
+            </p>
           </CardContent>
         </Card>
 
@@ -303,12 +397,15 @@ export default function DashboardPage() {
               <PieChart>
                 <Pie
                   data={typeDistribution}
-                  cx="50%" cy="50%"
-                  innerRadius={60} outerRadius={90}
-                  paddingAngle={2} dataKey="value"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={90}
+                  paddingAngle={2}
+                  dataKey="value"
                 >
                   {typeDistribution.map((entry, i) => (
-                    <Cell key={i} fill={TYPE_COLORS[entry.type] || '#6b7280'} />
+                    <Cell key={i} fill={TYPE_COLORS[entry.type] || "#6b7280"} />
                   ))}
                 </Pie>
                 <Tooltip formatter={(v: any) => formatCurrency(Number(v) || 0)} />
@@ -325,9 +422,17 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={sectorDistribution} layout="vertical" margin={{ left: 50, right: 20 }}>
+              <BarChart
+                data={sectorDistribution}
+                layout="vertical"
+                margin={{ left: 50, right: 20 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => formatCurrency(v)} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(v) => formatCurrency(v)}
+                />
                 <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={50} />
                 <Tooltip formatter={(v: any) => formatCurrency(Number(v) || 0)} />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]}>
@@ -351,12 +456,15 @@ export default function DashboardPage() {
           <CardContent>
             <div className="space-y-1">
               {holdings.slice(0, 5).map((h) => (
-                <div key={h.id}
-                  onClick={() => navigate('/detail/' + h.id)}
+                <div
+                  key={h.id}
+                  onClick={() => navigate("/detail/" + h.id)}
                   className="flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="font-mono text-[10px] text-muted-foreground shrink-0">{h.code}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                      {h.code}
+                    </span>
                     <span className="text-xs truncate">{h.name || h.code}</span>
                   </div>
                   <span className="text-[10px] text-muted-foreground shrink-0">查看详情 →</span>
@@ -407,26 +515,45 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {alerts.filter((a) => !a.executed && !a.dismissed).slice(0, 5).map((alert) => (
-                <div key={alert.id} className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/50 text-xs">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <span className="font-mono shrink-0">{alert.fundCode}</span>
-                    <span className="truncate max-w-[120px]">{alert.fundName}</span>
-                    <Badge variant={alert.action === 'buy' ? 'default' : 'secondary'} className="text-[10px] shrink-0">
-                      {alert.action === 'buy' ? '买入' : '卖出'}
-                    </Badge>
-                    <span className="text-muted-foreground truncate">{alert.reason}</span>
+              {alerts
+                .filter((a) => !a.executed && !a.dismissed)
+                .slice(0, 5)
+                .map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="flex items-center justify-between py-1 px-2 rounded hover:bg-muted/50 text-xs"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="font-mono shrink-0">{alert.fundCode}</span>
+                      <span className="truncate max-w-[120px]">{alert.fundName}</span>
+                      <Badge
+                        variant={alert.action === "buy" ? "default" : "secondary"}
+                        className="text-[10px] shrink-0"
+                      >
+                        {alert.action === "buy" ? "买入" : "卖出"}
+                      </Badge>
+                      <span className="text-muted-foreground truncate">{alert.reason}</span>
+                    </div>
+                    <div className="flex gap-1 shrink-0 ml-2">
+                      <button
+                        className="text-green-600 hover:text-green-700 text-[10px]"
+                        onClick={() => markAlertExecuted(alert.id)}
+                      >
+                        执行
+                      </button>
+                      <button
+                        className="text-muted-foreground hover:text-foreground text-[10px]"
+                        onClick={() => dismissAlert(alert.id)}
+                      >
+                        忽略
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-1 shrink-0 ml-2">
-                    <button className="text-green-600 hover:text-green-700 text-[10px]" onClick={() => markAlertExecuted(alert.id)}>执行</button>
-                    <button className="text-muted-foreground hover:text-foreground text-[10px]" onClick={() => dismissAlert(alert.id)}>忽略</button>
-                  </div>
-                </div>
-              ))}
+                ))}
             </div>
           </CardContent>
         </Card>
       )}
     </div>
-  )
+  );
 }

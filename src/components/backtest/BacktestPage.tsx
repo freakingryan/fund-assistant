@@ -7,156 +7,204 @@
  * @module backtest/BacktestPage
  */
 
-import { useEffect, useMemo, useState, useCallback, Fragment, useRef } from 'react'
-import { captureDailySnapshots, reconcileSnapshots, getAllSnapshots, localDateKey } from '@/services/backtest/decisionSnapshot'
-import { computeBacktestStats, computeDailyAccuracySeries, recommendationLabel, outcomeLabel } from '@/services/backtest/stats'
-import type { Recommendation, ScoreSnapshot } from '@/services/backtest/types'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Loader2, BarChart3, Download, RefreshCw, Camera } from 'lucide-react'
-import { toast } from '@/components/ui/toast'
-import ScoreScatterChart from './ScoreScatterChart'
-import AccuracyBucketChart from './AccuracyBucketChart'
-import DailyAccuracyTrendChart from './DailyAccuracyTrendChart'
-import AiAnalysisPanel from './AiAnalysisPanel'
+import { useEffect, useMemo, useState, useCallback, Fragment, useRef } from "react";
+import {
+  captureDailySnapshots,
+  reconcileSnapshots,
+  getAllSnapshots,
+  localDateKey,
+} from "@/services/backtest/decisionSnapshot";
+import {
+  computeBacktestStats,
+  computeDailyAccuracySeries,
+  recommendationLabel,
+  outcomeLabel,
+} from "@/services/backtest/stats";
+import type { SourceAccuracy } from "@/services/backtest/stats";
+import type { Recommendation, ScoreSnapshot } from "@/services/backtest/types";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Loader2, BarChart3, Download, RefreshCw, Camera } from "lucide-react";
+import { toast } from "@/components/ui/toast";
+import ScoreScatterChart from "./ScoreScatterChart";
+import AccuracyBucketChart from "./AccuracyBucketChart";
+import DailyAccuracyTrendChart from "./DailyAccuracyTrendChart";
+import AiAnalysisPanel from "./AiAnalysisPanel";
 
 const REC_COLOR: Record<Recommendation, string> = {
-  buy: 'text-up bg-up/10 border-up/30',
-  hold: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
-  sell: 'text-down bg-down/10 border-down/30',
-}
-const OUTCOME_COLOR: Record<ScoreSnapshot['outcome'], string> = {
-  pending: 'text-muted-foreground bg-muted/40 border-border/40',
-  correct: 'text-up bg-up/10 border-up/30',
-  wrong: 'text-down bg-down/10 border-down/30',
-  neutral: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
-  unknown: 'text-muted-foreground bg-muted/40 border-border/40',
-}
+  buy: "text-up bg-up/10 border-up/30",
+  hold: "text-amber-500 bg-amber-500/10 border-amber-500/30",
+  sell: "text-down bg-down/10 border-down/30",
+};
+const OUTCOME_COLOR: Record<ScoreSnapshot["outcome"], string> = {
+  pending: "text-muted-foreground bg-muted/40 border-border/40",
+  correct: "text-up bg-up/10 border-up/30",
+  wrong: "text-down bg-down/10 border-down/30",
+  neutral: "text-amber-500 bg-amber-500/10 border-amber-500/30",
+  unknown: "text-muted-foreground bg-muted/40 border-border/40",
+};
 
 function fmtPct(v: number | null): string {
-  if (v == null) return '-'
-  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`
+  if (v == null) return "-";
+  return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 }
 function fmtRate(v: number | null): string {
-  if (v == null) return '-'
-  return `${(v * 100).toFixed(1)}%`
+  if (v == null) return "-";
+  return `${(v * 100).toFixed(1)}%`;
 }
 
 export default function BacktestPage() {
-  const [snapshots, setSnapshots] = useState<ScoreSnapshot[]>([])
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<null | 'capture' | 'reconcile'>(null)
-  const [recFilter, setRecFilter] = useState<'all' | Recommendation>('all')
-  const [outcomeFilter, setOutcomeFilter] = useState<'all' | ScoreSnapshot['outcome']>('all')
-  const [dateFilter, setDateFilter] = useState<'all' | string>('all')
+  const [snapshots, setSnapshots] = useState<ScoreSnapshot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<null | "capture" | "reconcile">(null);
+  const [recFilter, setRecFilter] = useState<"all" | Recommendation>("all");
+  const [outcomeFilter, setOutcomeFilter] = useState<"all" | ScoreSnapshot["outcome"]>("all");
+  const [dateFilter, setDateFilter] = useState<"all" | string>("all");
   // 首次加载后将明细默认聚焦「当日」（无当日数据则回退到最近一个交易日），而非全部日期平铺
-  const initialDateSet = useRef(false)
+  const initialDateSet = useRef(false);
 
   const load = useCallback(async () => {
-    const data = await getAllSnapshots()
-    setSnapshots(data)
+    const data = await getAllSnapshots();
+    setSnapshots(data);
     if (!initialDateSet.current) {
-      const set = new Set(data.map((s) => s.date))
-      const today = localDateKey()
-      const latest = Array.from(set).sort((a, b) => (a < b ? 1 : -1))[0]
-      setDateFilter(set.has(today) ? today : (latest ?? 'all'))
-      initialDateSet.current = true
+      const set = new Set(data.map((s) => s.date));
+      const today = localDateKey();
+      const latest = Array.from(set).sort((a, b) => (a < b ? 1 : -1))[0];
+      setDateFilter(set.has(today) ? today : (latest ?? "all"));
+      initialDateSet.current = true;
     }
-    setLoading(false)
-  }, [])
+    setLoading(false);
+  }, []);
 
-  useEffect(() => { load().catch(() => setLoading(false)) }, [load]) // eslint-disable-line react-hooks/set-state-in-effect
+  useEffect(() => {
+    load().catch(() => setLoading(false));
+  }, [load]); // eslint-disable-line react-hooks/set-state-in-effect
 
-  const stats = useMemo(() => computeBacktestStats(snapshots), [snapshots])
-  const daily = useMemo(() => computeDailyAccuracySeries(snapshots), [snapshots])
+  const stats = useMemo(() => computeBacktestStats(snapshots), [snapshots]);
+  const daily = useMemo(() => computeDailyAccuracySeries(snapshots), [snapshots]);
 
   // 明细表日期筛选选项：全部有快照的交易日（降序）
   const dateOptions = useMemo(() => {
-    const set = new Set(snapshots.map((s) => s.date))
-    return Array.from(set).sort((a, b) => (a < b ? 1 : -1))
-  }, [snapshots])
+    const set = new Set(snapshots.map((s) => s.date));
+    return Array.from(set).sort((a, b) => (a < b ? 1 : -1));
+  }, [snapshots]);
 
   const filtered = useMemo(
-    () => snapshots.filter(
-      (s) => (recFilter === 'all' || s.recommendation === recFilter)
-        && (outcomeFilter === 'all' || s.outcome === outcomeFilter)
-        && (dateFilter === 'all' || s.date === dateFilter),
-    ),
+    () =>
+      snapshots.filter(
+        (s) =>
+          (recFilter === "all" || s.recommendation === recFilter) &&
+          (outcomeFilter === "all" || s.outcome === outcomeFilter) &&
+          (dateFilter === "all" || s.date === dateFilter),
+      ),
     [snapshots, recFilter, outcomeFilter, dateFilter],
-  )
+  );
 
   // 明细表按日期分组（降序），便于「按日期浏览」而非所有日期平铺一页
   const groupedByDate = useMemo(() => {
-    const map = new Map<string, ScoreSnapshot[]>()
+    const map = new Map<string, ScoreSnapshot[]>();
     for (const s of filtered) {
-      const arr = map.get(s.date)
-      if (arr) arr.push(s)
-      else map.set(s.date, [s])
+      const arr = map.get(s.date);
+      if (arr) arr.push(s);
+      else map.set(s.date, [s]);
     }
     return Array.from(map.entries())
       .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-      .map(([date, rows]) => ({ date, rows }))
-  }, [filtered])
+      .map(([date, rows]) => ({ date, rows }));
+  }, [filtered]);
 
   // 是否存在「ETF/个股类且仍待回填」的快照——用于针对性提示时间差成因
   const hasPendingEtf = useMemo(
-    () => snapshots.some((s) => s.outcome === 'pending' && s.valueSource === 'etf'),
+    () => snapshots.some((s) => s.outcome === "pending" && s.valueSource === "etf"),
     [snapshots],
-  )
+  );
 
   const handleCapture = async () => {
-    setBusy('capture')
+    setBusy("capture");
     try {
-      const n = await captureDailySnapshots(true)
-      toast({ type: 'success', message: n > 0 ? `已记录 ${n} 只基金今日评分` : '今日评分已存在或无可用 K 线数据' })
-      await load()
+      const n = await captureDailySnapshots(true);
+      toast({
+        type: "success",
+        message: n > 0 ? `已记录 ${n} 只基金今日评分` : "今日评分已存在或无可用 K 线数据",
+      });
+      await load();
     } catch {
-      toast({ type: 'error', message: '采集失败' })
+      toast({ type: "error", message: "采集失败" });
     }
-    setBusy(null)
-  }
+    setBusy(null);
+  };
 
   const handleReconcile = async () => {
-    setBusy('reconcile')
+    setBusy("reconcile");
     try {
-      const n = await reconcileSnapshots()
-      toast({ type: 'success', message: n > 0 ? `已回填 ${n} 条次日涨跌` : '暂无可回填数据' })
-      await load()
+      const n = await reconcileSnapshots();
+      toast({ type: "success", message: n > 0 ? `已回填 ${n} 条次日涨跌` : "暂无可回填数据" });
+      await load();
     } catch {
-      toast({ type: 'error', message: '回填失败' })
+      toast({ type: "error", message: "回填失败" });
     }
-    setBusy(null)
-  }
+    setBusy(null);
+  };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(snapshots, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `score-backtest-${new Date().toISOString().slice(0, 10)}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+    const blob = new Blob([JSON.stringify(snapshots, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `score-backtest-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handleExportCsv = () => {
-    const header = ['日期', '基金代码', '基金名称', '评分', '评级', '建议', '收盘值', '来源', '次日日期', '次日涨跌%', '结果', '多空比', '冲突']
+    const header = [
+      "日期",
+      "基金代码",
+      "基金名称",
+      "评分",
+      "评级",
+      "建议",
+      "收盘值",
+      "来源",
+      "次日日期",
+      "次日涨跌%",
+      "结果",
+      "多空比",
+      "冲突",
+    ];
     const rows = snapshots.map((s) => [
-      s.date, s.fundCode, s.fundName, s.score, s.ratingLabel, recommendationLabel(s.recommendation),
-      s.closeValue ?? '', s.valueSource, s.nextDate ?? '', s.nextChangePct?.toFixed(2) ?? '', outcomeLabel(s.outcome),
-      s.bullRatio.toFixed(2), s.conflict ? '是' : '否',
-    ])
-    const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `score-backtest-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
+      s.date,
+      s.fundCode,
+      s.fundName,
+      s.score,
+      s.ratingLabel,
+      recommendationLabel(s.recommendation),
+      s.closeValue ?? "",
+      s.valueSource,
+      s.nextDate ?? "",
+      s.nextChangePct?.toFixed(2) ?? "",
+      outcomeLabel(s.outcome),
+      s.bullRatio.toFixed(2),
+      s.conflict ? "是" : "否",
+    ]);
+    const csv = [header, ...rows]
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `score-backtest-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
 
   return (
@@ -170,34 +218,101 @@ export default function BacktestPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={handleCapture} disabled={busy !== null}>
-            {busy === 'capture' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Camera className="h-3 w-3 mr-1" />}
+            {busy === "capture" ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <Camera className="h-3 w-3 mr-1" />
+            )}
             记录今日评分
           </Button>
           <Button size="sm" variant="outline" onClick={handleReconcile} disabled={busy !== null}>
-            {busy === 'reconcile' ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+            {busy === "reconcile" ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3 mr-1" />
+            )}
             回填次日涨跌
           </Button>
-          <Button size="sm" variant="outline" onClick={handleExportCsv} disabled={snapshots.length === 0}>
-            <Download className="h-3 w-3 mr-1" />CSV
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportCsv}
+            disabled={snapshots.length === 0}
+          >
+            <Download className="h-3 w-3 mr-1" />
+            CSV
           </Button>
-          <Button size="sm" variant="outline" onClick={handleExportJson} disabled={snapshots.length === 0}>
-            <Download className="h-3 w-3 mr-1" />JSON
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExportJson}
+            disabled={snapshots.length === 0}
+          >
+            <Download className="h-3 w-3 mr-1" />
+            JSON
           </Button>
         </div>
       </div>
 
       {/* 统计汇总行 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard label="快照总数" value={`${stats.total}`} sub={`已回填 ${stats.settled}`} />
-        <StatCard label="方向性准确率" value={fmtRate(stats.directionalAccuracy)} sub={`${stats.directionalCorrect}/${stats.directionalTotal} 命中`} highlight />
-        <StatCard label="买入命中率" value={fmtRate(stats.buyHitRate)} sub={`${stats.buyHits}/${stats.buyTotal}`} />
-        <StatCard label="卖出命中率" value={fmtRate(stats.sellHitRate)} sub={`${stats.sellHits}/${stats.sellTotal}`} />
+        <StatCard
+          label="方向性准确率"
+          value={fmtRate(stats.directionalAccuracy)}
+          sub={`${stats.directionalCorrect}/${stats.directionalTotal} 命中`}
+          highlight
+        />
+        <StatCard
+          label="买入命中率"
+          value={fmtRate(stats.buyHitRate)}
+          sub={`${stats.buyHits}/${stats.buyTotal}`}
+        />
+        <StatCard
+          label="卖出命中率"
+          value={fmtRate(stats.sellHitRate)}
+          sub={`${stats.sellHits}/${stats.sellTotal}`}
+        />
+        <StatCard
+          label="方向性覆盖率"
+          value={fmtRate(stats.directionalCoverage)}
+          sub={
+            stats.directionalCoverage != null && stats.directionalCoverage < 0.5
+              ? "持有占比高·高分桶或为空"
+              : "买/卖押注占比"
+          }
+        />
+      </div>
+
+      {stats.directionalCoverage != null && stats.directionalCoverage < 0.5 && (
+        <div className="text-xs text-amber-600 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">
+          方向性覆盖率偏低（{(stats.directionalCoverage * 100).toFixed(0)}
+          %）：大量快照为持有建议(neutral)，无方向性押注，不计入命中率分母。 这会导致高分区间（如
+          60-80）在「各评分区间命中率」图中不显示（count=0 属正常设计行为，非数据损坏）。买入侧若
+          buyTotal=0，通常因风险上下文买入阈值过严，可在决策引擎放宽。
+        </div>
+      )}
+
+      {/* 按数据源拆分：场内ETF真实K线 vs 基金净值K线 —— 直接对比两组准确率与样本量 */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <SourceCard
+          title="场内 ETF K线"
+          stat={stats.bySource.etf}
+          hint="有 etfCode · 全 OHLC 指标"
+        />
+        <SourceCard title="基金净值 K线" stat={stats.bySource.nav} hint="无 etfCode · 只有收盘价" />
+        <SourceCard
+          title="缺失(无收盘值)"
+          stat={stats.bySource.unknown}
+          hint="取数失败 → unknown"
+        />
       </div>
 
       {stats.total > 0 && stats.settled === 0 && (
         <div className="text-xs text-muted-foreground bg-muted/30 border border-border/40 rounded px-3 py-2">
           已记录评分但尚未回填次日涨跌。点击「回填次日涨跌」或在次日打开应用后自动回填。
-          {stats.byRec.buy + stats.byRec.sell > 0 && ' 场内 ETF 类基金走腾讯真实 K 线，可正常回填；纯净值基金需部署 Cloudflare Worker 后方可取数。'}
+          {stats.byRec.buy + stats.byRec.sell > 0 &&
+            " 场内 ETF 类基金走腾讯真实 K 线，可正常回填；纯净值基金需部署 Cloudflare Worker 后方可取数。"}
         </div>
       )}
 
@@ -239,16 +354,34 @@ export default function BacktestPage() {
         <CardHeader className="pb-2">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-sm flex items-center gap-1.5">
-              <BarChart3 className="h-3.5 w-3.5" />评分快照明细
+              <BarChart3 className="h-3.5 w-3.5" />
+              评分快照明细
             </CardTitle>
             <div className="flex items-center gap-1.5 flex-wrap">
               <FilterGroup
-                value={recFilter} onChange={setRecFilter}
-                options={[['all', '全部建议'], ['buy', '买入'], ['hold', '持有'], ['sell', '卖出']] as const}
+                value={recFilter}
+                onChange={setRecFilter}
+                options={
+                  [
+                    ["all", "全部建议"],
+                    ["buy", "买入"],
+                    ["hold", "持有"],
+                    ["sell", "卖出"],
+                  ] as const
+                }
               />
               <FilterGroup
-                value={outcomeFilter} onChange={setOutcomeFilter}
-                options={[['all', '全部结果'], ['pending', '待回填'], ['correct', '命中'], ['wrong', '未命中'], ['neutral', '中性']] as const}
+                value={outcomeFilter}
+                onChange={setOutcomeFilter}
+                options={
+                  [
+                    ["all", "全部结果"],
+                    ["pending", "待回填"],
+                    ["correct", "命中"],
+                    ["wrong", "未命中"],
+                    ["neutral", "中性"],
+                  ] as const
+                }
               />
               {dateOptions.length > 0 && (
                 <div className="flex items-center gap-1 border-l border-border/40 pl-1.5">
@@ -261,7 +394,9 @@ export default function BacktestPage() {
                   >
                     <option value="all">全部日期</option>
                     {dateOptions.map((d) => (
-                      <option key={d} value={d}>{d}</option>
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -272,13 +407,16 @@ export default function BacktestPage() {
         <CardContent>
           {hasPendingEtf && (
             <p className="text-[10px] text-muted-foreground/80 mb-2 leading-relaxed">
-              提示：ETF/个股类快照的「次日涨跌」需等下一交易日收盘后才有数据，故最近约 1 个交易日会显示「待回填」；
-              而净值类基金因净值 T+1 公布，其快照的 asOfDate 通常比采集日早一天，故往往当日即可回填。两者均属正常时间差，并非数据缺失。
+              提示：ETF/个股类快照的「次日涨跌」需等下一交易日收盘后才有数据，故最近约 1
+              个交易日会显示「待回填」； 而净值类基金因净值 T+1 公布，其快照的 asOfDate
+              通常比采集日早一天，故往往当日即可回填。两者均属正常时间差，并非数据缺失。
             </p>
           )}
           {filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-10">
-              {snapshots.length === 0 ? '暂无评分快照，点击「记录今日评分」开始积累数据' : '当前筛选无匹配记录'}
+              {snapshots.length === 0
+                ? "暂无评分快照，点击「记录今日评分」开始积累数据"
+                : "当前筛选无匹配记录"}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -298,33 +436,56 @@ export default function BacktestPage() {
                   {groupedByDate.map(({ date, rows }) => (
                     <Fragment key={date}>
                       <tr className="bg-muted/40">
-                        <td colSpan={7} className="py-1 px-2 text-[11px] font-semibold text-foreground/90">
+                        <td
+                          colSpan={7}
+                          className="py-1 px-2 text-[11px] font-semibold text-foreground/90"
+                        >
                           {date}
-                          <span className="ml-2 text-[10px] font-normal text-muted-foreground">{rows.length} 只基金</span>
+                          <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+                            {rows.length} 只基金
+                          </span>
                         </td>
                       </tr>
                       {rows.map((s) => (
                         <tr key={s.id} className="border-b border-border/40 hover:bg-muted/30">
-                          <td className="py-1.5 px-2 font-mono text-[10px] text-muted-foreground">{s.date}</td>
+                          <td className="py-1.5 px-2 font-mono text-[10px] text-muted-foreground">
+                            {s.date}
+                          </td>
                           <td className="py-1.5 px-2">
                             <div className="truncate max-w-[140px]">{s.fundName}</div>
-                            <div className="font-mono text-[10px] text-muted-foreground">{s.fundCode}</div>
+                            <div className="font-mono text-[10px] text-muted-foreground">
+                              {s.fundCode}
+                            </div>
                           </td>
-                          <td className="py-1.5 px-2 text-right font-mono font-medium">{s.score}</td>
+                          <td className="py-1.5 px-2 text-right font-mono font-medium">
+                            {s.score}
+                          </td>
                           <td className="py-1.5 px-2">
-                            <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${REC_COLOR[s.recommendation]}`}>
+                            <span
+                              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${REC_COLOR[s.recommendation]}`}
+                            >
                               {recommendationLabel(s.recommendation)}
                             </span>
                           </td>
                           <td className="py-1.5 px-2 text-right font-mono">
-                            {s.closeValue != null ? s.closeValue.toFixed(3) : '-'}
-                            <span className="text-[9px] text-muted-foreground ml-1">{s.valueSource === 'etf' ? 'ETF' : s.valueSource === 'nav' ? '净值' : ''}</span>
+                            {s.closeValue != null ? s.closeValue.toFixed(3) : "-"}
+                            <span className="text-[9px] text-muted-foreground ml-1">
+                              {s.valueSource === "etf"
+                                ? "ETF"
+                                : s.valueSource === "nav"
+                                  ? "净值"
+                                  : ""}
+                            </span>
                           </td>
-                          <td className={`py-1.5 px-2 text-right font-mono ${s.nextChangePct != null ? (s.nextChangePct >= 0 ? 'text-up' : 'text-down') : 'text-muted-foreground'}`}>
+                          <td
+                            className={`py-1.5 px-2 text-right font-mono ${s.nextChangePct != null ? (s.nextChangePct >= 0 ? "text-up" : "text-down") : "text-muted-foreground"}`}
+                          >
                             {fmtPct(s.nextChangePct)}
                           </td>
                           <td className="py-1.5 px-2">
-                            <span className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${OUTCOME_COLOR[s.outcome]}`}>
+                            <span
+                              className={`inline-block px-1.5 py-0.5 rounded border text-[10px] ${OUTCOME_COLOR[s.outcome]}`}
+                            >
                               {outcomeLabel(s.outcome)}
                             </span>
                           </td>
@@ -339,29 +500,62 @@ export default function BacktestPage() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
-function StatCard({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+function StatCard({
+  label,
+  value,
+  sub,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  highlight?: boolean;
+}) {
   return (
     <Card className="card-hover">
       <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
-          {label}
-        </div>
-        <p className={`text-xl font-bold tracking-tight ${highlight ? 'text-primary' : ''}`}>{value}</p>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">{label}</div>
+        <p className={`text-xl font-bold tracking-tight ${highlight ? "text-primary" : ""}`}>
+          {value}
+        </p>
         {sub && <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>}
       </CardContent>
     </Card>
-  )
+  );
+}
+
+function SourceCard({ title, stat, hint }: { title: string; stat: SourceAccuracy; hint: string }) {
+  return (
+    <Card className="card-hover">
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+          <span>{title}</span>
+          <span className="text-[9px] text-muted-foreground/70">{hint}</span>
+        </div>
+        <p
+          className={`text-xl font-bold tracking-tight ${stat.directionalAccuracy != null && stat.directionalAccuracy >= 0.5 ? "text-up" : stat.directionalAccuracy != null ? "text-down" : ""}`}
+        >
+          {fmtRate(stat.directionalAccuracy)}
+        </p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">
+          方向性 {stat.directionalTotal} · 已结算 {stat.settled} · 次日 {fmtPct(stat.avgNext)}
+        </p>
+      </CardContent>
+    </Card>
+  );
 }
 
 function FilterGroup<T extends string>({
-  value, onChange, options,
+  value,
+  onChange,
+  options,
 }: {
-  value: T
-  onChange: (v: T) => void
-  options: readonly (readonly [T, string])[]
+  value: T;
+  onChange: (v: T) => void;
+  options: readonly (readonly [T, string])[];
 }) {
   return (
     <div className="flex items-center gap-1">
@@ -371,13 +565,13 @@ function FilterGroup<T extends string>({
           onClick={() => onChange(val)}
           className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
             value === val
-              ? 'bg-primary text-primary-foreground border-primary'
-              : 'bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted'
+              ? "bg-primary text-primary-foreground border-primary"
+              : "bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted"
           }`}
         >
           {label}
         </button>
       ))}
     </div>
-  )
+  );
 }

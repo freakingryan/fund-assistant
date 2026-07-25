@@ -4,9 +4,20 @@
 
 echo "🔍 [pre-commit] 正在运行代码质量检查..."
 
-# 检查 TypeScript
-echo "📝 [pre-commit] TypeScript 编译检查..."
 cd "$(dirname "$0")/.."
+
+# 1) 自动格式化暂存文件（Prettier + lint-staged），格式化后自动重新暂存
+echo "🎨 [pre-commit] 自动格式化暂存文件..."
+NODE_OPTIONS="" npx lint-staged
+EXIT_CODE=$?
+if [ $EXIT_CODE -ne 0 ]; then
+  echo "❌ [pre-commit] 自动格式化失败！请查看上方错误后重新提交。"
+  exit $EXIT_CODE
+fi
+echo "✅ [pre-commit] 自动格式化完成"
+
+# 2) 检查 TypeScript
+echo "📝 [pre-commit] TypeScript 编译检查..."
 NODE_OPTIONS="" npx tsc --noEmit
 EXIT_CODE=$?
 

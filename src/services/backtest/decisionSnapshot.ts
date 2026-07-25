@@ -14,37 +14,58 @@
  * @module backtest/decisionSnapshot
  */
 
-import { dataSourceService } from '@/adapters/datasource/service'
-import { detectPatterns } from '@/services/klinePatterns'
-import { evaluateSignal } from '@/services/signalEngine'
-import { computeStockSdkIndicators } from '@/services/stockSdkIndicators'
-import type { SignalEvent } from '@/services/stockSdkIndicators'
-import { evaluateStrategies } from '@/services/strategyLayer'
-import { buildDecision } from '@/services/decision/decisionEngine'
-import type { Rating, ReasonItem } from '@/services/decision/types'
-import { db } from '@/stores/db'
-import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding, KLineData } from '@/types'
-import type { CaptureFailure, CaptureReport, CaptureSource, Outcome, Recommendation, ScoreSnapshot, ValueSource } from './types'
-import { analyzeFundCapitalFlow } from '@/services/capitalFlowAnalysis'
-import { analyzeFundSectorStrength } from '@/services/sectorStrengthAnalysis'
-import { fetchFundRankHistory } from '@/services/fundRankHistory'
-import { isTradingDay } from '@/lib/tradingCalendar'
+import { dataSourceService } from "@/adapters/datasource/service";
+import { detectPatterns } from "@/services/klinePatterns";
+import { evaluateSignal } from "@/services/signalEngine";
+import { computeStockSdkIndicators } from "@/services/stockSdkIndicators";
+import type { SignalEvent } from "@/services/stockSdkIndicators";
+import { evaluateStrategies } from "@/services/strategyLayer";
+import { buildDecision } from "@/services/decision/decisionEngine";
+import { computeNavFactors } from "@/services/decision/navFactors";
+import { computeMarketRegime, type MarketRegime } from "@/services/decision/regimeFactor";
+import { buildEmFromResults } from "@/services/decision/eastmoneyFactors";
+import type { Rating, ReasonItem } from "@/services/decision/types";
+import { db } from "@/stores/db";
+import type { EastmoneyDataSourceConfig, EtfMapping, FundHolding, KLineData } from "@/types";
+import type {
+  CaptureFailure,
+  CaptureReport,
+  CaptureSource,
+  Outcome,
+  Recommendation,
+  ScoreSnapshot,
+  ValueSource,
+} from "./types";
+import { analyzeFundCapitalFlow } from "@/services/capitalFlowAnalysis";
+import { analyzeFundSectorStrength } from "@/services/sectorStrengthAnalysis";
+import { fetchFundRankHistory } from "@/services/fundRankHistory";
+import { isTradingDay } from "@/lib/tradingCalendar";
 
 /** 采集/回填所用 K 线周期：3 个月，足够指标（BIAS 等）计算 */
-const SNAPSHOT_PERIOD = '3m'
+const SNAPSHOT_PERIOD = "3m";
 
 /**
  * 单日涨跌幅合理上限(%)。A 股 ±10%，QDII/部分品种一般 <±20%。
  * 超过此值视为数据源单位换算等异常（如 -67%），不计入方向性命中，避免污染准确率。
  */
-const MAX_DAILY_CHANGE_PCT = 30
+const MAX_DAILY_CHANGE_PCT = 30;
 
 /** 本地日历日 YYYY-MM-DD（避免 toISOString 的 UTC 偏移） */
 export function localDateKey(d: Date = new Date()): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// 市场 regime 按日缓存，避免批量扫描（captureDailySnapshots）对 510300 重复取数
+let regimeCache: { date: string; regime: MarketRegime } | null = null;
+async function getDailyRegime(): Promise<MarketRegime> {
+  const today = localDateKey();
+  if (regimeCache && regimeCache.date === today) return regimeCache.regime;
+  const regime = await computeMarketRegime();
+  regimeCache = { date: today, regime };
+  return regime;
 }
 
 /**
@@ -52,14 +73,14 @@ export function localDateKey(d: Date = new Date()): string {
  * 周末返回 false（无交易，无需自动采集）。
  */
 export function isMarketClosed(now: Date = new Date()): boolean {
-  const day = now.getDay()
-  if (day === 0 || day === 6) return false
-  const minutes = now.getHours() * 60 + now.getMinutes()
-  return minutes >= 15 * 60
+  const day = now.getDay();
+  if (day === 0 || day === 6) return false;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return minutes >= 15 * 60;
 }
 
 /** 基金净值类快照判定为“数据已公布”的本地小时（净值多在 20:00 后定稿） */
-const FUND_NAV_READY_HOUR = 20
+const FUND_NAV_READY_HOUR = 20;
 
 /**
  * 基金数据是否已公布（净值型基金口径）：工作日且本地时间 ≥ 20:00。
@@ -67,24 +88,24 @@ const FUND_NAV_READY_HOUR = 20
  * 自动采集也等此时间点，避免盘后早期采到“昨日净值”当今日基准。
  */
 export function isFundDataReady(now: Date = new Date()): boolean {
-  if (!isTradingDay(now)) return false
-  const minutes = now.getHours() * 60 + now.getMinutes()
-  return minutes >= FUND_NAV_READY_HOUR * 60
+  if (!isTradingDay(now)) return false;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return minutes >= FUND_NAV_READY_HOUR * 60;
 }
 
 /** 由评级归一化为回测建议口径 */
 function recommendationFromRating(rating: string): Recommendation {
-  if (rating === 'strong_buy' || rating === 'buy') return 'buy'
-  if (rating === 'hold') return 'hold'
-  return 'sell' // reduce / sell / strong_sell
+  if (rating === "strong_buy" || rating === "buy") return "buy";
+  if (rating === "hold") return "hold";
+  return "sell"; // reduce / sell / strong_sell
 }
 
 /** 由建议 + 次日涨跌幅计算回测结果 */
 export function computeOutcome(rec: Recommendation, pct: number): Outcome {
-  if (rec === 'hold') return 'neutral'
-  if (pct === 0) return 'neutral'
-  if (rec === 'buy') return pct > 0 ? 'correct' : 'wrong'
-  return pct < 0 ? 'correct' : 'wrong' // sell
+  if (rec === "hold") return "neutral";
+  if (pct === 0) return "neutral";
+  if (rec === "buy") return pct > 0 ? "correct" : "wrong";
+  return pct < 0 ? "correct" : "wrong"; // sell
 }
 
 /**
@@ -100,60 +121,86 @@ export async function captureSnapshotForFund(
   /** 可选共享 K 线缓存：批量扫描（captureDailySnapshots）传入，避免同一 ETF/基金被重复请求同一接口 */
   klineMemo?: Map<string, KLineData[]>,
 ): Promise<ScoreSnapshot | null> {
-  const etfCode = etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null
+  const etfCode =
+    etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null;
 
-  let klines: KLineData[] = []
-  let valueSource: ValueSource = 'unknown'
+  let klines: KLineData[] = [];
+  let valueSource: ValueSource = "unknown";
   if (etfCode) {
-    const memoKey = `etf:${etfCode}`
+    const memoKey = `etf:${etfCode}`;
     if (!klineMemo?.has(memoKey)) {
-      const fetched = await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)
-      klineMemo?.set(memoKey, fetched ?? [])
+      const fetched = await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD);
+      klineMemo?.set(memoKey, fetched ?? []);
     }
-    const fetched = klineMemo?.get(memoKey) ?? []
-    if (fetched.length > 0) { klines = fetched; valueSource = 'etf' }
+    const fetched = klineMemo?.get(memoKey) ?? [];
+    if (fetched.length > 0) {
+      klines = fetched;
+      valueSource = "etf";
+    }
   }
   if (klines.length === 0) {
-    const memoKey = `nav:${fund.code}`
+    const memoKey = `nav:${fund.code}`;
     if (!klineMemo?.has(memoKey)) {
-      const fetched = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)
-      klineMemo?.set(memoKey, fetched ?? [])
+      const fetched = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD);
+      klineMemo?.set(memoKey, fetched ?? []);
     }
-    const fetched = klineMemo?.get(memoKey) ?? []
-    if (fetched.length > 0) { klines = fetched; valueSource = 'nav' }
+    const fetched = klineMemo?.get(memoKey) ?? [];
+    if (fetched.length > 0) {
+      klines = fetched;
+      valueSource = "nav";
+    }
   }
-  if (klines.length === 0) return null
+  if (klines.length === 0) return null;
 
   // 回溯补齐：截断到目标交易日，避免引入未来 K 线造成前视偏差（look-ahead bias）
-  if (targetDate) klines = klines.filter((k) => k.date <= targetDate)
-  if (klines.length === 0) return null
+  if (targetDate) klines = klines.filter((k) => k.date <= targetDate);
+  if (klines.length === 0) return null;
 
-  const patterns = detectPatterns(klines)
-  const signalResult = evaluateSignal(klines, patterns)
-  const ind = computeStockSdkIndicators(klines)
-  const strategies = evaluateStrategies(klines, ind)
-  const isRealKline = valueSource === 'etf'
-  const decision = buildDecision({ klines, patterns, signalResult, ind, strategies, lowConfidence: !isRealKline })
+  const patterns = detectPatterns(klines);
+  const signalResult = evaluateSignal(klines, patterns);
+  const ind = computeStockSdkIndicators(klines);
+  const strategies = evaluateStrategies(klines, ind);
+  const isRealKline = valueSource === "etf";
+  // 净值基金：用 NAV 收盘价序列算原生因子（纯本地），给自身方向性依据
+  const nav = !isRealKline ? computeNavFactors(klines) : undefined;
 
-  // 资金面间接分析（东财增强，门控；enabled=false 时返回 null 且不发东财请求）
-  const capital = await analyzeFundCapitalFlow(fund, etfMappings, eastmoneyConfig).catch(() => null)
-  // 板块赛道强度间接分析（同门控）
-  const sector = await analyzeFundSectorStrength(fund, etfMappings, eastmoneyConfig).catch(() => null)
-  // 同类排名走势（东财增强，同门控；取最新百分位点）
-  const rankHist = await fetchFundRankHistory(fund.code, eastmoneyConfig).catch(() => null)
+  // 东财交叉截面因子（门控；enabled=false / 取数失败 → null，不影响评分）。先取，供 buildDecision overlay 使用
+  const capital = await analyzeFundCapitalFlow(fund, etfMappings, eastmoneyConfig).catch(
+    () => null,
+  );
+  const sector = await analyzeFundSectorStrength(fund, etfMappings, eastmoneyConfig).catch(
+    () => null,
+  );
+  const rankHist = await fetchFundRankHistory(fund.code, eastmoneyConfig).catch(() => null);
+  const em = buildEmFromResults(capital, sector, rankHist);
 
-  const last = klines[klines.length - 1]
-  const closeValue = typeof last?.close === 'number' ? last.close : null
-  const asOfDate = last?.date || (targetDate ?? localDateKey())
-  const now = new Date()
-  const date = targetDate ?? localDateKey(now)
-  const id = `${fund.code}-${date}`
+  // 市场 regime（按日缓存；失败回 neutral，不影响评分）
+  const regime = await getDailyRegime();
+
+  const decision = buildDecision({
+    klines,
+    patterns,
+    signalResult,
+    ind,
+    strategies,
+    lowConfidence: !isRealKline,
+    nav,
+    em,
+    regime,
+  });
+
+  const last = klines[klines.length - 1];
+  const closeValue = typeof last?.close === "number" ? last.close : null;
+  const asOfDate = last?.date || (targetDate ?? localDateKey());
+  const now = new Date();
+  const date = targetDate ?? localDateKey(now);
+  const id = `${fund.code}-${date}`;
   // 回溯/补全（目标日为过去交易日）→ 数据已定稿，非临时；
   // 今日快照：ETF 盘后(≥15:00)准确，净值基金需净值公布(≥20:00)后才准确，否则标记临时待覆盖。
-  const isPast = targetDate != null && targetDate < localDateKey(now)
-  const marketReady = isPast || isMarketClosed(now)
-  const navReady = isPast || isFundDataReady(now)
-  const provisional = etfCode ? !marketReady : !navReady
+  const isPast = targetDate != null && targetDate < localDateKey(now);
+  const marketReady = isPast || isMarketClosed(now);
+  const navReady = isPast || isFundDataReady(now);
+  const provisional = etfCode ? !marketReady : !navReady;
 
   const snapshot: ScoreSnapshot = {
     id,
@@ -173,9 +220,14 @@ export async function captureSnapshotForFund(
     agreement: decision.agreement,
     conflict: decision.conflict,
     lowConfidence: decision.lowConfidence,
+    regimeMomentum60: regime?.momentum60 ?? null,
     bullReasons: decision.bullReasons,
     bearReasons: decision.bearReasons,
-    strategiesHit: decision.strategies.map((s) => ({ id: s.id, name: s.name, direction: s.direction })),
+    strategiesHit: decision.strategies.map((s) => ({
+      id: s.id,
+      name: s.name,
+      direction: s.direction,
+    })),
     summary: decision.summary,
     closeValue,
     valueSource,
@@ -190,26 +242,26 @@ export async function captureSnapshotForFund(
     nextDate: null,
     nextValue: null,
     nextChangePct: null,
-    outcome: 'pending',
+    outcome: "pending",
     createdAt: Date.now(),
     updatedAt: Date.now(),
-  }
+  };
 
-  await db.scoreSnapshots.put(snapshot)
-  return snapshot
+  await db.scoreSnapshots.put(snapshot);
+  return snapshot;
 }
 
 /** 决策引擎趋势结果（供预警 trend 规则 / 日报复用，不写库） */
 export interface FundTrendResult {
-  score: number
-  lowConfidence: boolean
-  rating: Rating
-  ratingLabel: string
-  summary: string
+  score: number;
+  lowConfidence: boolean;
+  rating: Rating;
+  ratingLabel: string;
+  summary: string;
   /** 最近的技术事件信号（金叉/死叉/SAR 反转/布林突破等） */
-  signals: SignalEvent[]
-  bullReasons: ReasonItem[]
-  bearReasons: ReasonItem[]
+  signals: SignalEvent[];
+  bullReasons: ReasonItem[];
+  bearReasons: ReasonItem[];
 }
 
 /**
@@ -223,22 +275,23 @@ export async function computeFundTrendScore(
   fund: FundHolding,
   etfMappings: EtfMapping[],
 ): Promise<FundTrendResult | null> {
-  const etfCode = etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null
+  const etfCode =
+    etfMappings.find((mapping) => mapping.otcCode === fund.code)?.exchangeCode || null;
 
-  let klines: KLineData[] = []
+  let klines: KLineData[] = [];
   if (etfCode) {
-    klines = (await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)) ?? []
+    klines = (await dataSourceService.fetchEtfKLine(etfCode, SNAPSHOT_PERIOD)) ?? [];
   }
   if (klines.length === 0) {
-    klines = (await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)) ?? []
+    klines = (await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD)) ?? [];
   }
-  if (klines.length === 0) return null
+  if (klines.length === 0) return null;
 
-  const patterns = detectPatterns(klines)
-  const signalResult = evaluateSignal(klines, patterns)
-  const ind = computeStockSdkIndicators(klines)
-  const strategies = evaluateStrategies(klines, ind)
-  const isRealKline = klines.some((k) => k.high > k.low)
+  const patterns = detectPatterns(klines);
+  const signalResult = evaluateSignal(klines, patterns);
+  const ind = computeStockSdkIndicators(klines);
+  const strategies = evaluateStrategies(klines, ind);
+  const isRealKline = klines.some((k) => k.high > k.low);
   const decision = buildDecision({
     klines,
     patterns,
@@ -246,7 +299,7 @@ export async function computeFundTrendScore(
     ind,
     strategies,
     lowConfidence: !isRealKline,
-  })
+  });
 
   return {
     score: decision.score,
@@ -257,16 +310,16 @@ export async function computeFundTrendScore(
     signals: ind.signals,
     bullReasons: decision.bullReasons,
     bearReasons: decision.bearReasons,
-  }
+  };
 }
 
 export interface CaptureOptions {
   /** 为 true 时忽略收盘门禁（手动触发随时可用）；默认遵守工作日 15:00 后自动采集 */
-  force?: boolean
+  force?: boolean;
   /** 为 true 时忽略“当日已存在快照”的缓存跳过，强制重评全部持仓（覆盖旧结果） */
-  reevaluate?: boolean
+  reevaluate?: boolean;
   /** 回溯补齐指定交易日（YYYY-MM-DD）；省略则采集今日。采集过去交易日不受收盘门禁限制 */
-  targetDate?: string
+  targetDate?: string;
 }
 
 /**
@@ -277,65 +330,77 @@ export interface CaptureOptions {
  *   - 排行榜/回测页手动按钮：force=true 随时可触发；reevaluate=true 时强制重评全部
  * @returns 本次新建或覆盖的快照数量
  */
-export async function captureDailySnapshots(opts: CaptureOptions | boolean = false): Promise<number> {
-  const force = typeof opts === 'boolean' ? opts : opts.force ?? false
-  const reevaluate = typeof opts === 'boolean' ? false : opts.reevaluate ?? false
-  const targetDate = typeof opts === 'boolean' ? undefined : opts.targetDate
+export async function captureDailySnapshots(
+  opts: CaptureOptions | boolean = false,
+): Promise<number> {
+  const force = typeof opts === "boolean" ? opts : (opts.force ?? false);
+  const reevaluate = typeof opts === "boolean" ? false : (opts.reevaluate ?? false);
+  const targetDate = typeof opts === "boolean" ? undefined : opts.targetDate;
 
-  const now = new Date()
-  const date = targetDate ?? localDateKey(now)
+  const now = new Date();
+  const date = targetDate ?? localDateKey(now);
   // 门禁：采集「今日」需本地收盘后（≥15:00）且为交易日；回溯采集「过去交易日」随时允许（该日已收盘）
-  const capturingPast = targetDate != null && targetDate < localDateKey(now)
-  if (!force && !capturingPast && (!isMarketClosed(now) || !isTradingDay(now))) return 0
+  const capturingPast = targetDate != null && targetDate < localDateKey(now);
+  if (!force && !capturingPast && (!isMarketClosed(now) || !isTradingDay(now))) return 0;
 
   const [holdings, settingsList] = await Promise.all([
     db.holdings.toArray(),
     db.settings.toArray(),
-  ])
-  const etfMappings = settingsList[0]?.etfMappings || []
-  const eastmoneyConfig = settingsList[0]?.dataSource?.eastmoney || { enabled: false, mode: 'proxy', proxyUrl: '' }
+  ]);
+  const etfMappings = settingsList[0]?.etfMappings || [];
+  const eastmoneyConfig = settingsList[0]?.dataSource?.eastmoney || {
+    enabled: false,
+    mode: "proxy",
+    proxyUrl: "",
+  };
 
-  let created = 0
+  let created = 0;
   // 批量扫描共享 K 线缓存：同一 ETF/基金在本次扫描中只请求一次接口
-  const klineMemo = new Map<string, KLineData[]>()
-  const failures: CaptureFailure[] = []
+  const klineMemo = new Map<string, KLineData[]>();
+  const failures: CaptureFailure[] = [];
   for (const fund of holdings) {
-    const id = `${fund.code}-${date}`
+    const id = `${fund.code}-${date}`;
     // 缓存联动：已有当日快照按状态处理
-    const existing = await db.scoreSnapshots.get(id)
+    const existing = await db.scoreSnapshots.get(id);
     if (existing) {
       // 已回填（历史验证数据）：永远保护，覆盖会丢失 nextChangePct/outcome，破坏回测基准
-      if (existing.nextChangePct != null) continue
+      if (existing.nextChangePct != null) continue;
       // 东财增强开启后：已存在但缺少增强维度（资金面/赛道/同类排名）的旧快照需要补填，
       // 否则「更新今日评分」会因缓存跳过而永远不补，导致增强排序形同虚设。
-      const eastEnabled = eastmoneyConfig.enabled
+      const eastEnabled = eastmoneyConfig.enabled;
       const missingEnhanced =
         eastEnabled &&
         existing.capitalScore == null &&
         existing.sectorScore == null &&
-        existing.rankPercentile == null
+        existing.rankPercentile == null;
       if (reevaluate) {
         // 强制重评未回填快照（历史验证数据已在上面跳过保护）；其余全覆盖
       } else if (!missingEnhanced && existing.provisional !== true) {
         // 非临时且增强维度齐全的盘后准确快照：读缓存，不再重复采集
-        continue
+        continue;
       }
       // 其余情况（盘中临时快照 provisional=true 待盘后覆盖 / 缺增强维度待补）落到下方重新采集
     }
     // 该基金评分所依赖的主数据源：有 ETF 映射走腾讯真实 K 线，否则走东财净值历史
-    const etfCode = etfMappings.find((m) => m.otcCode === fund.code)?.exchangeCode || null
-    const source: CaptureSource = etfCode ? 'tencent' : 'eastmoney'
+    const etfCode = etfMappings.find((m) => m.otcCode === fund.code)?.exchangeCode || null;
+    const source: CaptureSource = etfCode ? "tencent" : "eastmoney";
     const reason =
-      source === 'tencent'
-        ? 'ETF 真实 K 线（腾讯源）获取失败，无法评分'
-        : '净值历史（东财）当前不可达，无法评分'
+      source === "tencent"
+        ? "ETF 真实 K 线（腾讯源）获取失败，无法评分"
+        : "净值历史（东财）当前不可达，无法评分";
     try {
-      const snap = await captureSnapshotForFund(fund, etfMappings, eastmoneyConfig, date, klineMemo)
-      if (snap) created++
-      else failures.push({ code: fund.code, name: fund.name || fund.code, source, reason })
+      const snap = await captureSnapshotForFund(
+        fund,
+        etfMappings,
+        eastmoneyConfig,
+        date,
+        klineMemo,
+      );
+      if (snap) created++;
+      else failures.push({ code: fund.code, name: fund.name || fund.code, source, reason });
     } catch (e) {
-      console.warn('[backtest] 快照采集失败', fund.code, e)
-      failures.push({ code: fund.code, name: fund.name || fund.code, source, reason })
+      console.warn("[backtest] 快照采集失败", fund.code, e);
+      failures.push({ code: fund.code, name: fund.name || fund.code, source, reason });
     }
   }
   // 落库本次采集报告，供排行榜标注"因数据源不可达而缺评分"的基金
@@ -346,8 +411,8 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
     ok: created,
     failures,
     createdAt: Date.now(),
-  })
-  return created
+  });
+  return created;
 }
 
 /**
@@ -362,27 +427,27 @@ export async function captureDailySnapshots(opts: CaptureOptions | boolean = fal
  * @returns 本次补齐的快照数量
  */
 export async function backfillMissingTradingDays(lookbackDays = 7): Promise<number> {
-  const now = new Date()
-  const today = localDateKey(now)
-  let done = 0
+  const now = new Date();
+  const today = localDateKey(now);
+  let done = 0;
   for (let i = 1; i <= lookbackDays; i++) {
-    const d = new Date(now)
-    d.setDate(now.getDate() - i)
-    if (!isTradingDay(d)) continue // 跳过周末与法定节假日（非交易日）
-    const day = localDateKey(d)
-    if (day >= today) continue // 不回溯今日（今日由每日首次守卫处理）
-    const count = await db.scoreSnapshots.where('date').equals(day).count()
-    if (count > 0) continue // 该日已有快照，跳过
-    const n = await captureDailySnapshots({ targetDate: day }) // 过去交易日，随时可补
-    done += n
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    if (!isTradingDay(d)) continue; // 跳过周末与法定节假日（非交易日）
+    const day = localDateKey(d);
+    if (day >= today) continue; // 不回溯今日（今日由每日首次守卫处理）
+    const count = await db.scoreSnapshots.where("date").equals(day).count();
+    if (count > 0) continue; // 该日已有快照，跳过
+    const n = await captureDailySnapshots({ targetDate: day }); // 过去交易日，随时可补
+    done += n;
   }
-  return done
+  return done;
 }
 
 /** 读取最近一次采集报告（按日期倒序），用于排行榜标注未纳入评分的原因 */
 export async function getLatestCaptureReport(): Promise<CaptureReport | null> {
-  const all = await db.captureReports.orderBy('date').reverse().toArray()
-  return all[0] ?? null
+  const all = await db.captureReports.orderBy("date").reverse().toArray();
+  return all[0] ?? null;
 }
 
 /**
@@ -391,55 +456,55 @@ export async function getLatestCaptureReport(): Promise<CaptureReport | null> {
  * @returns 本次更新的快照数量
  */
 export async function reconcileSnapshots(): Promise<number> {
-  const all = await db.scoreSnapshots.toArray()
+  const all = await db.scoreSnapshots.toArray();
   // 批量回填共享 K 线缓存：同一 ETF/基金在本次回填中只请求一次接口
-  const klineMemo = new Map<string, KLineData[]>()
-  let updated = 0
-  let isolated = 0
-  let failed = 0
+  const klineMemo = new Map<string, KLineData[]>();
+  let updated = 0;
+  let isolated = 0;
+  let failed = 0;
 
   for (const snap of all) {
-    if (snap.closeValue == null) continue
+    if (snap.closeValue == null) continue;
     try {
-      const memoKey = snap.etfCode ? `etf:${snap.etfCode}` : `nav:${snap.fundCode}`
-      let klines = klineMemo.get(memoKey)
+      const memoKey = snap.etfCode ? `etf:${snap.etfCode}` : `nav:${snap.fundCode}`;
+      let klines = klineMemo.get(memoKey);
       if (!klineMemo.has(memoKey)) {
         klines = snap.etfCode
           ? await dataSourceService.fetchEtfKLine(snap.etfCode, SNAPSHOT_PERIOD)
-          : await dataSourceService.fetchKLine(snap.fundCode, SNAPSHOT_PERIOD)
+          : await dataSourceService.fetchKLine(snap.fundCode, SNAPSHOT_PERIOD);
         // 强制非 null（接口失败兜底空数组），避免后续 .filter 在 null 上崩溃
-        klineMemo.set(memoKey, klines ?? [])
+        klineMemo.set(memoKey, klines ?? []);
       }
-      klines = klineMemo.get(memoKey) ?? []
-      if (klines.length === 0) continue // 无 K 线（接口失败或尚未上市）则跳过回填
+      klines = klineMemo.get(memoKey) ?? [];
+      if (klines.length === 0) continue; // 无 K 线（接口失败或尚未上市）则跳过回填
       const later = klines
         .filter((k) => k.date > snap.asOfDate)
-        .sort((a, b) => (a.date < b.date ? -1 : 1))
-      if (later.length === 0) continue // 尚未出现下一交易日数据
+        .sort((a, b) => (a.date < b.date ? -1 : 1));
+      if (later.length === 0) continue; // 尚未出现下一交易日数据
 
-      const next = later[0]
+      const next = later[0];
       const nextChangePct = snap.closeValue
         ? ((next.close - snap.closeValue) / snap.closeValue) * 100
-        : 0
+        : 0;
 
       // 数据质量守卫：单日涨跌幅超出合理上限（如单位换算错误导致 -67%）视为数据异常，
       // 隔离为 unknown 不计入方向性命中。已结算快照也会在此被自愈（旧逻辑只处理 pending/unknown，脏数据永不修正）。
       if (!Number.isFinite(nextChangePct) || Math.abs(nextChangePct) > MAX_DAILY_CHANGE_PCT) {
-        if (snap.outcome !== 'unknown') {
+        if (snap.outcome !== "unknown") {
           await db.scoreSnapshots.update(snap.id, {
             nextDate: next.date,
             nextValue: next.close,
             nextChangePct: null,
-            outcome: 'unknown',
+            outcome: "unknown",
             updatedAt: Date.now(),
-          })
-          updated++
-          isolated++
+          });
+          updated++;
+          isolated++;
         }
-        continue
+        continue;
       }
 
-      const outcome = computeOutcome(snap.recommendation, nextChangePct)
+      const outcome = computeOutcome(snap.recommendation, nextChangePct);
       // 幂等自愈：已结算快照若 pct 有效也重算 outcome（与最新数据一致）；pending/unknown 正常回填
       if (snap.outcome !== outcome || snap.nextChangePct == null) {
         await db.scoreSnapshots.update(snap.id, {
@@ -448,24 +513,24 @@ export async function reconcileSnapshots(): Promise<number> {
           nextChangePct,
           outcome,
           updatedAt: Date.now(),
-        })
-        updated++
+        });
+        updated++;
       }
     } catch {
-      failed++
+      failed++;
     }
   }
   // 聚合日志：避免逐条打印导致控制台刷屏（自愈成功不应产生噪音）
   if (isolated > 0 || failed > 0) {
     console.warn(
       `[backtest] 回填完成：检查 ${all.length} 条，隔离 ${isolated} 条异常涨跌（|pct|>${MAX_DAILY_CHANGE_PCT}%）已标记为 unknown，${failed} 条拉取失败；共更新 ${updated} 条`,
-    )
+    );
   }
-  return updated
+  return updated;
 }
 
 /** 读取全部快照（按日期倒序） */
 export async function getAllSnapshots(): Promise<ScoreSnapshot[]> {
-  const all = await db.scoreSnapshots.toArray()
-  return all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+  const all = await db.scoreSnapshots.toArray();
+  return all.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 }

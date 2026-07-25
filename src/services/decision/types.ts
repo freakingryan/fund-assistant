@@ -8,84 +8,103 @@
  * @module decision/types
  */
 
-import type { DetectedPattern } from '../klinePatterns'
-import type { SignalResult } from '../signalEngine'
-import type { StockSdkIndicatorsResult } from '../stockSdkIndicators'
-import type { StrategyHit } from '../strategyLayer'
+import type { DetectedPattern } from "../klinePatterns";
+import type { SignalResult } from "../signalEngine";
+import type { StockSdkIndicatorsResult } from "../stockSdkIndicators";
+import type { StrategyHit } from "../strategyLayer";
+export type { NavFactors } from "./navFactors";
+export type { MarketRegime } from "./regimeFactor";
+export type { EmFactors } from "./eastmoneyFactors";
 
 /** 信号类别（同时作为评分维度，权重见 decisionEngine.ts） */
 export type SignalCategory =
-  | 'trend' // 趋势（MA 排列 / 趋势类策略）
-  | 'macd' // MACD
-  | 'momentum' // 动量（RSI/KDJ/WR/CCI/ROC）
-  | 'bias' // 乖离率（独立风险维度）
-  | 'volume' // 量能
-  | 'pattern' // K 线形态
+  | "trend" // 趋势（MA 排列 / 趋势类策略）
+  | "macd" // MACD
+  | "momentum" // 动量（RSI/KDJ/WR/CCI/ROC）
+  | "bias" // 乖离率（独立风险维度）
+  | "volume" // 量能
+  | "pattern" // K 线形态
+  | "navmom" // 净值动量（NAV 专属，仅净值模式计入基础加权）
+  | "capitalflow" // 东财资金面（overlay，不计入基础加权）
+  | "sector" // 东财板块赛道（overlay，不计入基础加权）
+  | "peer"; // 东财同类排名（overlay，不计入基础加权）
 
-export type Direction = 'bull' | 'bear' | 'neutral'
+export type Direction = "bull" | "bear" | "neutral";
 
 /** 统一信号原语：三套分析 + 策略层都归一化成它 */
 export interface AnalysisSignal {
-  id: string
-  label: string
-  direction: Direction
+  id: string;
+  label: string;
+  direction: Direction;
   /** 强度 0~1（方向幅度） */
-  strength: number
+  strength: number;
   /** 置信度 0~1 */
-  confidence: number
+  confidence: number;
   /** 新鲜度 0~1：越靠近当前越高，衰减久远信号 */
-  freshness: number
-  category: SignalCategory
+  freshness: number;
+  category: SignalCategory;
   /** 来源（用于展示：K线形态 / 技术指标 / 综合评分 / 策略） */
-  source: string
-  detail?: string
+  source: string;
+  detail?: string;
 }
 
 /** 决策理由条目（买入理由 / 风险因子的统一结构） */
 export interface ReasonItem {
-  label: string
-  detail: string
-  category: SignalCategory
+  label: string;
+  detail: string;
+  category: SignalCategory;
   /** 有效功率（带符号），用于排序 */
-  weight: number
+  weight: number;
 }
 
-export type Rating = 'strong_buy' | 'buy' | 'hold' | 'reduce' | 'strong_sell'
+export type Rating = "strong_buy" | "buy" | "hold" | "reduce" | "strong_sell";
 
 /** 融合后的决策建议 */
 export interface Decision {
-  rating: Rating
-  ratingLabel: string
+  rating: Rating;
+  ratingLabel: string;
   /** 评级配色语义：涨红跌绿、中性 */
-  ratingColor: 'up' | 'down' | 'neutral'
+  ratingColor: "up" | "down" | "neutral";
   /** 综合评分 0~100 */
-  score: number
-  bullPower: number
-  bearPower: number
+  score: number;
+  bullPower: number;
+  bearPower: number;
   /** 多头力量占比 0~1 */
-  bullRatio: number
+  bullRatio: number;
   /** 多空一致性 0~1（= bullRatio） */
-  agreement: number
+  agreement: number;
   /** 是否存在显著多空冲突（分歧大） */
-  conflict: boolean
+  conflict: boolean;
   /** 净值模式（无真实 OHLC），置信度降级 */
-  lowConfidence: boolean
-  bullReasons: ReasonItem[]
-  bearReasons: ReasonItem[]
-  strategies: StrategyHit[]
+  lowConfidence: boolean;
+  bullReasons: ReasonItem[];
+  bearReasons: ReasonItem[];
+  strategies: StrategyHit[];
   /** 当前是否为空头排列趋势背景 */
-  trendBearish: boolean
+  trendBearish: boolean;
   /** 人话总结（含冲突说明、理由串联） */
-  summary: string
+  summary: string;
+  /** 东财叠加层对综合评分的调整量（有界 ±12；所有因子不可用时恒为 0） */
+  emDelta: number;
+  /** 是否施加了市场 regime 折扣（剥离 beta 伪信号）；false 表示未计算或中性市 */
+  regimeAdjusted: boolean;
+  /** NAV 原生因子是否生效（仅净值模式且样本充足时 available） */
+  navAvailable: boolean;
 }
 
 /** 融合引擎输入 */
 export interface DecisionInputs {
-  klines: import('@/types').KLineData[]
-  patterns: DetectedPattern[]
-  signalResult: SignalResult | null
-  ind: StockSdkIndicatorsResult
-  strategies: StrategyHit[]
+  klines: import("@/types").KLineData[];
+  patterns: DetectedPattern[];
+  signalResult: SignalResult | null;
+  ind: StockSdkIndicatorsResult;
+  strategies: StrategyHit[];
   /** 净值模式（无真实 OHLC）时置信度降级 */
-  lowConfidence?: boolean
+  lowConfidence?: boolean;
+  /** NAV 原生因子（净值基金专属；available 时计入基础加权 navmom） */
+  nav?: NavFactors;
+  /** 市场 regime（沪深300 状态；用于剥离 beta 伪信号） */
+  regime?: MarketRegime;
+  /** 东财交叉截面因子（overlay 叠加层；不可用时 available:false → 增量 0，不影响评分） */
+  em?: EmFactors;
 }
