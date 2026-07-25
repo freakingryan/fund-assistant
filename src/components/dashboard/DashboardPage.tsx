@@ -48,6 +48,7 @@ import { asOfFromQuotes } from "@/lib/dataTime";
 import DataAsOf from "@/components/ui/DataAsOf";
 import RealtimePanel from "./RealtimePanel";
 import BacktestSummaryCard from "./BacktestSummaryCard";
+import MarketBreadthCard from "./MarketBreadthCard";
 import { TYPE_COLORS, SECTOR_COLORS, TYPE_FALLBACK } from "@/lib/chart-colors";
 
 export default function DashboardPage() {
@@ -356,6 +357,9 @@ export default function DashboardPage() {
 
       {/* 实时持仓概览 */}
       {holdings.length > 0 && <RealtimePanel holdings={holdings} />}
+
+      {/* 市场宽度 / 大盘复盘（情绪指标） */}
+      <MarketBreadthCard />
 
       {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
