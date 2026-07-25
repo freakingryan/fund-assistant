@@ -36,4 +36,6 @@ export const ROUTES = {
   daily: "/daily",
   /** 设置 */
   settings: "/settings",
+  /** 市场情绪（打板 / 龙虎榜 / 北向） */
+  market: "/market",
 } as const;
