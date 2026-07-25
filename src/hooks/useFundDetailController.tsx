@@ -15,6 +15,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useRealtimeQuotes } from "@/hooks/useRealtimeQuotes";
 import { dataSourceService } from "@/adapters/datasource/service";
 import { generatePrompt } from "@/services/prompt";
+import { getStrategiesByIds } from "@/services/analysisStrategies";
 import type { PromptTemplateType } from "@/types";
 import {
   getKlineCache,
@@ -167,6 +168,12 @@ export interface FundDetailController {
   handleGenerateKlinePrompt: () => void;
   handleCallAI: () => void;
   handleCopy: () => void;
+
+  // 分析策略（P0-A 多策略问股）：选中的策略 id 列表与切换方法
+  selectedStrategyIds: string[];
+  setSelectedStrategyIds: (ids: string[]) => void;
+  toggleStrategy: (id: string) => void;
+  clearStrategies: () => void;
 }
 
 function useFundDetailController(fundId: string): FundDetailController {
@@ -216,6 +223,14 @@ function useFundDetailController(fundId: string): FundDetailController {
   const [prompt, setPrompt] = useState("");
   const [copied, setCopied] = useState(false);
   const [templateType, setTemplateType] = useState<PromptTemplateType>("diagnostic");
+  /** P0-A 多策略问股：选中的分析策略 id 列表 */
+  const [selectedStrategyIds, setSelectedStrategyIds] = useState<string[]>([]);
+  const toggleStrategy = useCallback((id: string) => {
+    setSelectedStrategyIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+  const clearStrategies = useCallback(() => setSelectedStrategyIds([]), []);
   /** Prompt / AI 双 Tab：默认展示生成的 Prompt，已配置 AI 时可切换到「直接调用 AI」 */
   const [activeTab, setActiveTab] = useState<"prompt" | "ai">("prompt");
   const [aiResponse, setAiResponse] = useState("");
@@ -577,8 +592,9 @@ function useFundDetailController(fundId: string): FundDetailController {
       etfMappings,
       alerts,
       klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
+      strategies: getStrategiesByIds(selectedStrategyIds),
     });
-  }, [fund, templateType, valuations, etfMappings, alerts, klineData]);
+  }, [fund, templateType, valuations, etfMappings, alerts, klineData, selectedStrategyIds]);
 
   const handleGenerate = useCallback(() => {
     const p = buildPrompt();
@@ -607,13 +623,14 @@ function useFundDetailController(fundId: string): FundDetailController {
       etfMappings,
       alerts,
       klineDataMap: Object.keys(klineDataMap).length > 0 ? klineDataMap : undefined,
+      strategies: getStrategiesByIds(selectedStrategyIds),
     });
     setPrompt(result);
     setCopied(false);
     setAiResponse("");
     setAiError(null);
     setActiveTab("prompt");
-  }, [fund, valuations, etfMappings, alerts, klineData]);
+  }, [fund, valuations, etfMappings, alerts, klineData, selectedStrategyIds]);
 
   /** 直接调用已配置的 AI 平台，将生成的 Prompt 提交并返回 AI 的回复 */
   const handleCallAI = useCallback(async () => {
@@ -740,6 +757,10 @@ function useFundDetailController(fundId: string): FundDetailController {
     handleGenerateKlinePrompt,
     handleCallAI,
     handleCopy,
+    selectedStrategyIds,
+    setSelectedStrategyIds,
+    toggleStrategy,
+    clearStrategies,
   };
 }
 

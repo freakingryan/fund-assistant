@@ -10,6 +10,12 @@ import { Separator } from "@/components/ui/separator";
 import { Copy, Sparkles, RefreshCw, CheckCircle, AlertCircle, FileText } from "lucide-react";
 import { generatePrompt } from "@/services/prompt";
 import type { PromptTemplateType } from "@/types";
+import {
+  ANALYSIS_STRATEGIES,
+  STRATEGY_GROUPS,
+  STRATEGY_CATEGORY_LABELS,
+  STRATEGY_DATA_LABELS,
+} from "@/services/analysisStrategies";
 
 const TEMPLATE_OPTIONS: { value: PromptTemplateType; label: string; desc: string }[] = [
   { value: "diagnostic", label: "持仓诊断", desc: "分析持仓结构、风险收益、给出综合建议" },
@@ -20,6 +26,73 @@ const TEMPLATE_OPTIONS: { value: PromptTemplateType; label: string; desc: string
     desc: "针对有场内 ETF 映射的基金，补充 K 线技术面分析",
   },
 ];
+
+/** 只读策略库目录（P0-A）：移植自 DSA 的 15 个声明式策略 */
+function StrategyCatalog() {
+  const groups = STRATEGY_GROUPS;
+  const order: Array<keyof typeof groups> = ["trend", "pattern", "reversal", "framework"];
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold tracking-tight">分析策略库</h2>
+        <span className="text-xs text-muted-foreground">
+          共 {ANALYSIS_STRATEGIES.length} 个声明式策略（移植自
+          DSA），可在基金详情页「分析策略」中多选叠加为透镜
+        </span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {order.map((cat) =>
+          groups[cat].map((s) => (
+            <Card key={s.id} className="transition-colors hover:border-primary/30">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-sm">{s.displayName}</CardTitle>
+                  <span className="text-[10px] rounded-full bg-muted px-2 py-0.5 text-muted-foreground shrink-0">
+                    {STRATEGY_CATEGORY_LABELS[cat]}
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <p className="text-muted-foreground leading-relaxed">{s.description}</p>
+                {s.requiredData.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {s.requiredData.map((d) => (
+                      <span
+                        key={d}
+                        className="text-[10px] rounded bg-primary/10 px-1.5 py-0.5 text-primary"
+                      >
+                        {STRATEGY_DATA_LABELS[d]}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <details className="group">
+                  <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground list-none select-none flex items-center gap-1">
+                    <span className="inline-block transition-transform duration-200 group-open:rotate-90">
+                      ▶
+                    </span>
+                    查看分析框架
+                  </summary>
+                  <div className="mt-2 max-h-[260px] overflow-y-auto whitespace-pre-wrap rounded bg-muted/30 p-2 text-[11px] leading-relaxed">
+                    {s.instructions.trim()}
+                    {s.scoreAdjust && (
+                      <>
+                        {"\n\n"}
+                        <span className="font-medium">评分调整建议：</span>
+                        {"\n"}
+                        {s.scoreAdjust.trim()}
+                      </>
+                    )}
+                  </div>
+                </details>
+              </CardContent>
+            </Card>
+          )),
+        )}
+      </div>
+    </section>
+  );
+}
 
 export default function PromptsPage() {
   const holdings = useHoldingsStore((s) => s.holdings);
@@ -312,6 +385,8 @@ export default function PromptsPage() {
           </Card>
         </div>
       </div>
+
+      <StrategyCatalog />
     </div>
   );
 }

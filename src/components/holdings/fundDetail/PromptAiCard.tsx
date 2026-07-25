@@ -4,8 +4,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import Markdown from "@/components/ui/Markdown";
 import MarkdownModal from "@/components/ui/MarkdownModal";
-import { Sparkles, Copy, CheckCircle, FileText, Maximize2, Loader2 } from "lucide-react";
+import { Sparkles, Copy, CheckCircle, FileText, Maximize2, Loader2, Layers, X } from "lucide-react";
 import { useFundDetail, TEMPLATE_HINTS } from "@/hooks/useFundDetailController";
+import {
+  STRATEGY_GROUPS,
+  STRATEGY_CATEGORY_LABELS,
+  STRATEGY_DATA_LABELS,
+} from "@/services/analysisStrategies";
 
 /** 分析 Prompt 生成 / 直接调用 AI：消费详情控制器，依赖 prompt/ai 状态与 handler */
 export default function PromptAiCard() {
@@ -29,8 +34,13 @@ export default function PromptAiCard() {
     handleGenerate,
     handleCallAI,
     handleCopy,
+    selectedStrategyIds,
+    toggleStrategy,
+    clearStrategies,
   } = useFundDetail();
   if (!fund) return null;
+
+  const strategyGroups = STRATEGY_GROUPS;
 
   return (
     <Card className="flex-1">
@@ -83,6 +93,70 @@ export default function PromptAiCard() {
         <p className="text-[10px] text-muted-foreground leading-relaxed">
           {TEMPLATE_HINTS[templateType]}
         </p>
+
+        {/* 分析策略多选（P0-A 多策略问股）：作为加性透镜追加到生成的 Prompt */}
+        <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium flex items-center gap-1 text-foreground/80">
+              <Layers className="h-3 w-3" />
+              分析策略
+              {selectedStrategyIds.length > 0 && (
+                <span className="ml-1 rounded-full bg-primary/15 px-1.5 text-[10px] text-primary">
+                  已选 {selectedStrategyIds.length}
+                </span>
+              )}
+            </span>
+            {selectedStrategyIds.length > 0 && (
+              <button
+                onClick={clearStrategies}
+                className="text-[10px] text-muted-foreground hover:text-destructive transition-colors flex items-center gap-0.5"
+              >
+                <X className="h-2.5 w-2.5" />
+                清空
+              </button>
+            )}
+          </div>
+          <div
+            role="group"
+            aria-label="分析策略（可多选叠加为透镜）"
+            className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1"
+          >
+            {(Object.keys(strategyGroups) as Array<keyof typeof strategyGroups>).map((cat) => {
+              const list = strategyGroups[cat];
+              if (list.length === 0) return null;
+              return (
+                <div key={cat} className="flex flex-wrap items-center gap-1">
+                  <span className="text-[9px] text-muted-foreground w-6 shrink-0 select-none">
+                    {STRATEGY_CATEGORY_LABELS[cat]}
+                  </span>
+                  {list.map((s) => {
+                    const active = selectedStrategyIds.includes(s.id);
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => toggleStrategy(s.id)}
+                        aria-pressed={active}
+                        title={`${s.description}${s.requiredData.length ? `\n依赖数据：${s.requiredData.map((d) => STRATEGY_DATA_LABELS[d]).join("、")}` : ""}`}
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                          active
+                            ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                            : "bg-background border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        }`}
+                      >
+                        {s.displayName}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+          {selectedStrategyIds.length > 0 && (
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              选中的 {selectedStrategyIds.length} 个策略会作为额外分析视角写入 Prompt。
+            </p>
+          )}
+        </div>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "prompt" | "ai")}>
           <TabsList className="w-full">

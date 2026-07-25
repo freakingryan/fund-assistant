@@ -7,6 +7,7 @@ import type {
   PromptTemplateType,
 } from "@/types";
 import { detectPatterns, formatPatternsSummary } from "@/services/klinePatterns";
+import { type AnalysisStrategy, strategiesToPromptSection } from "@/services/analysisStrategies";
 import { TYPE_LABELS, SECTOR_LABELS, MARKET_LABELS } from "@/lib/labels";
 
 export interface GeneratePromptOptions {
@@ -18,6 +19,8 @@ export interface GeneratePromptOptions {
   alerts: PlanAlert[];
   /** 可选：场内外 K 线数据，用于 kline_enhanced 模板 */
   klineDataMap?: Record<string, KLineData[]>; // key = exchangeCode
+  /** 可选：选中的分析策略透镜（P0-A 多策略问股），追加为「附加分析策略」章节 */
+  strategies?: AnalysisStrategy[];
 }
 
 function fmt(v: number): string {
@@ -233,8 +236,16 @@ ${etfSection}
  * 生成 Prompt
  */
 export function generatePrompt(options: GeneratePromptOptions): string {
-  const { templateType, holdings, quotes, selectedIds, etfMappings, alerts, klineDataMap } =
-    options;
+  const {
+    templateType,
+    holdings,
+    quotes,
+    selectedIds,
+    etfMappings,
+    alerts,
+    klineDataMap,
+    strategies,
+  } = options;
 
   const selected = holdings.filter((h) => selectedIds.includes(h.id));
   if (selected.length === 0) return "";
@@ -252,7 +263,8 @@ export function generatePrompt(options: GeneratePromptOptions): string {
       break;
   }
 
-  return body;
+  const strategySection = strategiesToPromptSection(strategies ?? []);
+  return strategySection ? `${body}\n\n${strategySection}` : body;
 }
 
 export function promptPreview(options: GeneratePromptOptions): string {
