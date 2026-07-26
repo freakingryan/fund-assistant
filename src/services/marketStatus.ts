@@ -2,7 +2,7 @@
  * 市场状态（交易时段）共享服务 + React hook
  *
  * 从 marketBreadth.ts 抽取，避免 Dashboard 卡与市场状态护栏重复实现。
- * 底层仅用 stock-sdk 的 `calendar.getMarketStatus("CN")`（纯时间计算，无网络、不依赖东财开关）。
+ * 底层仅用 stock-sdk 的 `calendar.marketStatus("A")`（纯时间计算，无网络、不依赖东财开关）。
  *
  * 护栏核心判定：`isMarketOpen()` —— 仅在交易时段（open，不含午休）为 true。
  *
@@ -12,6 +12,18 @@
 import { useEffect, useState } from "react";
 import type { MarketStatus } from "stock-sdk";
 import StockSDK from "stock-sdk";
+
+/**
+ * 单例缓存 SDK 实例。
+ * `calendar.marketStatus()` 是纯时间计算，无需任何数据源配置，
+ * 但 `new StockSDK()` 仍会构建一整套 service 链，故在模块级复用同一实例，
+ * 避免每次 30s 轮询 / 每次 `isMarketOpen()` 都重新构造。
+ */
+let sdkInstance: StockSDK | null = null;
+function getSdk(): StockSDK {
+  if (!sdkInstance) sdkInstance = new StockSDK();
+  return sdkInstance;
+}
 
 /** 市场状态 → 中文标签（纯计算，与交易时段对应） */
 export const MARKET_STATUS_LABEL: Record<MarketStatus, string> = {
@@ -31,9 +43,9 @@ export const MARKET_STATUS_TONE: Record<MarketStatus, "up" | "down" | "neutral">
   closed: "down",
 };
 
-/** 当前 A 股市场状态（纯时间计算，无网络） */
+/** 当前 A 股市场状态（纯时间计算，无网络）。market 取 "A"（A股，对应 CN 时区） */
 export function getMarketStatusCN(): MarketStatus {
-  return new StockSDK().calendar.getMarketStatus("CN");
+  return getSdk().calendar.marketStatus("A");
 }
 
 /** 是否处于连续交易时段（open，不含午休 / 盘前 / 盘后 / 休市） */

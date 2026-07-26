@@ -5,7 +5,7 @@
  *  - 涨停/跌停/炸板家数 + 炸板率：stock-sdk `marketEvent.ztPool` ×3（受「东财增强」开关门控）
  *  - 行业板块领涨/领跌：stock-sdk `board.industry.list` 按 changePercent 排序（受开关门控）
  *  - 主要指数涨跌：stock-api `auto.getStocks`（腾讯/新浪/东财 fallback，与 ETF 行情同通道，不依赖开关）
- *  - 市场状态：stock-sdk `calendar.getMarketStatus`（纯时间计算，无网络）
+ *  - 市场状态：stock-sdk `calendar.marketStatus("A")`（纯时间计算，无网络）
  *
  * 遵循评估 §7.4「不自建东财解析、不引入 Python」与 §6.2.4「市场宽度卡落 Dashboard」原则。
  *
