@@ -9,16 +9,14 @@ import { Loader2, MessageSquare, RefreshCw } from "lucide-react";
 import { getIrmQa } from "@/services/extraSources/cninfo";
 import type { CninfoIrmItem } from "@/types";
 import { useSettingsStore } from "@/stores/settings";
+import { formatDateOnly } from "@/lib/dataTime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ExtraSourceGuard } from "./ExtraSourceGuard";
 
 function fmtTime(ms?: number): string {
-  if (!ms) return "";
-  const d = new Date(ms);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" });
+  return formatDateOnly(ms);
 }
 
 function PanelInner() {
