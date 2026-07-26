@@ -212,11 +212,10 @@ export default function KlineChartCard({
           </div>
         ) : showCandlestick ? (
           <>
-            {/* 可滚动容器：防止 SVG 在窄屏下撑破父容器 */}
-            <div className="overflow-x-auto pb-1 -mx-1 px-1">
+            {/* K 线图表：按父容器宽度自适应，与卡片左右内边距对齐 */}
+            <div className="w-full">
               <CandlestickChart
                 data={klineData}
-                width={560}
                 height={320}
                 patterns={klineDetectedPatterns}
                 onHover={onHover}

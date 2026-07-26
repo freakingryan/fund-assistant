@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState, useCallback, useRef, useEffect, useLayoutEffect } from "react";
 import type { KLineData } from "@/types";
 import { MA_COLORS, MA_LABELS } from "@/lib/chart-colors";
 import type { DetectedPattern, KlinePattern } from "@/services/klinePatterns";
@@ -103,6 +103,21 @@ export default function CandlestickChart({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // 未传入固定 width 时，按父容器实际宽度自适应（避免 K 线卡片右侧留白）
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    if (width != null) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setMeasuredWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width]);
+
+  const effectiveWidth = width ?? Math.max(measuredWidth, 320);
 
   // 点击外部取消选中（触屏 & 桌面通用）
   useEffect(() => {
@@ -127,7 +142,7 @@ export default function CandlestickChart({
     setSelectedIndex((prev) => (prev === i ? null : i));
   }, []);
 
-  const chartWidth = width - MARGIN.left - MARGIN.right;
+  const chartWidth = effectiveWidth - MARGIN.left - MARGIN.right;
   const chartHeight = height - MARGIN.top - MARGIN.bottom - VOL_HEIGHT - CHART_BOTTOM_GAP;
 
   const { yScale, candles } = useMemo(() => {
@@ -207,12 +222,15 @@ export default function CandlestickChart({
   return (
     <div
       ref={containerRef}
-      className="relative inline-block"
+      className={width != null ? "relative inline-block" : "relative w-full"}
       style={{ touchAction: "manipulation" }}
     >
       {/* SVG 图表（tooltip 置于外部，绝不遮挡） */}
-      <div style={{ width }}>
-        <svg width={width} height={height} className="overflow-visible select-none">
+      <div
+        style={{ width: width != null ? width : undefined }}
+        className={width == null ? "w-full" : undefined}
+      >
+        <svg width={effectiveWidth} height={height} className="overflow-visible select-none">
           {/* Y axis */}
           {ticks.map((t, i) => (
             <g key={i}>
