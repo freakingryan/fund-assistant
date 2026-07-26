@@ -44,6 +44,11 @@ export async function fetchResearchReports(
   const config = useSettingsStore.getState().settings.dataSource.eastmoney;
   if (!config.enabled) throw new EastmoneyDisabledError();
   const sdk = buildEastmoneySdk(config);
+  // 守卫：stock-sdk 2.4.0 facade 无 report getter（sdk.report 运行时为 undefined，
+  // 类型却声明存在 → 类型/运行时不匹配）。缺服务时优雅降级为禁用态，而非抛 TypeError 污染错误态。
+  if (typeof (sdk as { report?: unknown }).report?.list !== "function") {
+    throw new EastmoneyDisabledError();
+  }
   return sdk.report.list({
     type: "stock",
     code: opts.stockCode,
