@@ -42,6 +42,7 @@ function PanelInner() {
   }, [config, period]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载即拉取人气热榜，setState 在异步请求前触发属预期
     load();
   }, [load]);
 

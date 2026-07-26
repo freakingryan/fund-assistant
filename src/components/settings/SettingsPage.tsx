@@ -101,7 +101,7 @@ export default function SettingsPage() {
     try {
       const result = await dataSourceService.checkHealth();
       setHealth(result);
-    } catch (e: any) {
+    } catch (e) {
       setHealth({ stockApi: { ok: false, latency: 0, error: String(e) } });
     }
     setHealthChecking(false);
@@ -463,7 +463,8 @@ export default function SettingsPage() {
                       : "__placeholder__"
                   }
                   onValueChange={(v) =>
-                    v !== "__placeholder__" && updateSettings({ defaultAIProvider: v as any })
+                    v !== "__placeholder__" &&
+                    updateSettings({ defaultAIProvider: v as AIProvider })
                   }
                 >
                   <SelectTrigger className="h-8 text-xs">
@@ -940,7 +941,7 @@ export default function SettingsPage() {
                 <Label>主题</Label>
                 <Select
                   value={settings.theme}
-                  onValueChange={(v) => updateSettings({ theme: v as any })}
+                  onValueChange={(v) => updateSettings({ theme: v as "light" | "dark" | "system" })}
                 >
                   <SelectTrigger>
                     <SelectValue />

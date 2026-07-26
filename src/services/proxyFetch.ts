@@ -31,7 +31,7 @@ export function buildProxyFetch(config: EastmoneyDataSourceConfig): typeof fetch
       let url: string;
       if (typeof input === "string") url = input;
       else if (input instanceof URL) url = input.href;
-      else return fetch(input as Request, init);
+      else return fetch(input, init);
 
       if (PROXY_HOST_RE.test(url)) {
         const origHost = new URL(url).host;
@@ -43,5 +43,5 @@ export function buildProxyFetch(config: EastmoneyDataSourceConfig): typeof fetch
       return fetch(url, init);
     };
   }
-  return (input, init) => fetch(input as any, init);
+  return (input, init) => fetch(input, init);
 }

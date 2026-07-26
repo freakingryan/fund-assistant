@@ -19,5 +19,5 @@ import { buildProxyFetch } from "./proxyFetch";
  */
 export function buildEastmoneySdk(config: EastmoneyDataSourceConfig): StockSDK {
   const proxyFetch = buildProxyFetch(config);
-  return new StockSDK({ fetchImpl: proxyFetch } as any);
+  return new StockSDK({ fetchImpl: proxyFetch });
 }

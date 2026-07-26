@@ -68,6 +68,7 @@ export default function ResearchReportCard({ stockCode, stockName }: Props) {
   }, [stockCode]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 挂载即拉取研报，setState 在异步请求前触发属预期
     load();
   }, [load]);
 
