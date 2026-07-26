@@ -896,6 +896,32 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+                <div className="flex items-center justify-between border-t border-border/40 pt-3">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs">仅交易时段推送</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      非交易时段（盘前 / 午休 / 盘后 / 休市）抑制 info / success 通知
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateNotifications({
+                        noise: {
+                          ...settings.notifications.noise,
+                          marketStatusGuard: !settings.notifications.noise.marketStatusGuard,
+                        },
+                      })
+                    }
+                    className={`rounded-full border px-2.5 py-0.5 text-[11px] ${
+                      settings.notifications.noise.marketStatusGuard
+                        ? "bg-primary/10 text-primary border-primary/40"
+                        : "text-muted-foreground border-border"
+                    }`}
+                  >
+                    {settings.notifications.noise.marketStatusGuard ? "已开启" : "已关闭"}
+                  </button>
+                </div>
                 <div className="space-y-2">
                   <Label className="text-xs">免打扰类型</Label>
                   <div className="flex flex-wrap gap-2">

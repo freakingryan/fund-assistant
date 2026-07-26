@@ -41,6 +41,7 @@ const defaultSettings: UserSettings = {
       dedupWindowMin: 10,
       minIntervalSec: 3,
       maxPerMinute: 20,
+      marketStatusGuard: true,
     },
   },
   etfMappings: [],

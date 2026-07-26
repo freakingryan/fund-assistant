@@ -16,6 +16,7 @@ import {
 import { isTradingDay } from "./lib/tradingCalendar";
 import { requestNotificationPermission } from "./services/notification";
 import { notify } from "./services/notify";
+import { isMarketOpen } from "@/services/marketStatus";
 import ToastContainer from "./components/ui/toast";
 import InstallPrompt from "./components/layout/InstallPrompt";
 import { AlertCircle } from "lucide-react";
@@ -54,20 +55,9 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
 }
 
 /**
- * 交易日交易时段内（周一至周五）是否打开，用于收盘前自动扫描。
- * 覆盖 9:30–15:00，但排除午间休市 11:30–13:00（基金申赎 15:00 截止）。
- *   - 上午盘：09:30–11:30
- *   - 午休：  11:30–13:00（跳过）
- *   - 下午盘：13:00–15:00
+ * 交易时段判定复用 marketStatus 模块（isMarketOpen）。
+ * 原本地 isTradingHoursOpen 已迁移，避免重复实现与午休/周末边界差异。
  */
-function isTradingHoursOpen(now: Date = new Date()): boolean {
-  const day = now.getDay();
-  if (day === 0 || day === 6) return false;
-  const mins = now.getHours() * 60 + now.getMinutes();
-  const inMorning = mins >= 9 * 60 + 30 && mins < 11 * 60 + 30;
-  const inAfternoon = mins >= 13 * 60 && mins < 15 * 60;
-  return inMorning || inAfternoon;
-}
 
 /**
  * 评分回测：每个交易日收盘后仅自动采集一次 + 回溯补齐最近缺失的交易日。
@@ -141,7 +131,7 @@ export default function App() {
 
       // 收盘前自动扫描：交易时段内打开 App 即跑一次投资计划检查，新提醒推送浏览器通知。
       // scan() 内部按 fundCode|ruleId 去重，仅生成真正新增的提醒，不会重复打扰。
-      if (isTradingHoursOpen()) {
+      if (isMarketOpen()) {
         const plan = usePlansStore.getState().plan;
         if (plan?.enabled) {
           const holdings = useHoldingsStore.getState().holdings;

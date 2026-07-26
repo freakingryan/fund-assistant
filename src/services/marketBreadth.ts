@@ -12,8 +12,7 @@
  * @module marketBreadth
  */
 
-import type { IndustryBoard, MarketStatus } from "stock-sdk";
-import StockSDK from "stock-sdk";
+import type { IndustryBoard } from "stock-sdk";
 import StockApiDefault from "stock-api";
 import { buildEastmoneySdk } from "@/services/eastmoneySdk";
 import { EastmoneyDisabledError } from "@/services/sectorFundFlowRank";
@@ -56,14 +55,8 @@ export interface IndexQuote {
   changePercent: number;
 }
 
-/** 市场状态 → 中文标签（纯计算，与交易时段对应） */
-export const MARKET_STATUS_LABEL: Record<MarketStatus, string> = {
-  pre_market: "盘前",
-  open: "交易中",
-  lunch_break: "午休",
-  after_hours: "盘后",
-  closed: "休市",
-};
+/** 市场状态标签转由 marketStatus 模块统一定义（避免重复实现） */
+export { MARKET_STATUS_LABEL } from "@/services/marketStatus";
 
 /** 默认关注的主要指数（腾讯/东财代码格式） */
 export const DEFAULT_INDEX_CODES: string[] = [
@@ -126,9 +119,7 @@ export async function fetchIndexQuotes(
     }));
 }
 
-/** 市场状态（纯时间计算，无网络，不依赖东财开关） */
-export function getMarketStatusCN(): MarketStatus {
-  return new StockSDK().calendar.getMarketStatus("CN");
-}
+/** 市场状态查询转由 marketStatus 模块统一实现（避免重复实现） */
+export { getMarketStatusCN } from "@/services/marketStatus";
 
 export { EastmoneyDisabledError } from "@/services/sectorFundFlowRank";

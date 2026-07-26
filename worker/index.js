@@ -13,7 +13,8 @@
  * 杜绝被当作开放代理。
  */
 
-const ALLOWED_HOST_RE = /([^/?#]+\.)*(?:eastmoney\.com|10jqka\.com\.cn|cninfo\.com\.cn)$/i;
+const ALLOWED_HOST_RE =
+  /([^/?#]+\.)*(?:eastmoney\.com|10jqka\.com\.cn|cninfo\.com\.cn|sinajs\.com\.cn|sina\.com\.cn)$/i;
 
 export default {
   async fetch(request, env, ctx) {
@@ -34,6 +35,17 @@ export default {
     // 转发时移除控制头，避免污染上游
     const headers = new Headers(request.headers);
     headers.delete("x-upstream-host");
+
+    // 新浪行情需 Referer（浏览器禁止头，由 Worker 注入）
+    if (/sinajs\.com\.cn$|sina\.com\.cn$/.test(upstream)) {
+      headers.set("Referer", `https://${upstream}/`);
+      if (!headers.has("User-Agent")) {
+        headers.set(
+          "User-Agent",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36",
+        );
+      }
+    }
 
     const resp = await fetch(url.toString(), {
       method: request.method,

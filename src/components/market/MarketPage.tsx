@@ -12,6 +12,8 @@ import NorthboundPanel from "./NorthboundPanel";
 import ConsensusEpsPanel from "./ConsensusEpsPanel";
 import HotListPanel from "./HotListPanel";
 import IrmPanel from "./IrmPanel";
+import MarketStatusBar from "./MarketStatusBar";
+import EtfOptionPanel from "./EtfOptionPanel";
 
 export default function MarketPage() {
   return (
@@ -23,7 +25,11 @@ export default function MarketPage() {
           互动易来自同花顺与巨潮（设置 → 数据源开启后展示）。
         </p>
       </div>
+      <MarketStatusBar />
       <div className="grid gap-4 lg:grid-cols-2">
+        <div className="lg:col-span-2">
+          <EtfOptionPanel />
+        </div>
         <LimitUpBoardPanel />
         <NorthboundPanel />
         <div className="lg:col-span-2">

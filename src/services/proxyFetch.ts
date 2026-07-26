@@ -18,7 +18,7 @@ import type { EastmoneyDataSourceConfig } from "@/types";
  * 必须同步放行这些域，否则 Worker 会拒绝转发。
  */
 export const PROXY_HOST_RE =
-  /^https?:\/\/([^/?#]+\.)*(?:eastmoney\.com|10jqka\.com\.cn|cninfo\.com\.cn)/i;
+  /^https?:\/\/([^/?#]+\.)*(?:eastmoney\.com|10jqka\.com\.cn|cninfo\.com\.cn|sinajs\.com\.cn|sina\.com\.cn)/i;
 
 /**
  * 构建带可选 Worker 反代的 fetch 实现。

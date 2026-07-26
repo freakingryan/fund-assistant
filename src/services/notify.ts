@@ -14,6 +14,7 @@ import type { AppNotification } from "@/types";
 import { useNotificationsStore } from "@/stores/notifications";
 import { useSettingsStore } from "@/stores/settings";
 import { sendNotification } from "./notification";
+import { isMarketOpen } from "@/services/marketStatus";
 
 export interface NotifyInput {
   type: AppNotification["type"];
@@ -71,6 +72,14 @@ export function notify(input: NotifyInput): boolean {
 
   // 1) 类型免打扰
   if (noise.typeOptOut.includes(input.type)) return false;
+  // 1.5) 市场状态护栏：非交易时段抑制非紧急通知（info / success）
+  if (
+    noise.marketStatusGuard &&
+    !isMarketOpen() &&
+    (input.type === "info" || input.type === "success")
+  ) {
+    return false;
+  }
   // 2) 安静时段
   if (inQuietHours(noise.quietHoursStart, noise.quietHoursEnd)) return false;
 

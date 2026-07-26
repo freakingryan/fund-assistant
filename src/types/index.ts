@@ -274,6 +274,11 @@ export interface NotificationNoiseConfig {
   minIntervalSec: number;
   /** 每分钟最大发送条数（频率限制） */
   maxPerMinute: number;
+  /**
+   * 市场状态护栏：开启后，非交易时段（open 之外）抑制非紧急通知（info / success），
+   * 仅保留 warning / error，避免盘后 / 休市刷屏。默认开启。
+   */
+  marketStatusGuard: boolean;
 }
 
 export interface UserSettings {

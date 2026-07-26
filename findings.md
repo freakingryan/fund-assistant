@@ -1,55 +1,86 @@
-# Findings — 同花顺/巨潮(互动易) 自实现 + 多通道通知契约
+# 调研 findings — ETF 期权（T型/希腊字母/IV）+ 市场状态护栏
 
-> 工作目录：`fund-assistant/`（唯一可维护 repo）。stock-sdk 为第三方只读依赖，保持 npm 上 v2.4.0，不参与改动。
+> 关联任务：用户指令「接下来分别进行 ETF 期权（T型/希腊字母/IV）；市场状态护栏」
+> 工作日期：2026-07-26
+> 遵循：frontend-quality-workflow（planning-with-files → task-implement → impeccable → code-simplifier → gate）
 
-## 1. 为什么在 fund-assistant 自实现（而非 stock-sdk）
+## 0. 第三方库接入原则（硬性原则，来自 MEMORY）
 
-- stock-sdk (`chengzuopeng/stock-sdk`) 不可 push；v2.4.0 既无研报也无同花顺/巨潮 service。
-- 用户硬性原则「不写东财/腾讯 fetch+解析」针对的是**东财/腾讯**；同花顺/巨潮无库覆盖，自实现**不违反**原则。
-- 用户决策（本轮）：在 fund-assistant 内自实现同花顺/巨潮，并启动通知契约+噪声控制。
+- 优先 stock-sdk / stock-api；fund-assistant **不手写东财/腾讯 fetch+解析**。
+- stock-sdk 门面网络 service（勿自建）：含 `options`、`calendar`（交易日历/市场状态）。
+- 非东财/腾讯源（同花顺 10jqka、巨潮 cninfo）已在 `extraSources/` 自实现，经 Worker 反代；可加 SSE（上交所）同范式。
+- stock-sdk 第三方 repo 只 clone、不可 push（孤儿 commit 无意义）。
 
-## 2. CORS / Worker 反代（必读）
+## 1. stock-sdk v2.4.0 期权 API 实测（node_modules/stock-sdk/dist/sdk-38oZXdK7.d.ts）
 
-- fund-assistant 是浏览器 SPA；直连 `*.10jqka.com.cn` / `*.cninfo.com.cn` / `*.eastmoney.com` 都会被 **CORS** 拦截（与网络是否可达无关）。
-- 现有 `worker/index.js`（在 fund-assistant 内，用户可改）是 CORS 反代：浏览器→Worker（带 `x-upstream-host` 头）→Worker 服务端抓取上游→回传并加 `Access-Control-Allow-Origin: *`。
-- Worker 当前 `ALLOWED_HOST_RE = /([^/?#]+\.)*eastmoney\.com$/i`，**只放行东财**。需扩到 `10jqka.com.cn` + `cninfo.com.cn`。
-- fund-assistant 端 `EASTMONEY_HOST_RE` 只改写东财 host；需泛化为 `PROXY_HOST_RE` 覆盖三域，并经同一 `x-upstream-host` 机制走 Worker。
+`StockSDK` 实例（`new StockSDK()` 即可，市场状态为纯时间计算）暴露：
 
-## 3. 端点（权威来源：Documents/coding/a-stock-data/SKILL.md）
+- `sdk.options.etf`
+  - `months(cate: ETFOptionCate): Promise<ETFOptionMonth>` → `{ months:string[], stockId, cateId, cateList:string[] }`
+  - `expireDay(cate: ETFOptionCate, month: string): Promise<ETFOptionExpireDay>` → `{ expireDay, remainderDays, stockId, name }`
+  - `minute(code)`, `dailyKline(code)`, `fiveDayMinute(code)` → 单合约分时/日K
+  - **缺**：ETF T 型报价（calls/puts 按 strike 排列的链）
+- `sdk.options.index.spot(product: 'io'|'ho'|'mo', contract: string): Promise<OptionTQuoteResult>` → `{ calls: OptionTQuote[], puts: OptionTQuote[] }` —— **这是 stock-sdk 唯一提供的 T 型报价**，但属**中金所股指期权**，非 ETF。
+  - `OptionTQuote = { symbol, buyVolume, buyPrice, price, askPrice, askVolume, openInterest, change, strikePrice }`
+- `sdk.options.cffex.quotes(opts?)` → 中金所实时行情；`sdk.options.commodity.spot`；`sdk.options.lhb(symbol,date)`
 
-### 同花顺（10jqka.com.cn）
+### 关键缺口（ETF 期权）
 
-- **一致预期EPS**：`GET https://basic.10jqka.com.cn/new/{code}/worth.html`
-  - 响应 HTML/GBK；headers 需 `Referer: https://basic.10jqka.com.cn/`。
-  - 解析：取含「每股收益」字样的表格 → 列：年度 / 预测机构数 / 最小值 / 均值 / 最大值（「均值」= 一致预期EPS）。
-  - 依赖无关抽取：fetch `arraybuffer` → `new TextDecoder('gbk').decode()` → 正则/行扫描定位表格（不可引 cheerio）。
-- **人气热榜**：`GET https://dq.10jqka.com.cn/fuyao/hot_list_data/out/hot_list/v1/stock?stock_type=a&type=hour|day&list_type=normal`
-  - JSON；`data.stock_list[]`：rank/code/name/heat(人气值)/pct/rank_chg/concepts(概念标签)/tag。`type` 可选 hour/day。
-- **题材归因**：`GET http://zx.10jqka.com.cn/event/api/getharden/date/{date}/orderby/date/orderway/desc/charset/GBK/`
-  - JSON；`data[]` 每只股票 reason 题材标签。date=YYYY-MM-DD。
+1. **ETF T 型链**：stock-sdk 对 ETF 只给 months/expireDay/kline，**不给 calls/puts×strike 的 T 型表**。
+2. **希腊字母 / IV**：stock-sdk 不提供，需**前端纯计算**（Black-Scholes），不触碰任何外部解析 → 符合原则。
 
-### 互动易（巨潮 cninfo.com.cn）
+### 希腊字母/IV 计算方案（纯函数，零依赖）
 
-- `cninfo_irm(code)` 两步 POST：
-  - Step1 `POST https://irm.cninfo.com.cn/newircs/index/queryKeyboardInfo` body `{"keyWord": code}` → `data[0].secid` = orgId。
-  - Step2 `POST https://irm.cninfo.com.cn/newircs/company/question` **params 必须放 query string（body 空）** → `rows[]`：stockCode/companyShortName/mainContent(提问)/attachedContent(回复, 可能 null)/pubDate(毫秒时间戳)/answerer。
-  - 坑：orgId 取自 step1 的 secid；最新提问常未回复；时间是毫秒。
+- `src/lib/optionPricing.ts`：`bsPrice(type, S, K, T, r, sigma)`、`greeks(...)`（delta/gamma/theta/vega/rho）、`impliedVol(...)`（Newton 迭代反解 sigma）。
+- 输入：标的价格 S（ETF 现价，来自 FundQuote / kline 末值）、行权价 K（链内 strike）、到期 T（expireDay.remainderDays/365）、无风险利率 r（默认 2.0% 可配）、期权价（链内 price）。
+- 若链内无 price，则只展示 BS 理论值，不反解 IV（标注「无报价」）。
 
-## 4. 现有通知系统（自实现契约的基础）
+## 2. 市场状态（护栏）已有资产（无需从零）
 
-- `stores/notifications.ts`：`AppNotification{id,type,title,body,createdAt,read}` + zustand store（addNotification/markRead/...）。仅被 bell 徽标 (`AppLayout`) 与 `autoSync` 消费，**未在 NotificationsPage 展示**。
-- `services/notification.ts`：浏览器 Notification API（`requestNotificationPermission`/`sendNotification`/`sendAlertNotification`/`sendAlertBatch`）。
-- `stores/settings.ts` 已有 `notifications: { browser: true, feishu: false, schedule: '0 20 * * 1-5' }` —— **多通道已初具配置形态**（browser/feishu），但无统一调度器、无噪声控制。
-- `NotificationsPage.tsx` 当前展示的是 `usePlansStore.alerts`（投资计划提醒），与 in-app store 是**两套独立体系**。
-- 结论：契约层 = 新增 `notify(input)` 调度器，路由到 inApp(必走) + browser(开关/权限) + feishu(可选 webhook)，并施加噪声控制；把现有 `autoSync`/`sendAlert*` 调用迁移到 `notify()`。
+- `src/services/marketBreadth.ts`：
+  - `getMarketStatusCN(): MarketStatus` → `new StockSDK().calendar.getMarketStatus("CN")`（纯时间，无网络）
+  - `MARKET_STATUS_LABEL: Record<MarketStatus,string>`（pre_market/open/lunch_break/after_hours/closed → 盘前/开盘中/午间休市/盘后/已收盘）
+- `src/components/dashboard/MarketBreadthCard.tsx` 已渲染市场状态徽标。
+- `src/App.tsx:63` 本地 `isTradingHoursOpen()`（仅判断 09:30–11:30 / 13:00–15:00 + 工作日），用于收盘前自动扫描门控（Line 144）。
+- `MarketStatus` 类型已 `import type { MarketStatus } from "stock-sdk"`。
 
-## 5. 现有 proxy 注入模式（复用）
+### 护栏要做的事（增量）
 
-- `src/services/eastmoneySdk.ts` `buildEastmoneySdk(config)`：mode='proxy' 时构造 `proxyFetch`，对 `EASTMONEY_HOST_RE` 命中的 url 注入 `x-upstream-host` 头并改写到 `proxyUrl`。
-- 消费方：`marketBreadth/dragonTiger/sectorStrengthAnalysis/marketSentiment/northbound/capitalFlowAnalysis/fundRankHistory/researchReport/sectorFundFlowRank` 等（均 `useSettingsStore.getState().settings.dataSource.eastmoney`）。
-- 计划：把 `EASTMONEY_HOST_RE`/`proxyFetch` 抽成 `src/services/proxyFetch.ts` 的 `buildProxyFetch(config)`，三域通用；`buildEastmoneySdk` 内部复用它（最小改动）。同花顺/巨潮 service 也用同一个 `buildProxyFetch`。
+- D0：将 `getMarketStatusCN` / `MARKET_STATUS_LABEL` 抽出到共享 `src/services/marketStatus.ts`，新增 `isMarketOpen()`、`useMarketStatus()`（30s 自刷新）、`nextSessionInfo()`（下一开盘倒计时）。
+- D1：`MarketStatusBar.tsx` 全局状态条（开盘中/午间休市/盘前/盘后/已收盘 + 倒计时），置于 Market 页头（Dashboard 复用）。
+- D2：护栏逻辑接入 `notify` 噪声配置——新增 `marketStatusGuard`（bool，默认开）：市场非 `open` 时抑制 `info`/`success` 类通知，保留 `warning`/`error`；并用 `isMarketOpen()` 替代 App.tsx 的 `isTradingHoursOpen()` 门控自动扫描。
+- D3：设置页「通知」Tab 增加「仅交易时段推送（非开盘抑制 info/success）」开关。
 
-## 6. 风险/待确认
+## 3. ETF T 型数据源决策（需用户拍板，触硬性原则）
 
-- 悬空代码：`researchReport.ts`/`ResearchReportCard.tsx`/`FundDetailLayout.tsx` 改动（研报层 UI）**未提交**，依赖 stock-sdk 的 `report` service（v2.4.0 无）→ 可能令 `tsc` 失败。Phase 0 先验证 baseline，必要时临时回退该 UI 保绿（研报层已搁置）。
-- feishu webhook 浏览器直发受 CORS 限制；做 best-effort（try/catch），失败静默。
+stock-sdk 无 ETF T 型链，三条路：
+
+- **A（推荐，符原则）**：在 `extraSources/` 自实现 **SSE 上交所** ETF 期权链解析（非东财/腾讯），经 Worker 反代（allowlist 加 `*.sse.com.cn`）；与同花顺/巨潮同范式。交付**真正 ETF T 型** + Greeks/IV。需用户配 Worker（非东财域，CORS 仍走反代）。
+- **B（纯 stock-sdk，T 型非 ETF）**：用 `index.spot`（io/ho/mo 股指期权）做 T 型演示 + ETF 合约浏览器（months/expireDay/kline）。完全合规，但 T 型是股指期权不是 ETF；Greeks/IV 仍算。
+- **C（破原则，仅用户明确许可）**：解析东财 ETF 期权链（违反「不手写东财解析」），不推荐。
+
+> 默认按 **A** 规划；若用户选 B 则 T 型演示切到股指期权。
+
+## 4. Worker 反代（如需方案 A）
+
+- `worker/index.js` `ALLOWED_HOST_RE` 已含 `eastmoney.com|10jqka.com.cn|cninfo.com.cn`；方案 A 需加 `sse.com.cn`。
+- `src/services/proxyFetch.ts` 的 `PROXY_HOST_RE` 同步加 `sse.com.cn`。
+- SSE 端点（待用户/运行时验证）：`query.sse.com.cn` / `option.sse.com.cn` 的合约与行情接口（JSON），经 `x-upstream-host` 反代。
+
+## 5. 文件落地清单（草案）
+
+新增：
+
+- `src/lib/optionPricing.ts`（BS + greeks + IV）
+- `src/services/etfOptions.ts`（cates/months/expireDay/chain）
+- `src/services/marketStatus.ts`（抽出 + hook）
+- `src/components/market/EtfOptionPanel.tsx`
+- `src/components/market/MarketStatusBar.tsx`
+  编辑：
+- `src/components/market/MarketPage.tsx`（挂 EtfOptionPanel + MarketStatusBar）
+- `src/services/notify.ts`（marketStatusGuard 规则）
+- `src/types/index.ts`（NotificationNoiseConfig 加 marketStatusGuard）
+- `src/App.tsx`（isMarketOpen 替代 isTradingHoursOpen；自动扫描门控）
+- `src/components/settings/SettingsPage.tsx`（通知 Tab 加开关）
+- `src/components/dashboard/MarketBreadthCard.tsx`（复用 marketStatus 服务，去重）
+- `worker/index.js` + `proxyFetch.ts`（方案 A 时加 sse.com.cn）
