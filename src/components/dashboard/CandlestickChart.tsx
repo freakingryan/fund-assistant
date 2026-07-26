@@ -89,7 +89,7 @@ function buildLinePointsRev(
 /** 蜡烛图组件 — SVG 内嵌 + 底部信息栏（不遮挡图表 + 深色模式适配 + 触屏支持 + 技术指标叠加） */
 export default function CandlestickChart({
   data,
-  width = 480,
+  width,
   height = 320,
   patterns = [],
   onHover,
