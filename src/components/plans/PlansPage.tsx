@@ -1,8 +1,8 @@
 import { useEffect, useState, useMemo, useCallback, memo } from "react";
 import { usePlansStore } from "@/stores/plans";
 import { useHoldingsStore } from "@/stores/holdings";
-import { useSettingsStore } from "@/stores/settings";
-import { sendAlertBatch, requestNotificationPermission } from "@/services/notification";
+import { requestNotificationPermission } from "@/services/notification";
+import { notify } from "@/services/notify";
 import { toast } from "@/components/ui/toast";
 import { ConfirmAction } from "@/components/ui/confirm-dialog";
 import { Card, CardContent } from "@/components/ui/card";
@@ -304,7 +304,6 @@ export default function PlansPage() {
   const dismissAlert = usePlansStore((s) => s.dismissAlert);
 
   const holdings = useHoldingsStore((s) => s.holdings);
-  const settings = useSettingsStore((s) => s.settings);
   const loadHoldings = useHoldingsStore((s) => s.loadHoldings);
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -332,21 +331,21 @@ export default function PlansPage() {
     const result = await scan(holdings);
     if (result.length > 0) {
       setActiveTab("alerts");
-      // Web Push: 发送浏览器通知
-      if (settings.notifications.browser) {
-        await requestNotificationPermission();
-        sendAlertBatch(
-          result.map((a) => ({
-            fundName: a.fundCode,
-            reason: a.reason || "投资计划触发",
-          })),
-        );
-      }
+      // 统一通知契约：计划提醒仅走 browser/feishu（不写入 in-app 铃铛）
+      await requestNotificationPermission();
+      result.forEach((a) =>
+        notify({
+          type: "warning",
+          title: `计划提醒 · ${a.fundCode}`,
+          body: a.reason || "投资计划触发",
+          channels: ["browser", "feishu"],
+        }),
+      );
       toast({ type: "success", message: `扫描命中 ${result.length} 条提醒` });
     } else {
       toast({ type: "info", message: "扫描完成，本期无触发" });
     }
-  }, [plan, holdings, scan, settings.notifications.browser]);
+  }, [plan, holdings, scan]);
 
   if (!plan) return null;
 

@@ -1,163 +1,224 @@
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
-import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog'
-import { Key, Database, BellRing, Globe, SunMoon, Sparkles, Loader2, Download, Upload, Cloud, CheckCircle, AlertCircle, Activity, Copy, Check, Trash2, Link2 } from 'lucide-react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useState } from 'react'
-import { useSettingsStore } from '@/stores/settings'
-import { useHoldingsStore } from '@/stores/holdings'
-import { usePlansStore } from '@/stores/plans'
-import { testAIConnection } from '@/services/ai'
-import { dataSourceService } from '@/adapters/datasource/service'
-import { exportAllData, importAllData, downloadBackup, readBackupFile, syncToGist, loadFromGist, findFundGist, verifyGistToken } from '@/services/backup'
-import EtfMappingManager from '@/components/settings/EtfMappingManager'
-import { toast } from '@/components/ui/toast'
-import type { AIProvider } from '@/types'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Key,
+  Database,
+  BellRing,
+  Globe,
+  SunMoon,
+  Sparkles,
+  Loader2,
+  Download,
+  Upload,
+  Cloud,
+  CheckCircle,
+  AlertCircle,
+  Activity,
+  Copy,
+  Check,
+  Trash2,
+  Link2,
+} from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState } from "react";
+import { useSettingsStore } from "@/stores/settings";
+import { useHoldingsStore } from "@/stores/holdings";
+import { usePlansStore } from "@/stores/plans";
+import { testAIConnection } from "@/services/ai";
+import { dataSourceService } from "@/adapters/datasource/service";
+import {
+  exportAllData,
+  importAllData,
+  downloadBackup,
+  readBackupFile,
+  syncToGist,
+  loadFromGist,
+  findFundGist,
+  verifyGistToken,
+} from "@/services/backup";
+import EtfMappingManager from "@/components/settings/EtfMappingManager";
+import { toast } from "@/components/ui/toast";
+import type { AIProvider } from "@/types";
 
 export default function SettingsPage() {
-  const settings = useSettingsStore((s) => s.settings)
-  const updateAIConfig = useSettingsStore((s) => s.updateAIConfig)
-  const updateNotifications = useSettingsStore((s) => s.updateNotifications)
-  const updateSettings = useSettingsStore((s) => s.updateSettings)
-  const updateDataSource = useSettingsStore((s) => s.updateDataSource)
+  const settings = useSettingsStore((s) => s.settings);
+  const updateAIConfig = useSettingsStore((s) => s.updateAIConfig);
+  const updateNotifications = useSettingsStore((s) => s.updateNotifications);
+  const updateSettings = useSettingsStore((s) => s.updateSettings);
+  const updateDataSource = useSettingsStore((s) => s.updateDataSource);
 
-  const [syncing, setSyncing] = useState(false)
-  const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [syncing, setSyncing] = useState(false);
+  const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null);
   // F13: 备份导入前先确认（避免静默覆盖），成功后 SPA 状态刷新替代整页 reload
-  const [pendingRestore, setPendingRestore] = useState<{ holdings: number; plans: number; apply: () => Promise<void> } | null>(null)
-  const [importing, setImporting] = useState(false)
-  const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [testingAi, setTestingAi] = useState<string | null>(null)
+  const [pendingRestore, setPendingRestore] = useState<{
+    holdings: number;
+    plans: number;
+    apply: () => Promise<void>;
+  } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [testingAi, setTestingAi] = useState<string | null>(null);
 
   // 删除已配置的 AI 平台（同时把被删的默认项重置为剩余第一项）
   const handleDeleteAi = (provider: AIProvider) => {
-    const others = settings.aiConfigs.filter((c) => c.provider !== provider)
-    const patch: Partial<typeof settings> = { aiConfigs: others }
+    const others = settings.aiConfigs.filter((c) => c.provider !== provider);
+    const patch: Partial<typeof settings> = { aiConfigs: others };
     if (settings.defaultAIProvider === provider) {
-      patch.defaultAIProvider = (others[0]?.provider as AIProvider) || provider
+      patch.defaultAIProvider = (others[0]?.provider as AIProvider) || provider;
     }
-    updateSettings(patch)
-  }
+    updateSettings(patch);
+  };
   const [health, setHealth] = useState<{
-    stockApi?: { ok: boolean; latency: number; error?: string }
-    fundgz?: { ok: boolean; latency: number; error?: string }
-    pingzhongdata?: { ok: boolean; latency: number; error?: string }
-  } | null>(null)
-  const [healthChecking, setHealthChecking] = useState(false)
+    stockApi?: { ok: boolean; latency: number; error?: string };
+    fundgz?: { ok: boolean; latency: number; error?: string };
+    pingzhongdata?: { ok: boolean; latency: number; error?: string };
+  } | null>(null);
+  const [healthChecking, setHealthChecking] = useState(false);
 
   // 检查数据源健康状态
   const handleCheckHealth = async () => {
-    setHealthChecking(true)
-    setHealth(null)
+    setHealthChecking(true);
+    setHealth(null);
     try {
-      const result = await dataSourceService.checkHealth()
-      setHealth(result)
+      const result = await dataSourceService.checkHealth();
+      setHealth(result);
     } catch (e: any) {
-      setHealth({ stockApi: { ok: false, latency: 0, error: String(e) } })
+      setHealth({ stockApi: { ok: false, latency: 0, error: String(e) } });
     }
-    setHealthChecking(false)
-  }
+    setHealthChecking(false);
+  };
 
   // 导出备份
   const handleExport = async () => {
-    const data = await exportAllData()
-    downloadBackup(data)
-    setImportResult({ ok: true, msg: `已导出 ${data.holdings.length} 只持仓` })
-    setTimeout(() => setImportResult(null), 3000)
-  }
+    const data = await exportAllData();
+    downloadBackup(data);
+    setImportResult({ ok: true, msg: `已导出 ${data.holdings.length} 只持仓` });
+    setTimeout(() => setImportResult(null), 3000);
+  };
 
   // 导入备份（F13: 仅读取并打开确认弹窗，不立即覆盖）
   const handleImport = async () => {
     try {
-      const data = await readBackupFile()
-      setPendingRestore({ holdings: data.holdings.length, plans: data.plans.length, apply: () => importAllData(data) })
+      const data = await readBackupFile();
+      setPendingRestore({
+        holdings: data.holdings.length,
+        plans: data.plans.length,
+        apply: () => importAllData(data),
+      });
     } catch (e) {
-      setImportResult({ ok: false, msg: String(e) })
+      setImportResult({ ok: false, msg: String(e) });
     }
-  }
+  };
 
   // 确认恢复：覆盖写入 + SPA 状态刷新（替代整页 reload）
   const confirmRestore = async () => {
-    if (!pendingRestore) return
-    setImporting(true)
+    if (!pendingRestore) return;
+    setImporting(true);
     try {
-      await pendingRestore.apply()
+      await pendingRestore.apply();
       await Promise.all([
         useHoldingsStore.getState().loadHoldings(),
         usePlansStore.getState().loadPlan(),
         usePlansStore.getState().loadAlerts(),
         useSettingsStore.getState().loadSettings(),
-      ])
-      setImportResult({ ok: true, msg: `已恢复 ${pendingRestore.holdings} 只持仓、${pendingRestore.plans} 个计划` })
-      toast({ type: 'success', message: '备份导入成功' })
-      setPendingRestore(null)
+      ]);
+      setImportResult({
+        ok: true,
+        msg: `已恢复 ${pendingRestore.holdings} 只持仓、${pendingRestore.plans} 个计划`,
+      });
+      toast({ type: "success", message: "备份导入成功" });
+      setPendingRestore(null);
     } catch (e) {
-      setImportResult({ ok: false, msg: String(e) })
+      setImportResult({ ok: false, msg: String(e) });
     } finally {
-      setImporting(false)
+      setImporting(false);
     }
-  }
+  };
 
   // 推送到 Gist
-  const [gistVerifyResult, setGistVerifyResult] = useState<{ ok: boolean; msg: string } | null>(null)
-  const [verifyingToken, setVerifyingToken] = useState(false)
-  const [gistIdCopied, setGistIdCopied] = useState(false)
+  const [gistVerifyResult, setGistVerifyResult] = useState<{ ok: boolean; msg: string } | null>(
+    null,
+  );
+  const [verifyingToken, setVerifyingToken] = useState(false);
+  const [gistIdCopied, setGistIdCopied] = useState(false);
 
   const handleVerifyToken = async () => {
-    if (!settings.sync.gistToken) return
-    setVerifyingToken(true); setGistVerifyResult(null)
+    if (!settings.sync.gistToken) return;
+    setVerifyingToken(true);
+    setGistVerifyResult(null);
     try {
-      const result = await verifyGistToken(settings.sync.gistToken)
-      setGistVerifyResult(result)
+      const result = await verifyGistToken(settings.sync.gistToken);
+      setGistVerifyResult(result);
     } catch (e) {
-      setGistVerifyResult({ ok: false, msg: String(e) })
+      setGistVerifyResult({ ok: false, msg: String(e) });
     }
-    setVerifyingToken(false)
-  }
+    setVerifyingToken(false);
+  };
 
   const handleGistPush = async () => {
-    setSyncing(true); setSyncResult(null)
+    setSyncing(true);
+    setSyncResult(null);
     try {
-      const data = await exportAllData()
-      const gistId = await syncToGist(settings.sync.gistToken, settings.sync.gistId || null, data)
+      const data = await exportAllData();
+      const gistId = await syncToGist(settings.sync.gistToken, settings.sync.gistId || null, data);
       if (!settings.sync.gistId) {
-        updateSettings({ sync: { ...settings.sync, gistId } })
+        updateSettings({ sync: { ...settings.sync, gistId } });
       }
-      setSyncResult({ ok: true, msg: `已同步到 Gist（${gistId}），共 ${data.holdings.length} 只持仓` })
+      setSyncResult({
+        ok: true,
+        msg: `已同步到 Gist（${gistId}），共 ${data.holdings.length} 只持仓`,
+      });
     } catch (e) {
-      setSyncResult({ ok: false, msg: String(e) })
+      setSyncResult({ ok: false, msg: String(e) });
     }
-    setSyncing(false)
-  }
+    setSyncing(false);
+  };
 
   // 从 Gist 拉取（F13: 先读取，打开确认弹窗，不立即覆盖）
   const handleGistPull = async () => {
-    setSyncing(true); setSyncResult(null)
+    setSyncing(true);
+    setSyncResult(null);
     try {
-      let gistId: string | null = settings.sync.gistId || null
+      let gistId: string | null = settings.sync.gistId || null;
       if (!gistId) {
-        gistId = await findFundGist(settings.sync.gistToken)
+        gistId = await findFundGist(settings.sync.gistToken);
         if (!gistId) {
-          setSyncResult({ ok: false, msg: '未找到备份 Gist，请先在原设备上推送到 Gist' })
-          setSyncing(false); return
+          setSyncResult({ ok: false, msg: "未找到备份 Gist，请先在原设备上推送到 Gist" });
+          setSyncing(false);
+          return;
         }
-        updateSettings({ sync: { ...settings.sync, gistId } })
+        updateSettings({ sync: { ...settings.sync, gistId } });
       }
-      const data = await loadFromGist(settings.sync.gistToken, gistId!)
-      setPendingRestore({ holdings: data.holdings.length, plans: data.plans.length, apply: () => importAllData(data) })
+      const data = await loadFromGist(settings.sync.gistToken, gistId!);
+      setPendingRestore({
+        holdings: data.holdings.length,
+        plans: data.plans.length,
+        apply: () => importAllData(data),
+      });
     } catch (e) {
-      setSyncResult({ ok: false, msg: String(e) })
+      setSyncResult({ ok: false, msg: String(e) });
     }
-    setSyncing(false)
-  }
+    setSyncing(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -168,13 +229,36 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="datasource" className="space-y-4">
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="datasource" className="flex items-center gap-1 text-[10px] sm:text-xs"><Database className="h-3 w-3" /> 数据源</TabsTrigger>
-          <TabsTrigger value="ai" className="flex items-center gap-1 text-[10px] sm:text-xs"><Key className="h-3 w-3" /> AI 平台</TabsTrigger>
-          <TabsTrigger value="storage" className="flex items-center gap-1 text-[10px] sm:text-xs"><Globe className="h-3 w-3" /> 存储</TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-1 text-[10px] sm:text-xs"><BellRing className="h-3 w-3" /> 通知</TabsTrigger>
-          <TabsTrigger value="appearance" className="flex items-center gap-1 text-[10px] sm:text-xs"><SunMoon className="h-3 w-3" /> 外观</TabsTrigger>
-          <TabsTrigger value="backup" className="flex items-center gap-1 text-[10px] sm:text-xs"><Cloud className="h-3 w-3" /> 备份</TabsTrigger>
-          <TabsTrigger value="mappings" className="flex items-center gap-1 text-[10px] sm:text-xs"><Link2 className="h-3 w-3" /> 映射</TabsTrigger>
+          <TabsTrigger
+            value="datasource"
+            className="flex items-center gap-1 text-[10px] sm:text-xs"
+          >
+            <Database className="h-3 w-3" /> 数据源
+          </TabsTrigger>
+          <TabsTrigger value="ai" className="flex items-center gap-1 text-[10px] sm:text-xs">
+            <Key className="h-3 w-3" /> AI 平台
+          </TabsTrigger>
+          <TabsTrigger value="storage" className="flex items-center gap-1 text-[10px] sm:text-xs">
+            <Globe className="h-3 w-3" /> 存储
+          </TabsTrigger>
+          <TabsTrigger
+            value="notifications"
+            className="flex items-center gap-1 text-[10px] sm:text-xs"
+          >
+            <BellRing className="h-3 w-3" /> 通知
+          </TabsTrigger>
+          <TabsTrigger
+            value="appearance"
+            className="flex items-center gap-1 text-[10px] sm:text-xs"
+          >
+            <SunMoon className="h-3 w-3" /> 外观
+          </TabsTrigger>
+          <TabsTrigger value="backup" className="flex items-center gap-1 text-[10px] sm:text-xs">
+            <Cloud className="h-3 w-3" /> 备份
+          </TabsTrigger>
+          <TabsTrigger value="mappings" className="flex items-center gap-1 text-[10px] sm:text-xs">
+            <Link2 className="h-3 w-3" /> 映射
+          </TabsTrigger>
         </TabsList>
 
         {/* 数据源 */}
@@ -197,11 +281,17 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base">数据源状态</CardTitle>
                 <Button
-                  variant="outline" size="sm" className="h-7 text-xs"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
                   onClick={handleCheckHealth}
                   disabled={healthChecking}
                 >
-                  {healthChecking ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Activity className="h-3 w-3 mr-1" />}
+                  {healthChecking ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  ) : (
+                    <Activity className="h-3 w-3 mr-1" />
+                  )}
                   检查连通性
                 </Button>
               </div>
@@ -213,7 +303,8 @@ export default function SettingsPage() {
               )}
               {healthChecking && (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />检测中...
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  检测中...
                 </div>
               )}
               {health && !healthChecking && (
@@ -226,17 +317,16 @@ export default function SettingsPage() {
                         ) : (
                           <AlertCircle className="h-3.5 w-3.5 text-red-500" />
                         )}
-                        <span className="font-medium">{{
-                          stockApi: 'stock-api（腾讯接口）',
-                          fundgz: 'fundgz（实时净值）',
-                          pingzhongdata: 'pingzhongdata（历史数据）',
-                        }[key] || key}</span>
+                        <span className="font-medium">
+                          {{
+                            stockApi: "stock-api（腾讯接口）",
+                            fundgz: "fundgz（实时净值）",
+                            pingzhongdata: "pingzhongdata（历史数据）",
+                          }[key] || key}
+                        </span>
                       </div>
                       <span className="text-muted-foreground">
-                        {val.ok
-                          ? `${val.latency}ms`
-                          : `❌ ${val.error || '无响应'}`
-                        }
+                        {val.ok ? `${val.latency}ms` : `❌ ${val.error || "无响应"}`}
                       </span>
                     </div>
                   ))}
@@ -251,19 +341,29 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">东财资金面增强</CardTitle>
-                  <CardDescription>经重仓股 / ETF 映射间接分析基金资金面（资金流向、北向）</CardDescription>
+                  <CardDescription>
+                    经重仓股 / ETF 映射间接分析基金资金面（资金流向、北向）
+                  </CardDescription>
                 </div>
                 <Switch
                   checked={settings.dataSource.eastmoney.enabled}
-                  onCheckedChange={(v) => updateDataSource({ eastmoney: { ...settings.dataSource.eastmoney, enabled: v } })}
+                  onCheckedChange={(v) =>
+                    updateDataSource({
+                      eastmoney: { ...settings.dataSource.eastmoney, enabled: v },
+                    })
+                  }
                 />
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                默认关闭。开启后，对每只基金按「前十大重仓股（按占净值比例加权）」或「ETF 映射」聚合东方财富的资金流向与北向持仓变化，
-                反推出基金级资金面分，写入评分快照供排行榜排序。该能力底层走东方财富（与行情/K线 走腾讯不同）：
-                实测你的网络可直连东方财富，默认已选「直连东财」即可直接使用，无需部署 Worker；仅当处于无法直连东财的网络时，才需部署 Cloudflare Worker 反代并切换到「Worker 反代」。
+                默认关闭。开启后，对每只基金按「前十大重仓股（按占净值比例加权）」或「ETF
+                映射」聚合东方财富的资金流向与北向持仓变化，
+                反推出基金级资金面分，写入评分快照供排行榜排序。该能力底层走东方财富（与行情/K线
+                走腾讯不同）：
+                实测你的网络可直连东方财富，默认已选「直连东财」即可直接使用，无需部署
+                Worker；仅当处于无法直连东财的网络时，才需部署 Cloudflare Worker
+                反代并切换到「Worker 反代」。
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
@@ -271,9 +371,18 @@ export default function SettingsPage() {
                   <Select
                     value={settings.dataSource.eastmoney.mode}
                     disabled={!settings.dataSource.eastmoney.enabled}
-                    onValueChange={(v) => updateDataSource({ eastmoney: { ...settings.dataSource.eastmoney, mode: v as 'direct' | 'proxy' } })}
+                    onValueChange={(v) =>
+                      updateDataSource({
+                        eastmoney: {
+                          ...settings.dataSource.eastmoney,
+                          mode: v as "direct" | "proxy",
+                        },
+                      })
+                    }
                   >
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="direct">直连东财（推荐）</SelectItem>
                       <SelectItem value="proxy">Worker 反代</SelectItem>
@@ -285,14 +394,48 @@ export default function SettingsPage() {
                   <Input
                     placeholder="https://your-worker.workers.dev"
                     value={settings.dataSource.eastmoney.proxyUrl}
-                    disabled={!settings.dataSource.eastmoney.enabled || settings.dataSource.eastmoney.mode !== 'proxy'}
-                    onChange={(e) => updateDataSource({ eastmoney: { ...settings.dataSource.eastmoney, proxyUrl: e.target.value } })}
+                    disabled={
+                      !settings.dataSource.eastmoney.enabled ||
+                      settings.dataSource.eastmoney.mode !== "proxy"
+                    }
+                    onChange={(e) =>
+                      updateDataSource({
+                        eastmoney: { ...settings.dataSource.eastmoney, proxyUrl: e.target.value },
+                      })
+                    }
                     className="h-8 text-xs font-mono"
                   />
                 </div>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                约定：Worker 转发时保留原始请求 path 与 query（即将 <code>*.eastmoney.com/api/...</code> 改写为 <code>&lt;Worker地址&gt;/api/...</code>）。
+                约定：Worker 转发时保留原始请求 path 与 query（即将{" "}
+                <code>*.eastmoney.com/api/...</code> 改写为 <code>&lt;Worker地址&gt;/api/...</code>
+                ）。
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* 同花顺 / 互动易（fund-assistant 自实现） */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base">同花顺 / 互动易增强</CardTitle>
+                  <CardDescription>
+                    一致预期EPS、人气热榜、题材归因（同花顺）+ 互动易问答（巨潮）
+                  </CardDescription>
+                </div>
+                <Switch
+                  checked={settings.dataSource.extraSources.enabled}
+                  onCheckedChange={(v) => updateDataSource({ extraSources: { enabled: v } })}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                基金投资助手自实现的数据源（非东财/腾讯，不依赖第三方库）。与东财增强共用上方「连接模式
+                / Worker 反代地址」： 浏览器直连同花顺 / 巨潮会被 CORS
+                拦截，需将连接模式设为「Worker 反代」并填写 Worker 地址（Worker 已放行这两个域）。
               </p>
             </CardContent>
           </Card>
@@ -303,29 +446,49 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">AI 平台配置</CardTitle>
-              <CardDescription>添加 AI 平台 API Key，用于持仓截图识别和基金自动补全</CardDescription>
+              <CardDescription>
+                添加 AI 平台 API Key，用于持仓截图识别和基金自动补全
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {/* 默认 AI 平台选择 */}
               <div className="space-y-2">
                 <Label>默认 AI 平台</Label>
                 <Select
-                  value={settings.aiConfigs.some((c) => c.apiKey && c.provider === settings.defaultAIProvider) ? settings.defaultAIProvider : '__placeholder__'}
-                  onValueChange={(v) => v !== '__placeholder__' && updateSettings({ defaultAIProvider: v as any })}
+                  value={
+                    settings.aiConfigs.some(
+                      (c) => c.apiKey && c.provider === settings.defaultAIProvider,
+                    )
+                      ? settings.defaultAIProvider
+                      : "__placeholder__"
+                  }
+                  onValueChange={(v) =>
+                    v !== "__placeholder__" && updateSettings({ defaultAIProvider: v as any })
+                  }
                 >
-                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="选择默认使用的平台" /></SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="选择默认使用的平台" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {settings.aiConfigs.filter((c) => c.apiKey).map((c) => (
-                      <SelectItem key={c.provider} value={c.provider}>
-                        {c.provider === 'google' ? 'Google AI Studio' :
-                         c.provider === 'groq' ? 'Groq' :
-                         c.provider === 'openrouter' ? 'OpenRouter' :
-                         c.provider === 'agnes' ? 'Agnes AI' :
-                         c.provider.charAt(0).toUpperCase() + c.provider.slice(1)}
-                      </SelectItem>
-                    ))}
+                    {settings.aiConfigs
+                      .filter((c) => c.apiKey)
+                      .map((c) => (
+                        <SelectItem key={c.provider} value={c.provider}>
+                          {c.provider === "google"
+                            ? "Google AI Studio"
+                            : c.provider === "groq"
+                              ? "Groq"
+                              : c.provider === "openrouter"
+                                ? "OpenRouter"
+                                : c.provider === "agnes"
+                                  ? "Agnes AI"
+                                  : c.provider.charAt(0).toUpperCase() + c.provider.slice(1)}
+                        </SelectItem>
+                      ))}
                     {settings.aiConfigs.filter((c) => c.apiKey).length === 0 && (
-                      <SelectItem value="__placeholder__" disabled>请先配置并测试通过 API Key</SelectItem>
+                      <SelectItem value="__placeholder__" disabled>
+                        请先配置并测试通过 API Key
+                      </SelectItem>
                     )}
                   </SelectContent>
                 </Select>
@@ -336,157 +499,220 @@ export default function SettingsPage() {
 
               <Separator />
 
-              {(['deepseek', 'google', 'openai', 'groq', 'openrouter', 'agnes'] as const).map((provider) => {
-                const cfg = settings.aiConfigs.find((c) => c.provider === provider)
-                const key = cfg?.apiKey || ''
-                const testing = testingAi === provider
-                const providerLabel = provider === 'google' ? 'Google AI Studio' :
-                  provider === 'groq' ? 'Groq' :
-                  provider === 'openrouter' ? 'OpenRouter' :
-                  provider === 'agnes' ? 'Agnes AI' :
-                  provider.charAt(0).toUpperCase() + provider.slice(1)
-                return (
-                  <div key={provider} className="space-y-2">
-                    <Label className="text-xs flex items-center gap-1">
-                      {providerLabel} API Key
-                      {key && <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />}
-                    </Label>
-                    <div className="flex gap-2">
-                      <Input
-                        type="password"
-                        value={key}
-                        onChange={(e) => {
-                          const others = settings.aiConfigs.filter((c) => c.provider !== provider)
-                          const newConfigs = e.target.value
-                            ? [...others, { ...cfg, provider, apiKey: e.target.value }]
-                            : others
-                          updateAIConfig(newConfigs)
-                        }}
-                        placeholder={provider === 'google' ? 'AIza...' :
-                          provider === 'groq' ? 'gsk_...' :
-                          provider === 'openrouter' ? 'sk-or-v1-...' :
-                          'sk-...'}
-                        className="flex-1"
-                      />
-                      <Button
-                        variant={key ? 'outline' : 'secondary'} size="sm" className="h-9 shrink-0 text-xs"
-                        disabled={!key || testing}
-                        onClick={async () => {
-                          setTestingAi(provider)
-                          const result = await testAIConnection({ ...cfg, provider, apiKey: key })
-                          // 测试失败 → 清除 Key
-                          if (!result.ok) {
-                            const others = settings.aiConfigs.filter((c) => c.provider !== provider)
-                            updateAIConfig(others)
+              {(["deepseek", "google", "openai", "groq", "openrouter", "agnes"] as const).map(
+                (provider) => {
+                  const cfg = settings.aiConfigs.find((c) => c.provider === provider);
+                  const key = cfg?.apiKey || "";
+                  const testing = testingAi === provider;
+                  const providerLabel =
+                    provider === "google"
+                      ? "Google AI Studio"
+                      : provider === "groq"
+                        ? "Groq"
+                        : provider === "openrouter"
+                          ? "OpenRouter"
+                          : provider === "agnes"
+                            ? "Agnes AI"
+                            : provider.charAt(0).toUpperCase() + provider.slice(1);
+                  return (
+                    <div key={provider} className="space-y-2">
+                      <Label className="text-xs flex items-center gap-1">
+                        {providerLabel} API Key
+                        {key && (
+                          <span className="w-2 h-2 rounded-full bg-green-500" title="已配置" />
+                        )}
+                      </Label>
+                      <div className="flex gap-2">
+                        <Input
+                          type="password"
+                          value={key}
+                          onChange={(e) => {
+                            const others = settings.aiConfigs.filter(
+                              (c) => c.provider !== provider,
+                            );
+                            const newConfigs = e.target.value
+                              ? [...others, { ...cfg, provider, apiKey: e.target.value }]
+                              : others;
+                            updateAIConfig(newConfigs);
+                          }}
+                          placeholder={
+                            provider === "google"
+                              ? "AIza..."
+                              : provider === "groq"
+                                ? "gsk_..."
+                                : provider === "openrouter"
+                                  ? "sk-or-v1-..."
+                                  : "sk-..."
                           }
-                          toast({ type: result.ok ? 'success' : 'error', message: result.message })
-                          setTestingAi(null)
-                        }}
-                      >
-                        {testing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
-                        测试
-                      </Button>
-                      {key && (
+                          className="flex-1"
+                        />
                         <Button
-                          variant="ghost" size="sm" className="h-9 shrink-0 text-xs text-muted-foreground hover:text-destructive"
-                          onClick={() => handleDeleteAi(provider)}
-                          title={`删除 ${providerLabel} 配置`}
+                          variant={key ? "outline" : "secondary"}
+                          size="sm"
+                          className="h-9 shrink-0 text-xs"
+                          disabled={!key || testing}
+                          onClick={async () => {
+                            setTestingAi(provider);
+                            const result = await testAIConnection({
+                              ...cfg,
+                              provider,
+                              apiKey: key,
+                            });
+                            // 测试失败 → 清除 Key
+                            if (!result.ok) {
+                              const others = settings.aiConfigs.filter(
+                                (c) => c.provider !== provider,
+                              );
+                              updateAIConfig(others);
+                            }
+                            toast({
+                              type: result.ok ? "success" : "error",
+                              message: result.message,
+                            });
+                            setTestingAi(null);
+                          }}
                         >
-                          <Trash2 className="h-3 w-3 mr-1" /> 删除
+                          {testing ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Sparkles className="h-3 w-3 mr-1" />
+                          )}
+                          测试
                         </Button>
+                        {key && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-9 shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                            onClick={() => handleDeleteAi(provider)}
+                            title={`删除 ${providerLabel} 配置`}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" /> 删除
+                          </Button>
+                        )}
+                      </div>
+                      {provider === "agnes" && (
+                        <div className="space-y-1">
+                          <Input
+                            placeholder="Base URL（可选，默认 https://apihub.agnes-ai.com/v1）"
+                            value={cfg?.baseURL || ""}
+                            onChange={(e) => {
+                              const others = settings.aiConfigs.filter(
+                                (c) => c.provider !== "agnes",
+                              );
+                              const existing = settings.aiConfigs.find(
+                                (c) => c.provider === "agnes",
+                              );
+                              updateAIConfig([
+                                ...others,
+                                {
+                                  provider: "agnes",
+                                  apiKey: existing?.apiKey || "",
+                                  baseURL: e.target.value,
+                                  model: existing?.model,
+                                },
+                              ]);
+                            }}
+                            className="text-xs"
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Agnes AI 接口与 OpenAI 兼容，如实际地址不同请填写 Base URL 覆盖默认。
+                          </p>
+                        </div>
                       )}
                     </div>
-                    {provider === 'agnes' && (
-                      <div className="space-y-1">
-                        <Input
-                          placeholder="Base URL（可选，默认 https://apihub.agnes-ai.com/v1）"
-                          value={cfg?.baseURL || ''}
-                          onChange={(e) => {
-                            const others = settings.aiConfigs.filter((c) => c.provider !== 'agnes')
-                            const existing = settings.aiConfigs.find((c) => c.provider === 'agnes')
-                            updateAIConfig([
-                              ...others,
-                              { provider: 'agnes', apiKey: existing?.apiKey || '', baseURL: e.target.value, model: existing?.model },
-                            ])
-                          }}
-                          className="text-xs"
-                        />
-                        <p className="text-[10px] text-muted-foreground">Agnes AI 接口与 OpenAI 兼容，如实际地址不同请填写 Base URL 覆盖默认。</p>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
+                  );
+                },
+              )}
               <Separator />
               <div className="space-y-2">
                 <Label className="text-xs">自定义 API</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Input
                     placeholder="Base URL"
-                    value={settings.aiConfigs.find((c) => c.provider === 'custom')?.baseURL || ''}
+                    value={settings.aiConfigs.find((c) => c.provider === "custom")?.baseURL || ""}
                     onChange={(e) => {
-                      const others = settings.aiConfigs.filter((c) => c.provider !== 'custom')
-                      const existing = settings.aiConfigs.find((c) => c.provider === 'custom')
-                      updateAIConfig([...others, {
-                        provider: 'custom',
-                        apiKey: existing?.apiKey || '',
-                        baseURL: e.target.value,
-                        model: existing?.model,
-                      }])
+                      const others = settings.aiConfigs.filter((c) => c.provider !== "custom");
+                      const existing = settings.aiConfigs.find((c) => c.provider === "custom");
+                      updateAIConfig([
+                        ...others,
+                        {
+                          provider: "custom",
+                          apiKey: existing?.apiKey || "",
+                          baseURL: e.target.value,
+                          model: existing?.model,
+                        },
+                      ]);
                     }}
                   />
                   <div className="flex gap-2">
                     <Input
                       type="password"
                       placeholder="API Key"
-                      value={settings.aiConfigs.find((c) => c.provider === 'custom')?.apiKey || ''}
+                      value={settings.aiConfigs.find((c) => c.provider === "custom")?.apiKey || ""}
                       onChange={(e) => {
-                        const others = settings.aiConfigs.filter((c) => c.provider !== 'custom')
-                        const existing = settings.aiConfigs.find((c) => c.provider === 'custom')
-                        updateAIConfig([...others, {
-                          provider: 'custom',
-                          apiKey: e.target.value,
-                          baseURL: existing?.baseURL,
-                          model: existing?.model,
-                        }])
+                        const others = settings.aiConfigs.filter((c) => c.provider !== "custom");
+                        const existing = settings.aiConfigs.find((c) => c.provider === "custom");
+                        updateAIConfig([
+                          ...others,
+                          {
+                            provider: "custom",
+                            apiKey: e.target.value,
+                            baseURL: existing?.baseURL,
+                            model: existing?.model,
+                          },
+                        ]);
                       }}
                       className="flex-1"
                     />
                     {(() => {
-                      const custom = settings.aiConfigs.find((c) => c.provider === 'custom')
-                      const testing = testingAi === 'custom'
+                      const custom = settings.aiConfigs.find((c) => c.provider === "custom");
+                      const testing = testingAi === "custom";
                       return custom?.apiKey ? (
                         <Button
-                          variant="outline" size="sm" className="h-9 shrink-0 text-xs"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 shrink-0 text-xs"
                           disabled={testing}
                           onClick={async () => {
-                            setTestingAi('custom')
-                            const result = await testAIConnection(custom)
+                            setTestingAi("custom");
+                            const result = await testAIConnection(custom);
                             if (!result.ok) {
-                              const others = settings.aiConfigs.filter((c) => c.provider !== 'custom')
-                              updateAIConfig(others)
+                              const others = settings.aiConfigs.filter(
+                                (c) => c.provider !== "custom",
+                              );
+                              updateAIConfig(others);
                             }
-                            toast({ type: result.ok ? 'success' : 'error', message: result.message })
-                            setTestingAi(null)
+                            toast({
+                              type: result.ok ? "success" : "error",
+                              message: result.message,
+                            });
+                            setTestingAi(null);
                           }}
                         >
-                          {testing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Sparkles className="h-3 w-3 mr-1" />}
+                          {testing ? (
+                            <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                          ) : (
+                            <Sparkles className="h-3 w-3 mr-1" />
+                          )}
                           测试
                         </Button>
-                      ) : null
+                      ) : null;
                     })()}
-                    {settings.aiConfigs.some((c) => c.provider === 'custom') && (
+                    {settings.aiConfigs.some((c) => c.provider === "custom") && (
                       <Button
-                        variant="ghost" size="sm" className="h-9 shrink-0 text-xs text-muted-foreground hover:text-destructive"
-                        onClick={() => handleDeleteAi('custom')}
+                        variant="ghost"
+                        size="sm"
+                        className="h-9 shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                        onClick={() => handleDeleteAi("custom")}
                         title="删除自定义 API 配置"
                       >
                         <Trash2 className="h-3 w-3 mr-1" /> 删除
                       </Button>
                     )}
+                  </div>
                 </div>
               </div>
-            </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -496,25 +722,35 @@ export default function SettingsPage() {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">存储配置</CardTitle>
-              <CardDescription>选择数据存储方式，默认使用浏览器本地存储（IndexedDB）</CardDescription>
+              <CardDescription>
+                选择数据存储方式，默认使用浏览器本地存储（IndexedDB）
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg">
                 <div>
                   <Label className="text-sm">浏览器本地存储</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">数据保存在当前设备 IndexedDB，可通过「备份」页面导出/同步</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    数据保存在当前设备 IndexedDB，可通过「备份」页面导出/同步
+                  </p>
                 </div>
-                <Badge variant="secondary" className="text-[10px] shrink-0">当前</Badge>
+                <Badge variant="secondary" className="text-[10px] shrink-0">
+                  当前
+                </Badge>
               </div>
               <Separator />
               <div className="space-y-2 opacity-50 pointer-events-none">
                 <div className="flex items-center justify-between">
                   <Label>Notion 同步</Label>
-                  <Badge variant="outline" className="text-[10px]">即将推出</Badge>
+                  <Badge variant="outline" className="text-[10px]">
+                    即将推出
+                  </Badge>
                 </div>
                 <Input disabled placeholder="Notion Integration Token" />
                 <Input disabled placeholder="Notion Database ID" />
-                <p className="text-xs text-muted-foreground">Notion 同步正在开发中，敬请期待。目前可通过 GitHub Gist 实现跨设备同步。</p>
+                <p className="text-xs text-muted-foreground">
+                  Notion 同步正在开发中，敬请期待。目前可通过 GitHub Gist 实现跨设备同步。
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -527,27 +763,166 @@ export default function SettingsPage() {
               <CardTitle className="text-base">通知设置</CardTitle>
               <CardDescription>配置推送通知的触发条件</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>浏览器推送通知</Label>
-                  <p className="text-xs text-muted-foreground">投资计划触发时收到浏览器通知</p>
+            <CardContent className="space-y-5">
+              {/* 通知通道 */}
+              <div className="space-y-2">
+                <Label className="text-sm">通知通道</Label>
+                <div className="space-y-2">
+                  {(
+                    [
+                      { key: "inApp", label: "应用内铃铛", desc: "在通知页与顶部铃铛展示" },
+                      { key: "browser", label: "浏览器推送", desc: "投资计划触发时弹出系统通知" },
+                      {
+                        key: "feishu",
+                        label: "飞书 Webhook",
+                        desc: "best-effort 直发，可能受 CORS 限制",
+                      },
+                    ] as const
+                  ).map((ch) => (
+                    <div key={ch.key} className="flex items-center justify-between">
+                      <div>
+                        <Label className="text-xs font-normal">{ch.label}</Label>
+                        <p className="text-[11px] text-muted-foreground">{ch.desc}</p>
+                      </div>
+                      <Switch
+                        checked={settings.notifications.channels.includes(ch.key)}
+                        onCheckedChange={(v) => {
+                          const cur = settings.notifications.channels;
+                          const next = v
+                            ? [...new Set([...cur, ch.key])]
+                            : cur.filter((c) => c !== ch.key);
+                          updateNotifications({ channels: next });
+                        }}
+                      />
+                    </div>
+                  ))}
                 </div>
-                <Switch
-                  checked={settings.notifications.browser}
-                  onCheckedChange={(v) => updateNotifications({ browser: v })}
-                />
+                {settings.notifications.channels.includes("feishu") && (
+                  <div className="space-y-1.5 pt-1">
+                    <Label className="text-xs">飞书 Webhook 地址</Label>
+                    <Input
+                      placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxx"
+                      value={settings.notifications.feishuWebhook}
+                      onChange={(e) => updateNotifications({ feishuWebhook: e.target.value })}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                )}
               </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label>飞书通知（预留）</Label>
-                  <p className="text-xs text-muted-foreground">通过飞书机器人发送通知消息</p>
+
+              {/* 噪声控制 */}
+              <div className="space-y-3 border-t border-border/40 pt-4">
+                <Label className="text-sm">噪声控制</Label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">安静时段（起）HH:mm</Label>
+                    <Input
+                      type="time"
+                      value={settings.notifications.noise.quietHoursStart}
+                      onChange={(e) =>
+                        updateNotifications({
+                          noise: {
+                            ...settings.notifications.noise,
+                            quietHoursStart: e.target.value,
+                          },
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">安静时段（止）HH:mm</Label>
+                    <Input
+                      type="time"
+                      value={settings.notifications.noise.quietHoursEnd}
+                      onChange={(e) =>
+                        updateNotifications({
+                          noise: { ...settings.notifications.noise, quietHoursEnd: e.target.value },
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">去重窗口（分钟）</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={settings.notifications.noise.dedupWindowMin}
+                      onChange={(e) =>
+                        updateNotifications({
+                          noise: {
+                            ...settings.notifications.noise,
+                            dedupWindowMin: Number(e.target.value) || 0,
+                          },
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">最小发送间隔（秒）</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={settings.notifications.noise.minIntervalSec}
+                      onChange={(e) =>
+                        updateNotifications({
+                          noise: {
+                            ...settings.notifications.noise,
+                            minIntervalSec: Number(e.target.value) || 0,
+                          },
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">每分钟上限（条）</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={settings.notifications.noise.maxPerMinute}
+                      onChange={(e) =>
+                        updateNotifications({
+                          noise: {
+                            ...settings.notifications.noise,
+                            maxPerMinute: Number(e.target.value) || 1,
+                          },
+                        })
+                      }
+                      className="h-8 text-xs"
+                    />
+                  </div>
                 </div>
-                <Switch
-                  checked={settings.notifications.feishu}
-                  onCheckedChange={(v) => updateNotifications({ feishu: v })}
-                  disabled
-                />
+                <div className="space-y-2">
+                  <Label className="text-xs">免打扰类型</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {(["success", "info", "warning", "error"] as const).map((t) => {
+                      const on = settings.notifications.noise.typeOptOut.includes(t);
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => {
+                            const cur = settings.notifications.noise.typeOptOut;
+                            const next = on ? cur.filter((x) => x !== t) : [...cur, t];
+                            updateNotifications({
+                              noise: { ...settings.notifications.noise, typeOptOut: next },
+                            });
+                          }}
+                          className={`rounded-full border px-2.5 py-0.5 text-[11px] ${
+                            on
+                              ? "bg-primary/10 text-primary border-primary/40"
+                              : "text-muted-foreground border-border"
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -567,7 +942,9 @@ export default function SettingsPage() {
                   value={settings.theme}
                   onValueChange={(v) => updateSettings({ theme: v as any })}
                 >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="light">浅色</SelectItem>
                     <SelectItem value="dark">深色</SelectItem>
@@ -589,15 +966,21 @@ export default function SettingsPage() {
             <CardContent className="space-y-3">
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleExport}>
-                  <Download className="h-3 w-3 mr-2" />导出备份
+                  <Download className="h-3 w-3 mr-2" />
+                  导出备份
                 </Button>
                 <Button size="sm" variant="outline" onClick={handleImport}>
-                  <Upload className="h-3 w-3 mr-2" />导入备份
+                  <Upload className="h-3 w-3 mr-2" />
+                  导入备份
                 </Button>
               </div>
               {importResult && (
-                <p className={`text-xs ${importResult.ok ? 'text-green-500' : 'text-red-500'}`}>
-                  {importResult.ok ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                <p className={`text-xs ${importResult.ok ? "text-green-500" : "text-red-500"}`}>
+                  {importResult.ok ? (
+                    <CheckCircle className="h-3 w-3 inline mr-1" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3 inline mr-1" />
+                  )}
                   {importResult.msg}
                 </p>
               )}
@@ -613,11 +996,19 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-xs">GitHub Personal Access Token</Label>
                 <div className="flex gap-2 mt-1">
-                  <Input type="password" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  <Input
+                    type="password"
+                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
                     value={settings.sync.gistToken}
-                    onChange={(e) => updateSettings({ sync: { ...settings.sync, gistToken: e.target.value } })}
-                    className="text-xs font-mono h-8 flex-1" />
-                  <Button variant="outline" size="sm" className="h-8 text-xs shrink-0"
+                    onChange={(e) =>
+                      updateSettings({ sync: { ...settings.sync, gistToken: e.target.value } })
+                    }
+                    className="text-xs font-mono h-8 flex-1"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs shrink-0"
                     disabled={!settings.sync.gistToken || verifyingToken}
                     onClick={handleVerifyToken}
                   >
@@ -626,8 +1017,14 @@ export default function SettingsPage() {
                   </Button>
                 </div>
                 {gistVerifyResult && (
-                  <p className={`text-[10px] mt-1 ${gistVerifyResult.ok ? 'text-green-500' : 'text-red-500'}`}>
-                    {gistVerifyResult.ok ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                  <p
+                    className={`text-[10px] mt-1 ${gistVerifyResult.ok ? "text-green-500" : "text-red-500"}`}
+                  >
+                    {gistVerifyResult.ok ? (
+                      <CheckCircle className="h-3 w-3 inline mr-1" />
+                    ) : (
+                      <AlertCircle className="h-3 w-3 inline mr-1" />
+                    )}
                     {gistVerifyResult.msg}
                   </p>
                 )}
@@ -649,17 +1046,21 @@ export default function SettingsPage() {
                     disabled={!settings.sync.gistId}
                     onClick={async () => {
                       try {
-                        await navigator.clipboard.writeText(settings.sync.gistId)
-                        setGistIdCopied(true)
-                        toast({ type: 'success', message: 'Gist ID 已复制' })
-                        setTimeout(() => setGistIdCopied(false), 1800)
+                        await navigator.clipboard.writeText(settings.sync.gistId);
+                        setGistIdCopied(true);
+                        toast({ type: "success", message: "Gist ID 已复制" });
+                        setTimeout(() => setGistIdCopied(false), 1800);
                       } catch {
-                        toast({ type: 'error', message: '复制失败，请手动选择文本复制' })
+                        toast({ type: "error", message: "复制失败，请手动选择文本复制" });
                       }
                     }}
                   >
-                    {gistIdCopied ? <Check className="h-3 w-3 mr-1" /> : <Copy className="h-3 w-3 mr-1" />}
-                    {gistIdCopied ? '已复制' : '复制'}
+                    {gistIdCopied ? (
+                      <Check className="h-3 w-3 mr-1" />
+                    ) : (
+                      <Copy className="h-3 w-3 mr-1" />
+                    )}
+                    {gistIdCopied ? "已复制" : "复制"}
                   </Button>
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-1">
@@ -667,18 +1068,39 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button size="sm" disabled={!settings.sync.gistToken || syncing} onClick={handleGistPush}>
-                  {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Upload className="h-3 w-3 mr-2" />}
+                <Button
+                  size="sm"
+                  disabled={!settings.sync.gistToken || syncing}
+                  onClick={handleGistPush}
+                >
+                  {syncing ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                  ) : (
+                    <Upload className="h-3 w-3 mr-2" />
+                  )}
                   推送到 Gist
                 </Button>
-                <Button size="sm" variant="outline" disabled={!settings.sync.gistToken || syncing} onClick={handleGistPull}>
-                  {syncing ? <Loader2 className="h-3 w-3 animate-spin mr-2" /> : <Download className="h-3 w-3 mr-2" />}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!settings.sync.gistToken || syncing}
+                  onClick={handleGistPull}
+                >
+                  {syncing ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                  ) : (
+                    <Download className="h-3 w-3 mr-2" />
+                  )}
                   从 Gist 恢复
                 </Button>
               </div>
               {syncResult && (
-                <p className={`text-xs ${syncResult.ok ? 'text-green-500' : 'text-red-500'}`}>
-                  {syncResult.ok ? <CheckCircle className="h-3 w-3 inline mr-1" /> : <AlertCircle className="h-3 w-3 inline mr-1" />}
+                <p className={`text-xs ${syncResult.ok ? "text-green-500" : "text-red-500"}`}>
+                  {syncResult.ok ? (
+                    <CheckCircle className="h-3 w-3 inline mr-1" />
+                  ) : (
+                    <AlertCircle className="h-3 w-3 inline mr-1" />
+                  )}
                   {syncResult.msg}
                 </p>
               )}
@@ -689,14 +1111,16 @@ export default function SettingsPage() {
                   <Label className="text-xs">每日自动同步</Label>
                   <p className="text-[10px] text-muted-foreground">
                     {settings.sync.lastAutoPush
-                      ? `上次自动同步：${new Date(settings.sync.lastAutoPush).toLocaleString('zh-CN', { hour12: false })}`
-                      : '启用后每日自动推送到 Gist（需先配置 Token 与 Gist ID）'}
+                      ? `上次自动同步：${new Date(settings.sync.lastAutoPush).toLocaleString("zh-CN", { hour12: false })}`
+                      : "启用后每日自动推送到 Gist（需先配置 Token 与 Gist ID）"}
                   </p>
                 </div>
                 <Switch
                   checked={!!settings.sync.autoPush}
                   disabled={!settings.sync.gistToken || !settings.sync.gistId}
-                  onCheckedChange={(v) => updateSettings({ sync: { ...settings.sync, autoPush: v } })}
+                  onCheckedChange={(v) =>
+                    updateSettings({ sync: { ...settings.sync, autoPush: v } })
+                  }
                 />
               </div>
             </CardContent>
@@ -710,16 +1134,29 @@ export default function SettingsPage() {
       </Tabs>
 
       {/* F13: 备份恢复二次确认 */}
-      <Dialog open={!!pendingRestore} onOpenChange={(v) => { if (!v) setPendingRestore(null) }}>
+      <Dialog
+        open={!!pendingRestore}
+        onOpenChange={(v) => {
+          if (!v) setPendingRestore(null);
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>恢复备份将覆盖现有数据</DialogTitle>
             <DialogDescription>
-              即将用备份中的 <strong>{pendingRestore?.holdings ?? 0}</strong> 只持仓、<strong>{pendingRestore?.plans ?? 0}</strong> 个计划覆盖当前本地数据。此操作不可撤销。
+              即将用备份中的 <strong>{pendingRestore?.holdings ?? 0}</strong> 只持仓、
+              <strong>{pendingRestore?.plans ?? 0}</strong> 个计划覆盖当前本地数据。此操作不可撤销。
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" size="sm" onClick={() => setPendingRestore(null)} disabled={importing}>取消</Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPendingRestore(null)}
+              disabled={importing}
+            >
+              取消
+            </Button>
             <Button variant="destructive" size="sm" onClick={confirmRestore} disabled={importing}>
               {importing && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
               确认恢复
@@ -728,5 +1165,5 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }

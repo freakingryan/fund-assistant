@@ -12,6 +12,7 @@ import FundKlineChartCard from "./FundKlineChartCard";
 import FundKlinePatternCard from "./FundKlinePatternCard";
 import FundSignalScoreCard from "./FundSignalScoreCard";
 import FundDecisionAdvisorCard from "./FundDecisionAdvisorCard";
+import ResearchReportCard from "@/components/holdings/ResearchReportCard";
 import FundHeader from "./FundHeader";
 import HoldingInfoCard from "./HoldingInfoCard";
 import FundPortfolioCard from "./FundPortfolioCard";
@@ -56,6 +57,7 @@ export default function FundDetailLayout() {
         <div className="lg:col-span-2 space-y-4">
           <FundKlineChartCard />
           <FundKlinePatternCard />
+          <ResearchReportCard stockCode={ctrl.etfCode} stockName={fund.name} />
           <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
               <span className="inline-block transition-transform group-open:rotate-90">▶</span>

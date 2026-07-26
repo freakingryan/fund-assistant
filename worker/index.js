@@ -1,18 +1,19 @@
 /**
- * Cloudflare Worker — 东方财富(eastmoney) 反向代理
+ * Cloudflare Worker — 东方财富 / 同花顺 / 巨潮(互动易) 反向代理
  *
- * 前端 stock-sdk 在 mode='proxy' 时，会把所有 *.eastmoney.com 请求改写到本 Worker 地址，
- * 并通过 `x-upstream-host` 请求头带上原始主机名。本 Worker 据此把请求转发到正确的东财上游，
+ * 前端在 mode='proxy' 时，会把命中下述域的请求改写到本 Worker 地址，
+ * 并通过 `x-upstream-host` 请求头带上原始主机名。本 Worker 据此把请求转发到正确上游，
  * 保留原始 path + query，并附加 CORS 头，使浏览器端可跨域访问。
  *
  * 部署：
  *   cd worker && npx wrangler deploy
  * 前端配置：settings.dataSource.eastmoney = { enabled:true, mode:'proxy', proxyUrl:'https://<your-sub>.workers.dev' }
  *
- * 安全：仅允许转发到 eastmoney.com 及其子域，杜绝被当作开放代理。
+ * 安全：仅允许转发到 eastmoney.com / 10jqka.com.cn / cninfo.com.cn 及其子域，
+ * 杜绝被当作开放代理。
  */
 
-const ALLOWED_HOST_RE = /([^/?#]+\.)*eastmoney\.com$/i;
+const ALLOWED_HOST_RE = /([^/?#]+\.)*(?:eastmoney\.com|10jqka\.com\.cn|cninfo\.com\.cn)$/i;
 
 export default {
   async fetch(request, env, ctx) {

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { usePlansStore } from "@/stores/plans";
+import { useNotificationsStore } from "@/stores/notifications";
 import { Bell, Clock, CheckCircle, XCircle, Inbox, Settings2, ArrowRight } from "lucide-react";
 
 function formatTime(iso: string): string {
@@ -19,6 +20,19 @@ function formatTime(iso: string): string {
   });
 }
 
+function typeDot(type: "success" | "error" | "warning" | "info"): string {
+  switch (type) {
+    case "success":
+      return "bg-green-500";
+    case "error":
+      return "bg-red-500";
+    case "warning":
+      return "bg-amber-500";
+    default:
+      return "bg-sky-500";
+  }
+}
+
 export default function NotificationsPage() {
   const alerts = usePlansStore((s) => s.alerts);
   const loadAlerts = usePlansStore((s) => s.loadAlerts);
@@ -29,6 +43,11 @@ export default function NotificationsPage() {
   useLoadOnMount(loadAlerts);
 
   const pending = useMemo(() => alerts.filter((a) => !a.executed && !a.dismissed), [alerts]);
+
+  const inApp = useNotificationsStore((s) => s.notifications);
+  const markRead = useNotificationsStore((s) => s.markRead);
+  const removeNotif = useNotificationsStore((s) => s.remove);
+  const clearAll = useNotificationsStore((s) => s.clearAll);
 
   return (
     <div className="space-y-6">
@@ -145,6 +164,64 @@ export default function NotificationsPage() {
                 );
               })}
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base">应用内通知</CardTitle>
+            <CardDescription>系统事件（如每日备份同步）经统一通知契约写入此处</CardDescription>
+          </div>
+          {inApp.length > 0 && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => clearAll()}>
+              清空
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {inApp.length === 0 ? (
+            <p className="text-center py-6 text-xs text-muted-foreground">暂无应用内通知</p>
+          ) : (
+            <ul className="space-y-2">
+              {inApp.map((n) => (
+                <li key={n.id} className="flex items-start gap-3 p-3 rounded-md border">
+                  <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${typeDot(n.type)}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{n.title}</p>
+                    {n.body && (
+                      <p className="text-xs text-muted-foreground mt-0.5 whitespace-pre-wrap">
+                        {n.body}
+                      </p>
+                    )}
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {new Date(n.createdAt).toLocaleString("zh-CN")}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1 shrink-0">
+                    {!n.read && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-[10px]"
+                        onClick={() => markRead(n.id)}
+                      >
+                        标已读
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[10px]"
+                      onClick={() => removeNotif(n.id)}
+                    >
+                      删除
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </CardContent>
       </Card>

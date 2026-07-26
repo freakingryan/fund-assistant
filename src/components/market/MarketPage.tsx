@@ -9,6 +9,9 @@
 import LimitUpBoardPanel from "./LimitUpBoardPanel";
 import DragonTigerPanel from "./DragonTigerPanel";
 import NorthboundPanel from "./NorthboundPanel";
+import ConsensusEpsPanel from "./ConsensusEpsPanel";
+import HotListPanel from "./HotListPanel";
+import IrmPanel from "./IrmPanel";
 
 export default function MarketPage() {
   return (
@@ -16,7 +19,8 @@ export default function MarketPage() {
       <div>
         <h1 className="text-lg font-semibold">市场情绪</h1>
         <p className="text-xs text-muted-foreground">
-          打板情绪 / 龙虎榜 / 北向资金，数据来自东方财富增强（设置 → 数据源开启后展示）。
+          打板情绪 / 龙虎榜 / 北向资金来自东方财富增强；一致预期EPS / 人气热榜 /
+          互动易来自同花顺与巨潮（设置 → 数据源开启后展示）。
         </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -24,6 +28,11 @@ export default function MarketPage() {
         <NorthboundPanel />
         <div className="lg:col-span-2">
           <DragonTigerPanel />
+        </div>
+        <ConsensusEpsPanel />
+        <HotListPanel />
+        <div className="lg:col-span-2">
+          <IrmPanel />
         </div>
       </div>
     </div>

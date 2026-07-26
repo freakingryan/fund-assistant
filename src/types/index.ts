@@ -258,6 +258,24 @@ export interface NotionConfig {
   databaseId: string;
 }
 
+export type NotificationChannel = "inApp" | "browser" | "feishu";
+
+/** 噪声控制配置 */
+export interface NotificationNoiseConfig {
+  /** 安静时段起始（HH:mm，24h），空字符串=不启用 */
+  quietHoursStart: string;
+  /** 安静时段结束（HH:mm），空字符串=不启用 */
+  quietHoursEnd: string;
+  /** 被免打扰的通知类型 */
+  typeOptOut: Array<"success" | "error" | "warning" | "info">;
+  /** 去重窗口（分钟）：相同 type+title 在该窗口内仅首条生效 */
+  dedupWindowMin: number;
+  /** 全局最小发送间隔（秒） */
+  minIntervalSec: number;
+  /** 每分钟最大发送条数（频率限制） */
+  maxPerMinute: number;
+}
+
 export interface UserSettings {
   id?: string; // Dexie 主键，总是 'user-settings'
   theme: "light" | "dark" | "system";
@@ -268,12 +286,18 @@ export interface UserSettings {
     notion?: NotionConfig;
   };
   notifications: {
-    browser: boolean;
-    feishu: boolean;
+    /** 启用的通知通道（inApp=应用内铃铛；browser=浏览器推送；feishu=飞书 webhook） */
+    channels: NotificationChannel[];
+    /** 飞书 Webhook 地址（channels 含 feishu 时必填，best-effort 直发） */
+    feishuWebhook: string;
+    /** 浏览器通知定时推送 cron（每日收盘简报） */
     schedule: string; // cron expression
+    /** 噪声控制 */
+    noise: NotificationNoiseConfig;
   };
   etfMappings: EtfMapping[];
   sync: SyncConfig;
+
   /** 数据源增强配置（门控型能力，默认关闭） */
   dataSource: DataSourceSettings;
   /** 评分回测模块元数据（自动采集守卫等） */
@@ -292,6 +316,8 @@ export interface DataSourceSettings {
    * 默认关闭——当前网络到不了东财时不产生任何东财请求，App 行为与关闭前一致。
    */
   eastmoney: EastmoneyDataSourceConfig;
+  /** 同花顺 / 巨潮(互动易) 增强数据源（fund-assistant 自实现，复用同一 Worker 反代）。默认关闭。 */
+  extraSources: ExtraSourcesConfig;
 }
 
 export interface EastmoneyDataSourceConfig {
@@ -301,6 +327,64 @@ export interface EastmoneyDataSourceConfig {
   mode: "direct" | "proxy";
   /** Worker 反代地址（mode=proxy 时必填）。约定：Worker 转发时保留原始 path+query */
   proxyUrl: string;
+}
+
+/** 同花顺 / 巨潮(互动易) 增强数据源（fund-assistant 自实现，复用共享 Worker 反代）。默认关闭。 */
+export interface ExtraSourcesConfig {
+  /** 是否启用同花顺(一致预期EPS/热榜/题材归因)与互动易(巨潮)数据源 */
+  enabled: boolean;
+}
+
+/** 同花顺一致预期EPS（单一年度） */
+export interface TonghuashunEps {
+  /** 年度，如 "2026" */
+  year: string;
+  /** 预测机构数 */
+  agencyCount: number | null;
+  /** 最小值 */
+  min: number | null;
+  /** 均值（一致预期EPS） */
+  avg: number | null;
+  /** 最大值 */
+  max: number | null;
+}
+
+/** 同花顺人气热榜单条 */
+export interface TonghuashunHotItem {
+  rank: number;
+  code: string;
+  name: string;
+  /** 人气值 */
+  heat: number;
+  /** 涨跌幅(%) */
+  pct: number | null;
+  /** 排名变化 */
+  rankChg: number | null;
+  /** 概念标签 */
+  concepts: string[];
+  tag?: string;
+}
+
+/** 同花顺题材归因单条 */
+export interface ThemeItem {
+  code: string;
+  name: string;
+  /** 题材标签 / 原因 */
+  reason: string;
+}
+
+/** 互动易(巨潮) 问答单条 */
+export interface CninfoIrmItem {
+  code: string;
+  company?: string;
+  /** 投资者提问 */
+  question: string;
+  /** 公司回复（未回复为 null） */
+  answer: string | null;
+  /** 提问时间（毫秒时间戳） */
+  askTime?: number;
+  /** 回答方 */
+  answerer?: string;
 }
 
 /** GitHub Gist 同步配置 */
