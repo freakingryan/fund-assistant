@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Stethoscope } from "lucide-react";
 import { ROUTES } from "@/constants/routes";
 import { useFundDetail } from "@/hooks/useFundDetailController";
 import EditFundDialog from "@/components/holdings/EditFundDialog";
@@ -12,6 +13,7 @@ import FundKlineChartCard from "./FundKlineChartCard";
 import FundKlinePatternCard from "./FundKlinePatternCard";
 import FundSignalScoreCard from "./FundSignalScoreCard";
 import FundDecisionAdvisorCard from "./FundDecisionAdvisorCard";
+import DecisionGuide from "../guide/DecisionGuide";
 import ResearchReportCard from "@/components/holdings/ResearchReportCard";
 import FundHeader from "./FundHeader";
 import HoldingInfoCard from "./HoldingInfoCard";
@@ -23,6 +25,7 @@ export default function FundDetailLayout() {
   const ctrl = useFundDetail();
   const navigate = useNavigate();
   const { fund } = ctrl;
+  const [guideOpen, setGuideOpen] = useState(false);
 
   if (!fund) {
     return (
@@ -42,7 +45,21 @@ export default function FundDetailLayout() {
 
   return (
     <div className="space-y-6">
-      <FundHeader />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <FundHeader />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 h-8"
+          onClick={() => setGuideOpen(true)}
+          title="按 SOP 逐步看懂各项指标并给出自己的判断"
+        >
+          <Stethoscope className="h-3.5 w-3.5 mr-1.5" />
+          投资体检 SOP
+        </Button>
+      </div>
 
       <HoldingInfoCard />
 
@@ -77,6 +94,9 @@ export default function FundDetailLayout() {
           <PromptAiCard />
         </div>
       </div>
+
+      {/* 新手投资体检 SOP 向导（全屏步进 overlay，复用 FundDetailProvider 上下文） */}
+      <DecisionGuide open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   );
 }
