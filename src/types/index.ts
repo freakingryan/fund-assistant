@@ -423,3 +423,46 @@ export interface PromptTemplate {
   name: string;
   generate(holdings: FundHolding[], quotes: FundQuote[], plans?: InvestmentPlan[]): string;
 }
+
+// ============= 新手 SOP 向导：投资体检决策日志 =============
+
+import type { DecisionAction } from "@/services/decision/types";
+
+/** 向导里「你认同吗」三态收集 */
+export type FactorVerdict = "agree" | "doubt" | "disagree";
+
+/** 向导里用户最终给自己下的决策 */
+export type InvestorDecision = "add" | "hold" | "reduce" | "sell";
+
+/** 单维度认同度收集：category → 三态 */
+export type PerFactorVerdict = Partial<Record<string, FactorVerdict>>;
+
+/**
+ * 投资体检 SOP 决策日志 — 用户在向导最后一步给出的自我判断存档（IndexedDB）。
+ * 用于日后复盘：当时的评分/动作快照 + 每维度认同度 + 自己的决策与理由。
+ */
+export interface DecisionLog {
+  id: string;
+  fundCode: string;
+  fundName: string;
+  /** 存档时间戳 */
+  createdAt: number;
+  /** 当时 K 线末根日期（数据时点），无则 null */
+  asOfDate: string | null;
+  /** 当时综合评分 0~100 */
+  score: number;
+  /** 当时引擎给出的 8 态动作 */
+  action: DecisionAction;
+  actionLabel: string;
+  ratingLabel: string;
+  /** 每维度认同度收集（category key → 三态） */
+  perFactor: PerFactorVerdict;
+  /** 用户最终决策 */
+  decision: InvestorDecision;
+  /** 用户填写的决策理由 */
+  decisionReason: string;
+  /** 当时多空力量占比 0~1（快照） */
+  bullRatio: number;
+  /** 当时是否低置信（净值模式） */
+  lowConfidence: boolean;
+}

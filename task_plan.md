@@ -1,35 +1,68 @@
-# task_plan — ETF 期权（T型/希腊字母/IV）+ 市场状态护栏
+# 实现方案：投资决策 SOP 向导（新手指标解读流）
 
-> 流水线：planning-with-files（本文件）→ task-implement → impeccable → code-simplifier → gate(husky)
-> 数据源决策见 findings.md §3（ETF T型：默认方案 A / 备选 B）。以下按「方案 A」列，选 B 时 C2/C3 的 chain 切到 `index.spot`。
+## 目标（Goal）
 
-## Feature C — ETF 期权（T型 / 希腊字母 / IV）
+为新手投资者提供一个**有条理、简单易懂、类 SOP 的分步向导**，把已有的评分体系（9 维信号 + 0-100 综合分 + 多空力量 + 冲突/regime + 买卖理由）按顺序重新包装，每张指标卡配「人话翻译」，最后逼用户**自己下判断并存档决策日志**。入口挂在基金详情页，复用 `useFundDetail()` 上下文，不新开路由、不重算数据。
 
-- [ ] **C0** `src/lib/optionPricing.ts`：纯函数 `bsPrice` / `greeks(delta,gamma,theta,vega,rho)` / `impliedVol(Newton)`；输入 (type,S,K,T,r,sigma|price)；无报价时仅理论值。
-- [ ] **C1** `src/services/etfOptions.ts`：
-  - `fetchEtfOptionCates()`（5 类：50ETF/300ETF/500ETF/科创50/科创板50）
-  - `fetchEtfOptionMonths(cate)` → `sdk.options.etf.months`（gate: eastmoney.enabled）
-  - `fetchEtfOptionExpireDay(cate, month)` → `sdk.options.etf.expireDay`
-  - 方案A：`fetchEtfOptionChain(cate, month, expireDay)` → SSE 解析（gate: extraSources.enabled + proxy）；方案B：复用 `sdk.options.index.spot` 演示
-  - `fetchEtfOptionQuote(code)` → `sdk.options.etf.dailyKline/minute`（K线/分时）
-- [ ] **C2** `src/components/market/EtfOptionPanel.tsx`：
-  - 品种(Cate) → 月份(Month) → 到期日(ExpireDay) 三级联动
-  - T 型表：左 calls / 中 strike / 右 puts，列含 现价/涨跌/持仓 + **delta/gamma/theta/vega/rho/IV**（调用 optionPricing）
-  - 选中合约 K线/分时图（轻量）
-  - 门控：方案A 用 ExtraSourceGuard 风格（SSE）；months/expireDay 用 eastmoney 门控
-- [ ] **C3** 路由/导航：MarketPage 网格加入 EtfOptionPanel（跨两列）；描述文案更新。
-- [ ] **C4** impeccable + code-simplifier + 质量门（tsc/eslint/vite 全绿）。
+## 设计形态（5 步，已与用户确认）
 
-## Feature D — 市场状态护栏
+1. **看大环境** — 市场 Regime（牛/熊/震荡，剥离 beta 伪信号）
+2. **综合评分速览** — 0-100 分 + 评级徽章 + 八态动作，一眼看全局
+3. **多空力量 + 一致性** — 力量条看谁主导；信号打架→冲突预警
+4. **九维信号逐个过**（核心）— 趋势/MACD/动量/乖离/量能/形态/净值/资金面/板块，每张卡「人话翻译」+ 你的数值 + 三档含义 + 「你认同吗?」(认同/存疑/不认同)
+5. **你的判断 + 存日志** — 汇总买入理由 vs 风险因子 → 用户选决策(加/持/减/卖) + 理由 + 每因子认同度 → 存 IndexedDB 决策日志
 
-- [ ] **D0** `src/services/marketStatus.ts`：从 marketBreadth.ts 抽出 `getMarketStatusCN`/`MARKET_STATUS_LABEL`；新增 `isMarketOpen()`、`useMarketStatus()`(30s 刷新)、`nextSessionInfo()`（下一开盘倒计时）。marketBreadth.ts / MarketBreadthCard 改为复用，去重。
-- [ ] **D1** `src/components/market/MarketStatusBar.tsx`：全局状态条（开盘中/午间休市/盘前/盘后/已收盘 + 倒计时 + 颜色语义）。
-- [ ] **D2** 护栏接入 `notify`：`NotificationNoiseConfig` 加 `marketStatusGuard:boolean`（默认 true）；`notify()` 噪声闸门加一步——非 `open` 时抑制 `info`/`success`，保留 `warning`/`error`。`src/App.tsx` 用 `isMarketOpen()` 替代本地 `isTradingHoursOpen()` 门控自动扫描。
-- [ ] **D3** 设置页「通知」Tab 加「仅交易时段推送（非开盘抑制 info/success）」开关（绑 marketStatusGuard）。MarketPage 顶部署 MarketStatusBar；Dashboard 复用。
-- [ ] **D4** impeccable + code-simplifier + 质量门。
+## 关键事实（已核实，见 findings.md）
 
-## 验收（每阶段自验）
+- `useFundDetail()` 暴露：signalResult / regime / emFactors / klineData / klineDetectedPatterns / isRealKline / fund / eastmoneyConfig
+- `decision = buildDecision({klines, patterns, signalResult, ind, strategies, lowConfidence, nav, em, regime})`（纯函数，可重算）
+- `signalResult.contributions[]`：{key, score, detail}；`CAT_LABEL` 映射 9 类中文名
+- Dexie 在 `src/stores/db.ts`，现有表 holdings/plans/planLogs/settings
 
-- tsc --noEmit 0 error；eslint 0 error/0 warning；vite build 通过；husky 全绿。
-- ETF：选 50ETF→当月→到期日 出 T 型表且希腊字母/IV 列有值（方案A 真实链；方案B 股指演示）。
-- 护栏：MarketStatusBar 显示正确时段；关闭市场时 info/success 通知被抑制、warning/error 仍发。
+## 实施阶段与可验收结果（Phases）
+
+### P1 — 数据层（scaffold）
+
+- [ ] `src/services/guide/indicatorGlossary.ts`（NEW）：9 类信号 + 排名 的 `label`/`plain`(大白话)/`interpret(score)`（强多/中性/强空，阈值 ±5）。
+- [ ] `src/stores/db.ts`（MODIFY）：新增 `decisionLogs` 表。
+- [ ] `src/types/index.ts`（MODIFY）：新增 `DecisionLog` 类型。
+- [ ] `src/services/guide/decisionLog.ts`（NEW）：`saveDecisionLog()` / `getDecisionLogs(code?)` / `getLatestDecisionLog(code)`。
+- [ ] `src/hooks/useFundDecision.ts`（NEW）：包装 `buildDecision`，输入 controller 输出，memo 返回 decision 对象（供向导复用，避免重复计算逻辑散落）。
+- **验收**：`tsc --noEmit` 通过；glossary 单测式自检（interpret 三档正确）。
+
+### P2 — 向导 UI（核心）
+
+- [ ] `src/components/holdings/guide/DecisionGuide.tsx`（NEW）：全屏 overlay 步进容器；状态 currentStep + 收集的 perFactor 认同度；上一步/下一步/完成；进度条；支持键盘 Esc 关闭。
+- [ ] `src/components/holdings/guide/GuideProgress.tsx`（NEW）：步骤指示（5 步，当前/完成态）。
+- [ ] `StepRegime.tsx` / `StepScore.tsx` / `StepForce.tsx` / `StepSignals.tsx` / `StepJudgment.tsx`（NEW）：各步卡片。
+  - StepSignals：遍历 `signalResult.contributions`，每卡套用 `indicatorGlossary` 翻译 + 三档配色 + 「认同/存疑/不认同」三态按钮（写入 collected）。
+  - StepJudgment：展示 decision.bullReasons/bearReasons → 决策下拉(加/持/减/卖) + 理由 textarea + 认同度汇总 → 调 `saveDecisionLog` → toast 成功。
+- [ ] `src/components/holdings/fundDetail/FundDetailPage.tsx`（MODIFY）：header 加「投资体检 SOP」按钮，点击在 `FundDetailProvider` 内渲染 `<DecisionGuide/>` overlay（复用 context）。
+- **验收**：`tsc`/`eslint` 通过；dev 起服务手动走通 5 步并能存日志（用户侧验证；agent 只验证构建与类型）。
+
+### P3 — UI 打磨（impeccable）
+
+- [ ] 响应式（移动端全屏、桌面端居中卡片）；步进转场微交互；涨红跌绿配色一致；a11y（按钮 aria、焦点管理、Esc 关闭、进度 aria）。
+- [ ] 空态/加载态（kline 未加载时引导先加载）；低置信（净值模式）明确提示。
+
+### P4 — 清理（code-simplifier）
+
+- [ ] 函数单一职责 < 50 行；Step 组件抽取共享 `GlossaryCard`；去重死代码/未用 import；guard clause 早返回。
+
+### P5 — 门禁（setup-pre-commit + verify）
+
+- [ ] husky 已存在（prettier→tsc→eslint→vite build）。运行 `tsc --noEmit` + `eslint` + `vite build` 全绿。
+- [ ] 每个阶段独立 commit（P1/P2/P3/P4 各一 commit），不 push（除非用户授权）。
+- [ ] 更新 progress.md 与 workspace memory。
+
+## 决策（Decisions）
+
+- **Overlay 而非新路由**：复用 FundDetailProvider context，零重复数据加载，风险最低。
+- **重算 decision 用新 hook**：`useFundDecision` 包装 `buildDecision`（纯函数），不改 `DecisionAdvisorCard` 既有逻辑， blast radius 最小。
+- **决策日志存 IndexedDB**：`decisionLogs` 表，含 snapshotScore/perFactor/decision/reason，供日后复盘。
+- **不碰评分算法**：本功能仅做编排层 + 文案层 + 存储，评分引擎零改动。
+
+## 风险
+
+- FundDetailPage 结构需实现时确认 header 位置与 provider 包裹范围（若 overlay 在 provider 外则 useFundDetail 取不到，需内移）。
+- 东财增强因子(regime/em) 在未部署 Worker 时为 undefined → 向导需优雅降级展示「未接入」，不报错。
