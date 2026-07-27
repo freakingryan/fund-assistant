@@ -32,7 +32,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 }
 
 export default function StepRegime({ regime, em, regimeLoading, emLoading }: Props) {
-  const trend = regime?.trend ?? "neutral";
+  const trend = regime?.trend;
   const trendTone =
     trend === "bull" ? "text-up" : trend === "bear" ? "text-down" : "text-amber-500";
   const momentum = regime?.momentum60;
@@ -53,8 +53,8 @@ export default function StepRegime({ regime, em, regimeLoading, emLoading }: Pro
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           <Stat
             label="整体趋势"
-            value={regimeLoading ? LOADING : TREND_LABEL[trend]}
-            tone={regimeLoading ? undefined : trendTone}
+            value={regimeLoading ? LOADING : trend ? TREND_LABEL[trend] : "未计算"}
+            tone={regimeLoading ? undefined : trend ? trendTone : undefined}
           />
           <Stat
             label="趋势强度"

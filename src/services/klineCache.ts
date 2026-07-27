@@ -13,6 +13,8 @@
 
 import { db } from "@/stores/db";
 import type { KLineData } from "@/types";
+import type { EmFactors } from "@/services/decision/types";
+import type { MarketRegime } from "@/services/decision/regimeFactor";
 
 interface CacheEntry<T = any> {
   id: string;
@@ -348,6 +350,46 @@ export async function setEtfMappingCache(code: string, mapping: EtfMappingCache)
 
 export async function deleteEtfMappingCache(otcCode: string): Promise<void> {
   return deleteCache(`em_${otcCode}`);
+}
+
+// ── 市场 regime / 东财增强因子缓存 ────────────
+// SOP「看大环境」依赖这两个数据；它们纯计算或走 Worker，耗时不可控，
+// 加一层交易时段感知缓存，避免每次打开 SOP 都重新 loading。
+
+const EM_REGIME_TTL_FALLBACK = 60 * 60 * 1000; // 1 小时（非交易时段兜底）
+
+export async function getEmFactorsCache(
+  fundCode: string,
+  enabled: boolean,
+): Promise<EmFactors | null> {
+  return getCache<EmFactors>(
+    `emf_${fundCode}_${enabled ? 1 : 0}`,
+    getTradingSessionTTL(EM_REGIME_TTL_FALLBACK),
+  );
+}
+
+export async function setEmFactorsCache(
+  fundCode: string,
+  enabled: boolean,
+  data: EmFactors,
+): Promise<void> {
+  return setCache(`emf_${fundCode}_${enabled ? 1 : 0}`, data);
+}
+
+export async function deleteEmFactorsCache(fundCode: string, enabled: boolean): Promise<void> {
+  return deleteCache(`emf_${fundCode}_${enabled ? 1 : 0}`);
+}
+
+export async function getRegimeCache(): Promise<MarketRegime | null> {
+  return getCache<MarketRegime>("regime_global", getTradingSessionTTL(EM_REGIME_TTL_FALLBACK));
+}
+
+export async function setRegimeCache(data: MarketRegime): Promise<void> {
+  return setCache("regime_global", data);
+}
+
+export async function deleteRegimeCache(): Promise<void> {
+  return deleteCache("regime_global");
 }
 
 // ── 通用 ────────────────────────────────────

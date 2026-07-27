@@ -28,6 +28,10 @@ import {
   deleteQuotesCache,
   getQuotesCacheTime,
   getPortfolioCacheTime,
+  getEmFactorsCache,
+  setEmFactorsCache,
+  getRegimeCache,
+  setRegimeCache,
 } from "@/services/klineCache";
 import type {
   KLineData,
@@ -38,9 +42,10 @@ import type {
   EastmoneyDataSourceConfig,
 } from "@/types";
 import { asOfFromKlines, asOfFromQuotes, asOfFromPortfolio } from "@/lib/dataTime";
+import { withTimeout } from "@/lib/promise";
 import { detectPatterns, formatPatternsSummary } from "@/services/klinePatterns";
 import { captureSnapshotForFund } from "@/services/backtest/decisionSnapshot";
-import { collectEastmoneyFactors } from "@/services/decision/eastmoneyFactors";
+import { collectEastmoneyFactors, EMPTY_EM_FACTORS } from "@/services/decision/eastmoneyFactors";
 import { computeMarketRegime } from "@/services/decision/regimeFactor";
 import { buildContextPack, type AnalysisContextPack } from "@/services/decision/contextPack";
 import type { EmFactors, MarketRegime } from "@/services/decision/types";
@@ -322,23 +327,65 @@ function useFundDetailController(fundId: string): FundDetailController {
   useEffect(() => {
     if (!fund) return;
     let cancelled = false;
-    // 进入加载态属预期（先于异步请求置位），与 setKlineLoading 同模式
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setEmLoading(true);
     setRegimeLoading(true);
-    void Promise.all([
-      eastmoneyConfig.enabled
-        ? collectEastmoneyFactors(fund, etfMappings, eastmoneyConfig)
-        : Promise.resolve(undefined),
-      computeMarketRegime().catch(() => undefined),
-    ]).then(([e, r]) => {
-      if (!cancelled) {
-        setEmFactors(e);
-        setRegime(r);
+
+    const EM_TIMEOUT = 10000;
+    const REGIME_TIMEOUT = 10000;
+
+    const load = async () => {
+      // 1) 先读缓存，命中则立即渲染（stale-while-revalidate），避免每次打开 SOP 都 loading
+      const [cachedEm, cachedRegime] = await Promise.all([
+        getEmFactorsCache(fund.code, eastmoneyConfig.enabled),
+        getRegimeCache(),
+      ]);
+      if (cancelled) return;
+      if (cachedEm) {
+        setEmFactors(cachedEm);
         setEmLoading(false);
+      }
+      if (cachedRegime) {
+        setRegime(cachedRegime);
         setRegimeLoading(false);
       }
-    });
+
+      // 2) 后台刷新；带超时兜底，防止 Worker/网络挂起导致永远「加载中」
+      const emPromise = eastmoneyConfig.enabled
+        ? withTimeout(
+            collectEastmoneyFactors(fund, etfMappings, eastmoneyConfig),
+            EM_TIMEOUT,
+            EMPTY_EM_FACTORS,
+            "东财因子加载超时",
+          )
+        : Promise.resolve(EMPTY_EM_FACTORS);
+      const regimePromise = withTimeout(
+        computeMarketRegime().catch(() => undefined),
+        REGIME_TIMEOUT,
+        undefined,
+        "市场 regime 加载超时",
+      );
+
+      const [freshEm, freshRegime] = await Promise.all([emPromise, regimePromise]);
+      if (cancelled) return;
+
+      setEmFactors(freshEm);
+      // 东财关闭时 freshEm 也是 EMPTY，没必要写缓存；只有真实取到数据才持久化
+      if (eastmoneyConfig.enabled && freshEm !== EMPTY_EM_FACTORS) {
+        void setEmFactorsCache(fund.code, eastmoneyConfig.enabled, freshEm);
+      }
+      setEmLoading(false);
+
+      if (freshRegime) {
+        setRegime(freshRegime);
+        void setRegimeCache(freshRegime);
+      } else {
+        setRegime(undefined);
+      }
+      setRegimeLoading(false);
+    };
+
+    void load();
     return () => {
       cancelled = true;
     };
