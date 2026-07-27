@@ -30,12 +30,13 @@ function SignalCard({
 }) {
   const entry = INDICATOR_GLOSSARY[view.category];
   const tone = view.tone ? TONE_STYLE[view.tone] : null;
+  const isLoading = !!view.loading;
 
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2.5">
       <div className="flex items-center gap-2">
         <span className="text-sm font-semibold">{entry.label}</span>
-        {tone ? (
+        {tone && !isLoading ? (
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${tone.bg} ${tone.border} ${tone.text}`}
           >
@@ -46,6 +47,10 @@ function SignalCard({
                 {view.score.toFixed(0)}
               </span>
             )}
+          </span>
+        ) : isLoading ? (
+          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
+            加载中
           </span>
         ) : (
           <span className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground">
@@ -59,7 +64,11 @@ function SignalCard({
       {view.detail && (
         <p className="mt-1 text-[11px] leading-relaxed">
           <span className="text-muted-foreground">你的数据：</span>
-          <span className={tone ? tone.text : "text-foreground"}>{view.detail}</span>
+          <span
+            className={isLoading ? "text-muted-foreground" : tone ? tone.text : "text-foreground"}
+          >
+            {view.detail}
+          </span>
         </p>
       )}
 
@@ -74,10 +83,11 @@ function SignalCard({
                 key={vd}
                 type="button"
                 aria-pressed={active}
+                disabled={isLoading}
                 onClick={() => onVerdict(view.category, vd)}
                 className={[
                   "flex-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
-                  active ? st.active : st.idle,
+                  isLoading ? "opacity-50 cursor-not-allowed" : active ? st.active : st.idle,
                 ].join(" ")}
               >
                 {st.label}

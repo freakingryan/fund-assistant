@@ -10,6 +10,10 @@ import type { MarketRegime, EmFactors } from "@/services/decision/types";
 interface Props {
   regime?: MarketRegime;
   em?: EmFactors;
+  /** 市场 regime 是否正在加载 */
+  regimeLoading?: boolean;
+  /** 东财 overlay 是否正在加载 */
+  emLoading?: boolean;
 }
 
 const TREND_LABEL: Record<string, string> = {
@@ -27,13 +31,14 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
   );
 }
 
-export default function StepRegime({ regime, em }: Props) {
+export default function StepRegime({ regime, em, regimeLoading, emLoading }: Props) {
   const trend = regime?.trend ?? "neutral";
   const trendTone =
     trend === "bull" ? "text-up" : trend === "bear" ? "text-down" : "text-amber-500";
   const momentum = regime?.momentum60;
   const emReady =
     !!em && (em.capitalFlow.available || em.sector.available || em.peerRank.available);
+  const LOADING = "加载中…";
 
   return (
     <div className="space-y-4">
@@ -46,20 +51,56 @@ export default function StepRegime({ regime, em }: Props) {
       <div>
         <h3 className="text-sm font-semibold mb-2">当前市场状态</h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          <Stat label="整体趋势" value={TREND_LABEL[trend]} tone={trendTone} />
+          <Stat
+            label="整体趋势"
+            value={regimeLoading ? LOADING : TREND_LABEL[trend]}
+            tone={regimeLoading ? undefined : trendTone}
+          />
           <Stat
             label="趋势强度"
-            value={regime ? `${(regime.strength * 100).toFixed(0)}%` : "未计算"}
+            value={
+              regimeLoading ? LOADING : regime ? `${(regime.strength * 100).toFixed(0)}%` : "未计算"
+            }
           />
           <Stat
             label="沪深300 近60日"
-            value={momentum != null ? `${momentum >= 0 ? "+" : ""}${momentum.toFixed(1)}%` : "—"}
-            tone={momentum != null ? (momentum >= 0 ? "text-up" : "text-down") : undefined}
+            value={
+              regimeLoading
+                ? LOADING
+                : momentum != null
+                  ? `${momentum >= 0 ? "+" : ""}${momentum.toFixed(1)}%`
+                  : "—"
+            }
+            tone={
+              regimeLoading
+                ? undefined
+                : momentum != null
+                  ? momentum >= 0
+                    ? "text-up"
+                    : "text-down"
+                  : undefined
+            }
           />
           <Stat
             label="均线排列"
-            value={regime ? (regime.maBull ? "多头排列" : "空头排列") : "未计算"}
-            tone={regime ? (regime.maBull ? "text-up" : "text-down") : undefined}
+            value={
+              regimeLoading
+                ? LOADING
+                : regime
+                  ? regime.maBull
+                    ? "多头排列"
+                    : "空头排列"
+                  : "未计算"
+            }
+            tone={
+              regimeLoading
+                ? undefined
+                : regime
+                  ? regime.maBull
+                    ? "text-up"
+                    : "text-down"
+                  : undefined
+            }
           />
         </div>
       </div>
@@ -69,25 +110,41 @@ export default function StepRegime({ regime, em }: Props) {
         <div className="grid grid-cols-3 gap-2">
           <Stat
             label="资金面"
-            value={em?.capitalFlow.available ? "已接入" : "未接入"}
-            tone={em?.capitalFlow.available ? "text-up" : "text-muted-foreground"}
+            value={emLoading ? LOADING : em?.capitalFlow.available ? "已接入" : "未接入"}
+            tone={
+              emLoading
+                ? undefined
+                : em?.capitalFlow.available
+                  ? "text-up"
+                  : "text-muted-foreground"
+            }
           />
           <Stat
             label="板块"
-            value={em?.sector.available ? "已接入" : "未接入"}
-            tone={em?.sector.available ? "text-up" : "text-muted-foreground"}
+            value={emLoading ? LOADING : em?.sector.available ? "已接入" : "未接入"}
+            tone={
+              emLoading ? undefined : em?.sector.available ? "text-up" : "text-muted-foreground"
+            }
           />
           <Stat
             label="同类排名"
-            value={em?.peerRank.available ? "已接入" : "未接入"}
-            tone={em?.peerRank.available ? "text-up" : "text-muted-foreground"}
+            value={emLoading ? LOADING : em?.peerRank.available ? "已接入" : "未接入"}
+            tone={
+              emLoading ? undefined : em?.peerRank.available ? "text-up" : "text-muted-foreground"
+            }
           />
         </div>
-        {!emReady && (
+        {emLoading ? (
           <p className="mt-2 text-[11px] text-muted-foreground">
-            资金面 / 板块 / 排名需在「设置 → 东财数据源」中开启并部署代理后才可用；
-            未接入时向导这些维度仅作通识说明，不影响基础评分。
+            增强数据（资金面 / 板块 / 排名）正在从数据源加载…
           </p>
+        ) : (
+          !emReady && (
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              资金面 / 板块 / 排名需在「设置 → 东财数据源」中开启并部署代理后才可用；
+              未接入时向导这些维度仅作通识说明，不影响基础评分。
+            </p>
+          )
         )}
       </div>
 

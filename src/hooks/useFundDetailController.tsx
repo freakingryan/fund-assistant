@@ -119,6 +119,10 @@ export interface FundDetailController {
   // 东财因子 + 市场 regime
   emFactors: EmFactors | undefined;
   regime: MarketRegime | undefined;
+  /** 东财因子是否正在加载（true 时 StepRegime 应显示「加载中」而非「未接入」） */
+  emLoading: boolean;
+  /** 市场 regime 是否正在加载（true 时 StepRegime 应显示「加载中」而非「未计算」） */
+  regimeLoading: boolean;
   eastmoneyConfig: EastmoneyDataSourceConfig;
 
   // 实时行情
@@ -313,9 +317,15 @@ function useFundDetailController(fundId: string): FundDetailController {
   // 东财叠加层因子 + 市场 regime（异步；关闭/失败 → undefined，决策引擎自动降级、评分不变）
   const [emFactors, setEmFactors] = useState<EmFactors | undefined>(undefined);
   const [regime, setRegime] = useState<MarketRegime | undefined>(undefined);
+  const [emLoading, setEmLoading] = useState(false);
+  const [regimeLoading, setRegimeLoading] = useState(false);
   useEffect(() => {
     if (!fund) return;
     let cancelled = false;
+    // 进入加载态属预期（先于异步请求置位），与 setKlineLoading 同模式
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEmLoading(true);
+    setRegimeLoading(true);
     void Promise.all([
       eastmoneyConfig.enabled
         ? collectEastmoneyFactors(fund, etfMappings, eastmoneyConfig)
@@ -325,6 +335,8 @@ function useFundDetailController(fundId: string): FundDetailController {
       if (!cancelled) {
         setEmFactors(e);
         setRegime(r);
+        setEmLoading(false);
+        setRegimeLoading(false);
       }
     });
     return () => {
@@ -764,6 +776,8 @@ function useFundDetailController(fundId: string): FundDetailController {
     etfCode,
     emFactors,
     regime,
+    emLoading,
+    regimeLoading,
     eastmoneyConfig,
     valuations,
     refreshQuotes,

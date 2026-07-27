@@ -11,7 +11,7 @@
 import { useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import { useFundDetail } from "@/hooks/useFundDetailController";
 import { useFundDecision } from "@/hooks/useFundDecision";
 import { buildCategoryViews } from "@/services/guide/categoryViews";
@@ -59,8 +59,8 @@ export default function DecisionGuide({ open, onClose }: Props) {
   };
 
   const views = useMemo(
-    () => buildCategoryViews(ctrl.signalResult, decision, ctrl.emFactors),
-    [ctrl.signalResult, decision, ctrl.emFactors],
+    () => buildCategoryViews(ctrl.signalResult, decision, ctrl.emFactors, ctrl.emLoading),
+    [ctrl.signalResult, decision, ctrl.emFactors, ctrl.emLoading],
   );
 
   const isLast = step === STEPS.length - 1;
@@ -102,7 +102,10 @@ export default function DecisionGuide({ open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="z-[60] flex h-[92vh] w-[95vw] max-w-2xl flex-col gap-0 p-0">
+      <DialogContent
+        showClose={false}
+        className="z-[60] flex h-[92vh] w-[95vw] max-w-2xl flex-col gap-0 p-0"
+      >
         {/* 头部 */}
         <DialogHeader className="m-0 flex-row items-center justify-between gap-2 border-b border-border px-4 py-3">
           <div className="min-w-0">
@@ -133,7 +136,12 @@ export default function DecisionGuide({ open, onClose }: Props) {
           key={step}
           className="flex-1 animate-in fade-in duration-200 overflow-y-auto px-4 py-3"
         >
-          {!decision ? (
+          {ctrl.klineLoading ? (
+            <div className="flex h-full flex-col items-center justify-center text-center gap-3 py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">正在加载行情与评分数据…</p>
+            </div>
+          ) : !decision ? (
             <div className="flex h-full flex-col items-center justify-center text-center gap-2 py-10">
               <p className="text-sm text-muted-foreground">还没有可用于体检的数据。</p>
               <p className="text-[11px] text-muted-foreground">
@@ -144,7 +152,12 @@ export default function DecisionGuide({ open, onClose }: Props) {
               </Button>
             </div>
           ) : step === 0 ? (
-            <StepRegime regime={ctrl.regime} em={ctrl.emFactors} />
+            <StepRegime
+              regime={ctrl.regime}
+              em={ctrl.emFactors}
+              regimeLoading={ctrl.regimeLoading}
+              emLoading={ctrl.emLoading}
+            />
           ) : step === 1 ? (
             <StepScore decision={decision} />
           ) : step === 2 ? (

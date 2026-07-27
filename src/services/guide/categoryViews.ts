@@ -34,6 +34,8 @@ export interface CategoryView {
   detail: string | null;
   /** 数据是否可得：overlay 未接入时为 false，仅展示通识 */
   available: boolean;
+  /** 是否正在加载（东财 overlay 维度在接口返回前为 true，UI 应显示「加载中」而非默认态） */
+  loading?: boolean;
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -45,11 +47,13 @@ const norm100 = (v: number) => clamp((v - 50) / 5, -10, 10);
  * @param signalResult 综合评分结果（贡献明细），可为 null
  * @param decision 融合决策（取 navAvailable 等状态），可为 null
  * @param em 东财 overlay 因子，可为 undefined
+ * @param emLoading 东财 overlay 是否正在加载（true 时 overlay 维度标记 loading，UI 显示「加载中」）
  */
 export function buildCategoryViews(
   signalResult: SignalResult | null,
   decision: Decision | null,
   em?: EmFactors,
+  emLoading = false,
 ): CategoryView[] {
   // 1) 归并真实贡献分：category -> { sum, details[] }
   const agg: Partial<Record<SignalCategory, { sum: number; details: string[] }>> = {};
@@ -66,6 +70,19 @@ export function buildCategoryViews(
 
   return GLOSSARY_ORDER.map((cat) => {
     const entry = INDICATOR_GLOSSARY[cat];
+
+    // overlay 维度（资金面/板块/排名）在接口返回前：明确标记加载中，避免误导为「未接入/无信号」
+    if (emLoading && (cat === "capitalflow" || cat === "sector" || cat === "peer")) {
+      return {
+        category: cat,
+        label: entry.label,
+        score: null,
+        tone: null,
+        detail: "加载中…",
+        available: false,
+        loading: true,
+      };
+    }
 
     // overlay 维度（资金面/板块/排名）：取东财 0-100 分归一化
     if (
