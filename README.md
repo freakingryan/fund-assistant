@@ -327,7 +327,7 @@ fund-assistant/
 
 ### 重构约定
 
-- 巨型页面组件按「**控制器 hook + Context + 纯展示子组件 + 母页退化为 Provider 包裹**」拆分（详见 `REFACTOR_PLAN.txt`）。
+- 巨型页面组件按「**控制器 hook + Context + 纯展示子组件 + 母页退化为 Provider 包裹**」拆分（详见 `PENDING_PLAN.md` 第四节验收说明）。
 - 端点 / 路由等字面量优先收敛到 `src/constants/`，不散落硬编码。
 - 通用工具放 `src/lib/`，不新建独立 `utils/` 目录。
 
@@ -337,4 +337,4 @@ MIT
 
 ## 开发路线
 
-参见 [PLAN.md](./PLAN.md)
+参见 [PENDING_PLAN.md](./PENDING_PLAN.md)
