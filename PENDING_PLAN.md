@@ -10,7 +10,7 @@
 
 ## 一、来自 PLAN.md（原完整技术方案，Phase 1–16.6 已全部实现）
 
-仅 Phase 17–20 尚未开始（原描述见 git 历史 `PLAN.md` §七）：
+仅 Phase 17–19 尚未开始（原描述见 git 历史 `PLAN.md` §七）：
 
 ### [ ] Phase 17 — 通知系统增强：Web Push 定时扫描 + 飞书通知
 
@@ -29,22 +29,12 @@
 - **背景**：当前 IndexedDB 仅本地，GitHub Gist 仅做备份导出 / 导入（非实时同步）。需真正多设备同步（冲突合并策略、增量同步）。
 - **涉及**：同步引擎 + 设置页「同步」管理。
 
-### [ ] Phase 20 — 组合风险分析：相关性矩阵 / 行业集中度 / 最大回撤
-
-- **背景**：组合层仅有看板汇总（总市值 / 盈亏 / 分布），无风险维度。需实现持仓相关性矩阵、行业 / 主题集中度、组合最大回撤等指标。
-- **涉及**：`src/services/risk.ts`、`DashboardPage` / 新风险卡。
-
 ---
 
 ## 二、来自 FUTURE_ENHANCEMENTS.md（未来增强候选）
 
 第一档（纯计算 `indicators`+`signals`）、第二档部分（同类排名 `fund.rankHistory`、资金流板块 `fundFlow.sectorRank`）已接入。
 以下候选**尚未实现**（原描述见 git 历史 `FUTURE_ENHANCEMENTS.md`）：
-
-### [ ] 分红派送接入（`sdk.fund.dividendList(code)`）
-
-- **背景**：获取基金分红送配历史，支撑分红再投资分析；尚未接入 UI。
-- **依赖**：东财（已直连可达，无需 Worker）。
 
 ### [ ] 主题基金发现（`sdk.fund.theme(...)`）
 

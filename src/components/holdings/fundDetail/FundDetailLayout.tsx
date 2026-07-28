@@ -9,6 +9,7 @@ import EditFundDialog from "@/components/holdings/EditFundDialog";
 import QuickAdjustDialog from "@/components/holdings/QuickAdjustDialog";
 import { TechnicalIndicatorsPanel } from "@/components/holdings/TechnicalIndicatorsPanel";
 import FundRankHistoryCard from "@/components/holdings/FundRankHistoryCard";
+import FundDividendCard from "./FundDividendCard";
 import FundKlineChartCard from "./FundKlineChartCard";
 import FundKlinePatternCard from "./FundKlinePatternCard";
 import FundSignalScoreCard from "./FundSignalScoreCard";
@@ -91,6 +92,7 @@ export default function FundDetailLayout() {
         <div className="space-y-4">
           <FundPortfolioCard />
           <FundRankHistoryCard code={fund.code} config={ctrl.eastmoneyConfig} />
+          <FundDividendCard code={fund.code} config={ctrl.eastmoneyConfig} />
           <PromptAiCard />
         </div>
       </div>

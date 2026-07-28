@@ -49,6 +49,7 @@ import DataAsOf from "@/components/ui/DataAsOf";
 import RealtimePanel from "./RealtimePanel";
 import BacktestSummaryCard from "./BacktestSummaryCard";
 import MarketBreadthCard from "./MarketBreadthCard";
+import PortfolioRiskCard from "./PortfolioRiskCard";
 import { TYPE_COLORS, SECTOR_COLORS, TYPE_FALLBACK } from "@/lib/chart-colors";
 
 export default function DashboardPage() {
@@ -421,6 +422,9 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* 组合风险分析（相关性 / 集中度 / 最大回撤） */}
+      <PortfolioRiskCard />
 
       {/* NAV Trend + Top Holdings */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
