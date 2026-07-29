@@ -8,7 +8,12 @@ import type {
   UserSettings,
   DecisionLog,
 } from "@/types";
-import type { CaptureReport, ScoreSnapshot, AiBacktestAnalysis } from "@/services/backtest/types";
+import type {
+  CaptureReport,
+  ScoreSnapshot,
+  AiBacktestAnalysis,
+  TuningProposal,
+} from "@/services/backtest/types";
 
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, "id">;
@@ -25,6 +30,7 @@ export class FundAssistantDB extends Dexie {
   dailyReports!: EntityTable<DailyReport, "date">;
   aiAnalyses!: EntityTable<AiBacktestAnalysis, "id">;
   decisionLogs!: EntityTable<DecisionLog, "id">;
+  tuningProposals!: EntityTable<TuningProposal, "id">;
 
   constructor() {
     super("FundAssistantDB");
@@ -75,6 +81,11 @@ export class FundAssistantDB extends Dexie {
     // v9: decisionLogs — 新手 SOP 投资体检决策日志（按基金代码 + 时间检索）
     this.version(9).stores({
       decisionLogs: "id, fundCode, createdAt",
+    });
+
+    // v10: tuningProposals — AI 调参提案（T5.2；状态流转即采纳历史）
+    this.version(10).stores({
+      tuningProposals: "id, status, createdAt",
     });
   }
 }

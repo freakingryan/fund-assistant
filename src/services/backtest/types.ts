@@ -213,3 +213,58 @@ export interface AiBacktestAnalysis {
   raw: string;
   createdAt: number;
 }
+
+// ============= T5.2 AI 调参提案 =============
+
+/** 单个参数修改项（AI 仅能提数值 diff，路径必须命中 PARAM_SCHEMA 白名单） */
+export interface ParamDiffItem {
+  /** 点路径，如 "weights.trend"（必须在 PARAM_SCHEMA 白名单内） */
+  path: string;
+  /** 修改时的当前生效值 */
+  current: number;
+  /** AI 建议值（采纳时会被 clamp 到 schema 的 min/max） */
+  proposed: number;
+  /** 修改理由（中文短句） */
+  reason: string;
+}
+
+/** 提案状态：pending 待人审 / adopted 已采纳 / rejected 已拒绝 / rolledBack 已回滚 */
+export type TuningProposalStatus = "pending" | "adopted" | "rejected" | "rolledBack";
+
+/**
+ * AI 调参提案（人审后才生效；状态流转即采纳历史）。
+ * AI 永远不直接修改算法——只能在 PARAM_SCHEMA 白名单内提出数值调整，
+ * 由用户在 UI 明确「采纳」后写入 settings.decisionParams。
+ */
+export interface TuningProposal {
+  /** 主键：tune-时间戳 */
+  id: string;
+  /** 生成日期 YYYY-MM-DD */
+  date: string;
+  /** 使用的模型 / provider */
+  model: string;
+  provider: string;
+  /** 触发方式：manual 手动 / auto 自动（结算样本增量或周期触发） */
+  trigger: "manual" | "auto";
+  /** 生成时的回测统计摘要（供审阅对照） */
+  statsSummary: {
+    settled: number;
+    directionalAccuracy: number | null;
+    buyHitRate: number | null;
+    sellHitRate: number | null;
+  };
+  /** 结构化参数修改项（已通过白名单校验；非法项在生成时即被丢弃并计入 droppedCount） */
+  diffs: ParamDiffItem[];
+  /** AI 输出中因路径非法/格式错误被丢弃的条数（透明度） */
+  droppedCount: number;
+  /** AI 总体说明（预期影响，中文） */
+  expectedImpact: string;
+  status: TuningProposalStatus;
+  /** 采纳/拒绝/回滚的时间戳 */
+  decidedAt: number | null;
+  /** 采纳时被覆盖前的旧 override（回滚用快照） */
+  prevOverride: Record<string, unknown> | null;
+  /** AI 原始返回（审计） */
+  raw: string;
+  createdAt: number;
+}
