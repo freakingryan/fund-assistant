@@ -12,7 +12,9 @@ import {
   backfillMissingTradingDays,
   isFundDataReady,
   localDateKey,
+  getAllSnapshots,
 } from "./services/backtest/decisionSnapshot";
+import { maybeAutoTune } from "./services/backtest/tuningProposal";
 import { isTradingDay } from "./lib/tradingCalendar";
 import { requestNotificationPermission } from "./services/notification";
 import { notify } from "./services/notify";
@@ -69,6 +71,28 @@ class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError:
  *    解决「用户只收盘前打开过一次、当日未采集、且之后再没打开」导致该日快照永久缺失的问题。
  *    补齐用截断 K 线（targetDate）避免前视偏差，天然幂等。
  */
+/**
+ * T5.3 自动调参触发（静默、幂等）：回填结算后检查是否满足
+ * 「新增已结算样本 ≥20 或 距上次提案 ≥7 天」，满足则生成待审提案（绝不自动采纳），
+ * 并推一条应用内通知引导人审。AI 未配置 / 已有待审提案时静默跳过。
+ */
+async function autoTuneCheck() {
+  try {
+    const snapshots = await getAllSnapshots();
+    const proposal = await maybeAutoTune(snapshots);
+    if (proposal && proposal.diffs.length > 0) {
+      notify({
+        type: "info",
+        title: "AI 调参提案待审核",
+        body: `基于 ${proposal.statsSummary.settled} 条已结算回测样本生成了 ${proposal.diffs.length} 条参数调整建议，请前往回测页审核。`,
+        channels: ["inApp"],
+      });
+    }
+  } catch (e) {
+    console.warn("[tuning] 自动调参检查失败", e);
+  }
+}
+
 let backtestBackfillRan = false;
 async function autoCaptureBacktestOnce() {
   const today = localDateKey();
@@ -157,7 +181,10 @@ export default function App() {
       }
       // 评分回测：收盘后自动补采当日快照（每日首次守卫）+ 回填次日涨跌（幂等，门禁内置）
       autoCaptureBacktestOnce().catch((e) => console.warn("[backtest] 自动采集失败", e));
-      reconcileSnapshots().catch((e) => console.warn("[backtest] 自动回填失败", e));
+      // 回填结算后串联 T5.3 自动调参检查（用最新 settled 计数判定触发）
+      reconcileSnapshots()
+        .catch((e) => console.warn("[backtest] 自动回填失败", e))
+        .then(() => autoTuneCheck());
     };
     init();
   }, [loadSettings, loadHoldings, loadPlan]);
@@ -178,7 +205,9 @@ export default function App() {
     const timer = setInterval(
       () => {
         autoCaptureBacktestOnce().catch((e) => console.warn("[backtest] 定时采集失败", e));
-        reconcileSnapshots().catch((e) => console.warn("[backtest] 定时回填失败", e));
+        reconcileSnapshots()
+          .catch((e) => console.warn("[backtest] 定时回填失败", e))
+          .then(() => autoTuneCheck());
       },
       30 * 60 * 1000,
     );

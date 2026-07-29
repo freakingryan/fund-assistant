@@ -297,3 +297,57 @@ export async function getPendingProposal(): Promise<TuningProposal | null> {
 export async function getAllTuningProposals(): Promise<TuningProposal[]> {
   return db.tuningProposals.orderBy("createdAt").reverse().toArray();
 }
+
+// ─── T5.3 自动触发 ───────────────────────────────
+
+/** 自动触发所需的最小新增已结算样本数 */
+export const AUTO_TUNE_MIN_NEW_SETTLED = 20;
+/** 周期触发间隔（毫秒）：距上次提案 ≥ 7 天且有新样本 */
+export const AUTO_TUNE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+let autoTuneRunning = false;
+
+/**
+ * 自动调参触发器（App 打开 / 定时复查时调用；幂等、静默、非阻塞友好）。
+ *
+ * 触发条件（满足其一即生成 pending 提案，绝不自动采纳）：
+ *  1. 距上次提案新增已结算样本 ≥ AUTO_TUNE_MIN_NEW_SETTLED；
+ *  2. 距上次提案 ≥ 7 天 且 有任何新增已结算样本。
+ *
+ * 静默跳过（不抛错）：AI 未配置 / 已有待审提案 / 样本不足 / 并发中。
+ * 触发元数据从 tuningProposals 表最近一条推导（statsSummary.settled + createdAt），零额外持久化。
+ *
+ * @returns 生成的提案；未触发返回 null
+ */
+export async function maybeAutoTune(snapshots: ScoreSnapshot[]): Promise<TuningProposal | null> {
+  if (autoTuneRunning) return null;
+  const ai = getDefaultAI();
+  if (!ai || !ai.apiKey) return null; // AI 未配置：静默跳过
+
+  const pending = await getPendingProposal();
+  if (pending) return null; // 已有待审提案：等人审，不重复生成
+
+  const stats = computeBacktestStats(snapshots);
+  const all = await db.tuningProposals.orderBy("createdAt").reverse().limit(1).toArray();
+  const last = all[0] ?? null;
+
+  let shouldRun: boolean;
+  if (!last) {
+    // 首次：积累到最小样本量才值得让 AI 看
+    shouldRun = stats.settled >= AUTO_TUNE_MIN_NEW_SETTLED;
+  } else {
+    const newSettled = stats.settled - last.statsSummary.settled;
+    const elapsed = Date.now() - last.createdAt;
+    shouldRun =
+      newSettled >= AUTO_TUNE_MIN_NEW_SETTLED ||
+      (elapsed >= AUTO_TUNE_INTERVAL_MS && newSettled > 0);
+  }
+  if (!shouldRun) return null;
+
+  autoTuneRunning = true;
+  try {
+    return await generateTuningProposal(snapshots, "auto");
+  } finally {
+    autoTuneRunning = false;
+  }
+}
