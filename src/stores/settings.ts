@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { db } from "./db";
 import { deleteEtfMappingCache } from "@/services/klineCache";
+import { setDecisionParamsOverride } from "@/services/decision/decisionParams";
 import type { UserSettings } from "@/types";
 
 /** 普通对象判断（用于深合并嵌套配置） */
@@ -104,9 +105,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         // 并回写归一化后的设置，避免后续加载再次因浅合并覆盖而崩溃。
         const merged = deepMergeSettings(defaultSettings, saved as Partial<UserSettings>);
         await db.settings.put({ ...merged, id: "user-settings" });
+        // T5.1：把用户的决策参数覆盖注入引擎（纯模块，无循环依赖）
+        setDecisionParamsOverride(merged.decisionParams);
         set({ settings: merged, loading: false });
       } else {
         await db.settings.put({ ...defaultSettings, id: "user-settings" });
+        setDecisionParamsOverride(undefined);
         set({ settings: defaultSettings, loading: false });
       }
     } catch {
@@ -119,6 +123,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const current = get().settings;
     const updated = { ...current, ...data };
     await db.settings.put({ ...updated, id: "user-settings" });
+    // T5.1：决策参数覆盖变化时同步注入引擎
+    if ("decisionParams" in data) setDecisionParamsOverride(updated.decisionParams);
     set({ settings: updated });
   },
 

@@ -1,3 +1,8 @@
+import type {
+  DecisionParams,
+  DeepPartial as DecisionDeepPartial,
+} from "@/services/decision/decisionParams";
+
 // ============= 基金持仓 =============
 
 export type FundType =
@@ -310,6 +315,12 @@ export interface UserSettings {
     /** 上次自动采集的日期 YYYY-MM-DD，用于「每日首次」守卫避免重复尝试 */
     lastAutoCaptureDate: string | null;
   };
+  /**
+   * 决策引擎参数覆盖（T5.1 参数外置）。
+   * 缺省 / 空对象 = 使用 DEFAULT_PARAMS（与硬编码时代逐字节一致）。
+   * 仅允许 PARAM_SCHEMA 白名单内的数值叶子被 AI 调参提案修改（人审后生效）。
+   */
+  decisionParams?: DecisionDeepPartial<DecisionParams>;
 }
 
 /** 数据源增强配置 */

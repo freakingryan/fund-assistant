@@ -40,36 +40,12 @@ import {
   TRACKING_ERROR_HIGH,
   TRACKING_ERROR_DISCOUNT,
 } from "./trackingError";
+import { getDecisionParams } from "./decisionParams";
 
-// ─── 类别权重（基础维度；navmom 仅净值模式动态加入；overlay 类不计入基础权重） ───────────
-const BASE_WEIGHT: Partial<Record<SignalCategory, number>> = {
-  trend: 30,
-  macd: 10,
-  momentum: 15,
-  bias: 20,
-  volume: 15,
-  pattern: 10,
-  navmom: 12,
-};
+// T5.1 参数外置：类别权重 / 叠加层缩放 / 折扣与阈值 全部迁入 decisionParams.ts
+// （DEFAULT_PARAMS 与原内联常量逐字节一致；用户覆盖经 setDecisionParamsOverride 注入）。
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-// ─── 叠加层 / 折扣阈值（集中管理，便于调参） ───────────
-/** 东财因子评分中性基准（0~100 中的 50） */
-const EM_NEUTRAL = 50;
-/** 资金面 / 板块 评分偏离中性 → 增量 的缩放系数 */
-const EM_FACTOR_SCALE = 0.1;
-/** 单个东财因子对综合评分的最大增量(±) */
-const EM_FACTOR_CAP = 5;
-/** 全部东财因子叠加后的总增量上限(±) */
-const EM_TOTAL_CAP = 12;
-/** 同类排名百分位 → 增量 的缩放分母 */
-const EM_PEER_SCALE = 10;
-/** 市场 regime 折扣：强度 → 折扣比例 的缩放系数与上限 */
-const REGIME_DISC_SCALE = 0.5;
-const REGIME_DISC_MAX = 0.5;
-/** 多空冲突判定：弱势方 ≥ 强势方的此比例即视为分歧较大 */
-const CONFLICT_MINORITY_RATIO = 0.4;
 
 // ─── 收集器：把各来源归一化为 AnalysisSignal ───────────
 
@@ -304,6 +280,7 @@ function collectNavSignals(nav: NavFactors): AnalysisSignal[] {
 
 /** 东财交叉截面因子 → 信号（仅用于理由展示；基础加权在融合循环中跳过，叠加层另行注入评分） */
 function collectEmSignals(em: EmFactors): AnalysisSignal[] {
+  const EM_NEUTRAL = getDecisionParams().emOverlay.neutral;
   const out: AnalysisSignal[] = [];
   if (em.capitalFlow.available && em.capitalFlow.combinedScore != null) {
     const s = em.capitalFlow.combinedScore;
@@ -379,12 +356,13 @@ export const ACTION_META: Record<
   alert: { label: "预警", color: "neutral" },
 };
 
-/** 评分 ↔ 八态 action 校准（80/60/45/30 四档；watch/avoid/alert 由护栏/特殊态产生） */
+/** 评分 ↔ 八态 action 校准（默认 80/60/45/30 四档；watch/avoid/alert 由护栏/特殊态产生） */
 export function scoreToRawAction(score: number): DecisionAction {
-  if (score >= 80) return "buy";
-  if (score >= 60) return "add";
-  if (score >= 45) return "hold";
-  if (score >= 30) return "reduce";
+  const t = getDecisionParams().action;
+  if (score >= t.buy) return "buy";
+  if (score >= t.add) return "add";
+  if (score >= t.hold) return "hold";
+  if (score >= t.reduce) return "reduce";
   return "sell";
 }
 
@@ -549,6 +527,19 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     navKlines,
   } = inputs;
 
+  // T5.1：读取当前生效参数（默认值 ⊕ 用户覆盖），单次调用内一致
+  const P = getDecisionParams();
+  const BASE_WEIGHT: Partial<Record<SignalCategory, number>> = { ...P.weights };
+  const {
+    neutral: EM_NEUTRAL,
+    factorScale: EM_FACTOR_SCALE,
+    factorCap: EM_FACTOR_CAP,
+    totalCap: EM_TOTAL_CAP,
+    peerScale: EM_PEER_SCALE,
+  } = P.emOverlay;
+  const { discScale: REGIME_DISC_SCALE, discMax: REGIME_DISC_MAX } = P.regime;
+  const CONFLICT_MINORITY_RATIO = P.conflict.minorityRatio;
+
   const signals: AnalysisSignal[] = [
     ...collectPatternSignals(patterns, klines),
     ...collectIndicatorEventSignals(ind.signals, klines),
@@ -616,9 +607,13 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     trendBearish = true;
   if (ind.latest.sar?.trend === -1) trendBearish = true;
 
-  // 净值模式置信度降级：评分向 50 收敛；有 NAV 因子依据时软化压缩（×0.9），否则 ×0.7
+  // 净值模式置信度降级：评分向 50 收敛；有 NAV 因子依据时软化压缩（默认 ×0.9），否则 ×0.7
   const isLowConf = lowConfidence ?? !ind.ohlcAvailable;
-  const compFactor = isLowConf ? (nav?.available ? 0.9 : 0.7) : 1;
+  const compFactor = isLowConf
+    ? nav?.available
+      ? P.lowConfidence.compressWithNav
+      : P.lowConfidence.compressWithoutNav
+    : 1;
   if (isLowConf) score = Math.round(50 + (score - 50) * compFactor);
 
   // 联接基金跟踪误差折扣（T3.2）：klines 是基准 ETF，navKlines 是基金自身 NAV。
@@ -677,22 +672,22 @@ export function buildDecision(inputs: DecisionInputs): Decision {
 
   // 评级：先按分数，再叠加「趋势背景 / 多空冲突」上下文修正
   let rating: Rating;
+  const R = P.rating;
   if (trendBearish || conflict) {
     // 风险上下文（偏空 / 震荡 / 多空冲突）：不追高、偏防守。
-    // 诚实化（T3.1）：恢复趋势买入门槛 score>=70 && bullRatio>=0.6，
-    // 不再为「回测覆盖度」放宽到 65/0.55——买入信号必须高胜率共振，宁可少买、不可降格。
-    if (score >= 70 && bullRatio >= 0.6) rating = "buy";
-    else if (score >= 60) rating = "hold";
-    else if (score >= 45) rating = "reduce";
-    else if (score >= 30) rating = "sell";
+    // 诚实化（T3.1）：趋势买入门槛默认 score>=70 && bullRatio>=0.6，
+    // 不为「回测覆盖度」放宽——买入信号必须高胜率共振，宁可少买、不可降格。
+    if (score >= R.buyScore && bullRatio >= R.buyBullRatio) rating = "buy";
+    else if (score >= R.riskHold) rating = "hold";
+    else if (score >= R.riskReduce) rating = "reduce";
+    else if (score >= R.riskSell) rating = "sell";
     else rating = "strong_sell";
   } else {
-    // 正常上下文：趋势买入同样诚实门槛 score>=70 && bullRatio>=0.6；
-    // strong_buy 维持更高共振门槛 score>=75 && bullRatio>=0.6。
-    if (score >= 75 && bullRatio >= 0.6) rating = "strong_buy";
-    else if (score >= 70 && bullRatio >= 0.6) rating = "buy";
-    else if (score >= 45) rating = "hold";
-    else if (score >= 30) rating = "reduce";
+    // 正常上下文：趋势买入同样诚实门槛；strong_buy 维持更高共振门槛（默认 75/0.6）。
+    if (score >= R.strongBuyScore && bullRatio >= R.buyBullRatio) rating = "strong_buy";
+    else if (score >= R.buyScore && bullRatio >= R.buyBullRatio) rating = "buy";
+    else if (score >= R.normalHold) rating = "hold";
+    else if (score >= R.normalReduce) rating = "reduce";
     else rating = "sell";
   }
 
@@ -748,11 +743,11 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     }
   }
 
-  // 2. 资金背离护栏：复用 em 叠加层已取的资金面分（避免重复取数）。技术偏多 + 资金分<50 → 降级观察/持有
+  // 2. 资金背离护栏：复用 em 叠加层已取的资金面分（避免重复取数）。技术偏多 + 资金分低于阈值（默认 50）→ 降级观察/持有
   if (
     em?.capitalFlow.available &&
     em.capitalFlow.combinedScore != null &&
-    em.capitalFlow.combinedScore < 50
+    em.capitalFlow.combinedScore < P.guardrail.capitalDivergenceBelow
   ) {
     const techBull =
       finalAction === "buy" || finalAction === "add" || rating === "buy" || rating === "strong_buy";
@@ -762,14 +757,18 @@ export function buildDecision(inputs: DecisionInputs): Decision {
       if (finalAction !== before) {
         guardrails.push({
           kind: "capital_divergence",
-          description: `技术面偏多但资金面分仅 ${em.capitalFlow.combinedScore!.toFixed(0)}（< 50），存在「价弹钱不跟」背离，降级为观察/持有`,
+          description: `技术面偏多但资金面分仅 ${em.capitalFlow.combinedScore!.toFixed(0)}（< ${P.guardrail.capitalDivergenceBelow}），存在「价弹钱不跟」背离，降级为观察/持有`,
         });
       }
     }
   }
 
-  // 3. 板块逆风护栏：复用 em 板块分。技术偏多 + 板块分<40（逆板块孤涨）→ 降级观察/持有
-  if (em?.sector.available && em.sector.combinedScore != null && em.sector.combinedScore < 40) {
+  // 3. 板块逆风护栏：复用 em 板块分。技术偏多 + 板块分低于阈值（默认 40，逆板块孤涨）→ 降级观察/持有
+  if (
+    em?.sector.available &&
+    em.sector.combinedScore != null &&
+    em.sector.combinedScore < P.guardrail.sectorHeadwindBelow
+  ) {
     const techBull =
       finalAction === "buy" || finalAction === "add" || rating === "buy" || rating === "strong_buy";
     if (techBull) {
@@ -778,7 +777,7 @@ export function buildDecision(inputs: DecisionInputs): Decision {
       if (finalAction !== before) {
         guardrails.push({
           kind: "sector_headwind",
-          description: `技术面偏多但板块强度分仅 ${em.sector.combinedScore!.toFixed(0)}（< 40），逆板块孤涨，降级为观察/持有`,
+          description: `技术面偏多但板块强度分仅 ${em.sector.combinedScore!.toFixed(0)}（< ${P.guardrail.sectorHeadwindBelow}），逆板块孤涨，降级为观察/持有`,
         });
       }
     }
