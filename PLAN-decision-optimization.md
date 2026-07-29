@@ -1,6 +1,6 @@
 # PLAN — 智能决策引擎算法优化
 
-> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；**T3 已落地（2026-07-27）**；**T4 已落地（2026-07-29）**；T5 待启动
+> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；**T3 已落地（2026-07-27）**；**T4 已落地（2026-07-29）**；**T5 已落地（2026-07-29）**
 > （T4 / T5 = **AI 接入与持续调参**，详见 §11；可行性已确认，地基直接复用 `ai.ts` + `decisionSnapshot` 账本 + `aiAnalysis`）
 > 关联：`PENDING_PLAN.md` §一 新增条目「决策引擎算法优化」
 > 验证脚本：仓库根 `verify-decision.mts`（Node 直跑真实引擎，无需浏览器）
@@ -53,38 +53,15 @@
 3. **中期趋势门控**：中期下行（3 月收益 < 0 且无中期均线金叉）→ 动作上限封顶 `add` / `hold`，即便短期动量翻多。
 4. **反弹语义标注**：短翻多（动量刚转正 / 超卖修复）+ 中期下行 + 超卖历史 → 标 `signalType = 'reversion'`，评级上限 `hold`，`summary` 强制「非趋势确认」提示。**无需新数据**，纯把门控判定暴露给用户。
 
-## 5. 分期任务
+## 5. 分期任务（已全部落地）
 
-### T1 — 核心护栏（先落地，MVP）
+> T1–T5 均已实现并通过 husky 门禁（prettier → tsc → eslint → vite build），逐字节零回归以 `verify-decision.mts` 验证。各层实施详情见 §10 对应记录；本规划作为已交付功能的规格存档，故原待办子项已移除以避免与 §10 重复。
 
-- **T1.1** 扩展 `DecisionInputs`：新增 `capital?: CapitalFlowResult | null`、`sector?: SectorStrengthResult | null`；`useFundDecision` 把已取的原始结果**透传**（不重复请求）。
-- **T1.2** 资金背离护栏（§4-1）。
-- **T1.3** 板块逆风护栏（§4-2）。
-- **T1.4** 中期趋势门控：新增 `computeMediumTermTrend(klines)` 纯函数（§4-3）。
-- **T1.5** 反弹语义标注：`signalType` 枚举 + `summary` 文案（§4-4）。
-
-### T2 — 语境与一致性
-
-- **T2.1** 波动 / 仓位建议：新增 `computeRiskProfile(klines, ind)`（原命名 `computeHistoricalVol`）→ 输出 `RiskProfile`（年化波动 / 最大回撤 / ATR% / 波动分档 / 建议最大仓位 / 止损参考）只读字段，挂在 `Decision.riskProfile`，**绝不改动作 / 评分 / 评级**；卡片以只读面板呈现。
-- **T2.2** 去重评估（**结论：保留，不移除**）：经代码追踪，`em` 软叠加（±12，影响展示评分/评级幅度）与 T1 硬护栏（capital_divergence / sector_headwind，影响八态动作天花板）虽同源复用 em capital/sector 分，但**输出维度正交、非有害双重计数**——同向时一致强化（正确），em 偏多时仅软叠加轻微确认（预期行为）。故保留两者；在 `decisionEngine.ts` 软叠加块加注释说明分离关注点，防误删。详见 §10 T2 记录。
-
-### T3 — 校准卫生
-
-- **T3.1** 诚实化买入阈值：恢复 `score>=70 && bullRatio>=0.6` 给「趋势买入」；另设 `reversion` 路径阈值（如 `score>=75 && 中期下行`）并强制免责声明，不再为回测覆盖而放宽。
-- **T3.2** 联接基金跟踪误差折扣：用 NAV 序列 vs ETF 收益算 `trackingError`，对置信度打折（需额外取 NAV 序列，`isRealKline` 时已有）。
-
-### T4 — AI 解释 / 增强层（运行时接口，不改动算法）
-
-- **T4.1** `aiAdvisor.adjudicateDecision(decision, marketSnapshot)`：决策卡片新增「AI 综合研判」面板，调 `callAI` 把引擎结构化输出 + 实时市场快照解释为「人话 + 跨维度综合」（资金/板块/宏观语境）。温度低、强约束「只基于给定数据、不编造」。
-- **T4.2** `aiAdvisor.explainPattern(klines, patterns)`：K 线形态分析页新增「AI 形态解读」，把检测到的形态 + 量价上下文喂 LLM 做可读解释（如「这个底背离为何在当前中期下行中更可能是反弹而非反转」）。
-- **T4.3** 复用现有 `ai.ts` 的 `getDefaultAI()/callAI()`，沿用设置页已配置 provider/apiKey（浏览器直连，零后端）；未配置时 UI 引导去设置页（参照 `NoAIConfiguredError`）。
-
-### T5 — AI 调参反馈环（优化接口，持续改算法）
-
-- **T5.1（前置）参数外置**：把 `decisionEngine.ts` 内联的权重（`TOTAL_WEIGHT` 及各维权重 `trend30/deviation20/momentum15/volume15/macd10/pattern10` +nav）与阈值（买入 `score>=70 && bullRatio>=0.6`、reversion 路径等）抽成 `decisionParams` 配置（默认常量 + 用户可覆盖，存 `db` 或 `settings.decisionParams`），引擎运行时读取。**外置后行为须与硬编码时逐字节一致**（verify-decision.mts 复跑零回归）。
-- **T5.2 调参反馈环**：扩展 `aiAnalysis.ts` 的 Prompt，要求 LLM **输出结构化参数 diff（JSON：改哪些权重/阈值 + 理由 + 预期影响）** 而非空泛建议；新增 `applyTuningProposal()` 把 diff 写入 `decisionParams`。提供人审 UI（复用 `AiAnalysisPanel` 加「采纳建议」），AI 不直接改算法。
-- **T5.3 自动触发**：当 `scoreSnapshots` 新增 ≥ N 条已结算样本（或每自然周）时，自动跑一次 `analyzeBacktestWithAI` 并生成「待审参数提案」，形成持续闭环。已有 `captureDailySnapshots` + `reconcileSnapshots` 在打开应用时运行，数据底座现成。
-- **T5.4 反馈可视化**：回测/设置页展示「当前参数 vs AI 建议参数」对比、采纳历史、采纳后准确率变化，使优化可观测、可回滚。
+- **T1 — 核心护栏**（资金/板块护栏 + 反弹语义标注）✅ 已落地 2026-07-29 → §10 T1
+- **T2 — 语境与一致性**（波动/仓位风险画像 + em 软叠加去重评估）✅ 已落地 2026-07-27 → §10 T2
+- **T3 — 校准卫生**（阈值诚实化 + 联接基金跟踪误差折扣）✅ 已落地 2026-07-27 → §10 T3
+- **T4 — AI 解释层**（运行时决策研判 + K 线形态解读，不改算法）✅ 已落地 2026-07-29 → §10 T4
+- **T5 — AI 调参反馈环**（参数外置 + 人审采纳闭环 + 自动触发 + 反馈可视化）✅ 已落地 2026-07-29 → §10 T5
 
 ## 6. 接口接线细节
 
@@ -205,6 +182,17 @@
 - **防幻觉不变量**：Prompt 仅由传入的结构化字段 `JSON.stringify` 拼装，前端不注入任何非输入数据；导出 prompt builder 以便无密钥静态校验「无臆造」。温度沿用 `callAI` 的 `temperature: 0.1` 低温度。
 - **验收**：T1 reversion 卡片可展示 AI 解释；解释文本受「仅基于给定数据」硬约束（输出可溯源到输入，无引擎未提供的捏造）；未配置 AI 时 UI 引导去设置页（已验证 `NoAIConfiguredError` 分支）。
 - **门禁**：`eslint` 0 error；`vite build` success（2847 模块）；`tsc -p tsconfig.app.json` 全量 44 error 均为预存（stock-sdk `ResearchReport`/指标导出、`FundDecisionAdvisorCard` 的 `navKlineData` 引用缺失等），**本 T4 四个文件零 type error**。
+
+## 10. T5 实施记录（2026-07-29）
+
+**T5 — AI 调参反馈环（人在环，AI 出结构化 diff、用户采纳后才生效；AI 永不直改算法）**
+
+- **T5.1 参数外置**（commit `aa9e01f`）：新增 `src/services/decision/decisionParams.ts`（纯模块、零依赖，Node 端 `verify-decision.mts` 可直接跑）。把 `decisionEngine.ts` 内联权重/阈值抽成 `DEFAULT_PARAMS`（与硬编码时代逐字节一致）+ 注入式 `setDecisionParamsOverride()` + 白名单 `PARAM_SCHEMA`（30 个数值叶子，路径/标签/范围/分组）。`buildDecision` 签名不变，引擎内部改读 `getDecisionParams()`。验证：verify-decision.mts 基线（94 行）vs 外置后输出 diff 为空，零回归。
+- **T5.2 调参反馈环**（commit `43011e1`）：`src/services/backtest/tuningProposal.ts` 核心 + `types.ts` 新增 `ParamDiffItem`/`TuningProposal`/`TuningProposalStatus` + `db.ts` 新增 `tuningProposals` 表（v10）。服务含 `buildTuningProposalPrompt`(白名单 schema + 统计 + 样本) / `parseAndValidateProposal`(路径白名单 + clamp + 去重 + 丢弃 no-op + ≤5 条，droppedCount 透明) / `generateTuningProposal`(落库 pending、作废旧 pending) / `adoptTuningProposal`(快照 prevOverride → 增量合入 settings.decisionParams → 引擎即时生效) / `rejectTuningProposal` / `rollbackTuningProposal` / `resetDecisionParamsToDefault` / `getPendingProposal` / `getAllTuningProposals`。**反幻觉硬约束**：AI 只能输出白名单内数值 diff，采纳前二次 clamp，永远不改算法结构。
+- **T5.3 自动触发**（commit `052c0f4`）：`maybeAutoTune(snapshots)` —— 距上次提案新增已结算样本 ≥ `AUTO_TUNE_MIN_NEW_SETTLED`(20) 或 ≥ `AUTO_TUNE_INTERVAL_MS`(7天) 且有新样本时，生成 **pending（绝不自动采纳）** 提案；静默跳过 AI 未配置 / 已有待审 / 并发。触发元数据从 `tuningProposals` 表最近一条推导（零额外持久化）。`App.tsx` 在 init + 30 分钟定时复查后接 `autoTuneCheck()`，生成后 in-app 通知待审。
+- **T5.4 反馈可视化**（commit `9bb607f`）：新增 `src/components/backtest/AiTuningPanel.tsx` 并嵌入 `BacktestPage`。三区块 —— ① 当前生效参数按 PARAM_SCHEMA 分组展示、标注默认/自定义、提供「恢复默认」；② 待审 AI 提案（`getPendingProposal`）以「当前 vs 建议」对比表呈现 + 采纳/拒绝（人审闭环）+ 统计摘要 + 丢弃计数 + 原始返回折叠；③ 采纳历史（`getAllTuningProposals`）状态流转徽章（pending/adopted/rejected/rolledBack）+ 已采纳项一键回滚。另含手动「生成 AI 调参提案」入口（`generateTuningProposal('manual')`），未配置 AI 时明确引导。复用 `AiAnalysisPanel` 视觉风格。
+- **验收**：`verify-decision.mts` 外置零回归；T5.4 `eslint` 0 error / `vite build` success（husky 门禁全过：prettier → tsc → eslint → vite build）。采纳一处 diff 后下次评分即读新值、可观测、可回滚。
+- **爆炸半径**：T5.1 仅改引擎内参数读取方式（行为不变）；T5.2-5.4 全部落在 backtest 服务 + 回测页卡片，未触碰决策引擎核心算法与个股/持仓控制器。
 
 ---
 
