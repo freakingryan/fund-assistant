@@ -30,6 +30,7 @@ import ScoreScatterChart from "./ScoreScatterChart";
 import AccuracyBucketChart from "./AccuracyBucketChart";
 import DailyAccuracyTrendChart from "./DailyAccuracyTrendChart";
 import AiAnalysisPanel from "./AiAnalysisPanel";
+import AiTuningPanel from "./AiTuningPanel";
 
 const REC_COLOR: Record<Recommendation, string> = {
   buy: "text-up bg-up/10 border-up/30",
@@ -116,8 +117,8 @@ export default function BacktestPage() {
   }, []);
 
   useEffect(() => {
-    load().catch(() => setLoading(false));
-  }, [load]); // eslint-disable-line react-hooks/set-state-in-effect
+    load().catch(() => setLoading(false)); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [load]);
 
   const stats = useMemo(() => computeBacktestStats(snapshots), [snapshots]);
   const daily = useMemo(() => computeDailyAccuracySeries(snapshots), [snapshots]);
@@ -387,6 +388,9 @@ export default function BacktestPage() {
 
       {/* AI 辅助算法分析 */}
       <AiAnalysisPanel snapshots={snapshots} />
+
+      {/* AI 调参反馈环（当前参数 / 待审提案 / 采纳历史 / 回滚） */}
+      <AiTuningPanel snapshots={snapshots} />
 
       {/* 明细表 */}
       <Card className="card-hover">
