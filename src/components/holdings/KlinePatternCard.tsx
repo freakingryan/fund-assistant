@@ -7,6 +7,8 @@ import { pnlColor } from "@/lib/format";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, BrainCircuit, MessageSquareText, Sparkles, CircleSlash } from "lucide-react";
+import { explainPattern } from "@/services/aiAdvisor";
+import { AiAdvisoryPanel } from "./AiAdvisoryPanel";
 
 interface Props {
   klineData: KLineData[];
@@ -337,6 +339,13 @@ export default function KlinePatternCard({
             )}
           </div>
         )}
+
+        {/* T4.2 AI 形态解读：把检测到的形态 + 量价上下文做可读语义解读（仅真实 K 线） */}
+        <AiAdvisoryPanel
+          title="AI 形态解读"
+          triggerLabel="AI 形态解读"
+          run={() => explainPattern(klineData, klineDetectedPatterns)}
+        />
 
         {/* 术语说明 */}
         <div className="border-t pt-2">

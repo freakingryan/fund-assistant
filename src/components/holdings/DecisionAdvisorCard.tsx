@@ -30,6 +30,8 @@ import { computeStockSdkIndicators } from "@/services/stockSdkIndicators";
 import { evaluateStrategies } from "@/services/strategyLayer";
 import { buildDecision, ACTION_META } from "@/services/decision/decisionEngine";
 import { computeNavFactors } from "@/services/decision/navFactors";
+import { adjudicateDecision, buildMarketSnapshot } from "@/services/aiAdvisor";
+import { AiAdvisoryPanel } from "./AiAdvisoryPanel";
 import type {
   SignalCategory,
   EmFactors,
@@ -284,6 +286,13 @@ export function DecisionAdvisorCard({
         <p className="text-[11px] text-foreground/80 leading-relaxed bg-muted/15 rounded px-2 py-1.5">
           {decision.summary}
         </p>
+
+        {/* T4.1 AI 综合研判：把引擎结构化输出 + 市场快照解释为「人话 + 跨维度综合」 */}
+        <AiAdvisoryPanel
+          title="AI 综合研判"
+          triggerLabel="AI 综合研判"
+          run={() => adjudicateDecision(decision, buildMarketSnapshot(em, regime, klines))}
+        />
 
         {/* 买入理由 / 风险因子 */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

@@ -1,6 +1,6 @@
 # PLAN — 智能决策引擎算法优化
 
-> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；**T3 已落地（2026-07-27）**；T4 / T5 待启动
+> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；**T3 已落地（2026-07-27）**；**T4 已落地（2026-07-29）**；T5 待启动
 > （T4 / T5 = **AI 接入与持续调参**，详见 §11；可行性已确认，地基直接复用 `ai.ts` + `decisionSnapshot` 账本 + `aiAnalysis`）
 > 关联：`PENDING_PLAN.md` §一 新增条目「决策引擎算法优化」
 > 验证脚本：仓库根 `verify-decision.mts`（Node 直跑真实引擎，无需浏览器）
@@ -183,6 +183,28 @@
 - **设计注记**：×0.96 折扣对中等分数（近 50）经四舍五入后可见变化极小（如 62→62）；T3.2 的诚实化主要载体是**护栏说明 + 暴露的 `trackingErrorPct` 字段**，折扣为次级置信弱化。若期望对高分买入信号产生可见压制，可下调 `TRACKING_ERROR_DISCOUNT`（如 0.90，与低置信可用 NAV 同量级）。
 
 **门禁**：`eslint` 0 error（仅 `useFundDetailController.tsx` 既有 `any`/hooks 警告，非本次引入）；`vite build` success（husky 预提交门禁）。
+
+---
+
+## 10. T4 实施记录（2026-07-29）
+
+**T4 — 运行时 AI 解释层（只解释、不改算法）**
+
+- 新增 `src/services/aiAdvisor.ts`（与 `aiAnalysis.ts` 平级的「解释层」模块）：
+  - `MarketSnapshot` 接口 + `buildMarketSnapshot(em?, regime?, klines?)`：纯本地组装（em/regime + 近期量价少量统计），**不联网、仅含真实字段**。
+  - **T4.1** `adjudicateDecision(decision, snapshot)`：把 `Decision` 结构化输出 + 市场快照拼成 Prompt，调 `callAI` 产出「人话 + 跨维度综合研判」。Prompt builder `buildAdjudicationPrompt` 导出，强约束「只基于给定字段、不编造、缺维度显式说明、非荐股」。
+  - **T4.2** `explainPattern(klines, patterns)`：把检测到的形态 + 近期量价上下文喂 LLM 做可读语义解读（含「看涨形态为何在当前背景下多是反弹而非反转」的局限性说明）。Prompt builder `buildPatternExplanationPrompt` 导出。
+  - 两入口均复用 `getDefaultAI()`/`callAI()`（沿用设置页已配 provider/apiKey，浏览器直连零后端）；未配置抛 `NoAIConfiguredError`（复用 `aiAnalysis.ts` 既有类，单一来源）。
+- 新增 `src/components/holdings/AiAdvisoryPanel.tsx`（通用 UI 容器，T4.1/T4.2 复用）：
+  - 自持状态 `idle→loading→done/error`；区分「未配置 AI」（`NoAIConfiguredError` → 渲染去 `/settings` 的引导 banner）与「调用失败」（错误态 + 重试）。
+  - 仅手动触发（不在挂载时自动刷），符合 §11.5 成本控制；风格与决策卡其他面板一致（primary/5 底色、Sparkles 图标、Loader2 加载、whitespace-pre-line 保留 AI 换行）。
+  - **爆炸半径最小**：状态由卡片自持（useState + 手动触发），未触碰 `useFundDetailController` / 个股页 / 决策引擎。
+- **接线**：
+  - `src/components/holdings/DecisionAdvisorCard.tsx`：在「人话总结」之后插入 `<AiAdvisoryPanel run={() => adjudicateDecision(decision, buildMarketSnapshot(em, regime, klines))} />`。调用方 `FundDecisionAdvisorCard` / `DecisionGuide` 已喂 `em`/`regime`，T4.1 自动生效（stock/fund 两页零侵入）。
+  - `src/components/holdings/KlinePatternCard.tsx`：在「AI 深度分析」段之后插入独立「AI 形态解读」面板 `run={() => explainPattern(klineData, klineDetectedPatterns)}`；组件 `!isRealKline` 已提前返回，故该面板天然仅真实 K 线场景展示。
+- **防幻觉不变量**：Prompt 仅由传入的结构化字段 `JSON.stringify` 拼装，前端不注入任何非输入数据；导出 prompt builder 以便无密钥静态校验「无臆造」。温度沿用 `callAI` 的 `temperature: 0.1` 低温度。
+- **验收**：T1 reversion 卡片可展示 AI 解释；解释文本受「仅基于给定数据」硬约束（输出可溯源到输入，无引擎未提供的捏造）；未配置 AI 时 UI 引导去设置页（已验证 `NoAIConfiguredError` 分支）。
+- **门禁**：`eslint` 0 error；`vite build` success（2847 模块）；`tsc -p tsconfig.app.json` 全量 44 error 均为预存（stock-sdk `ResearchReport`/指标导出、`FundDecisionAdvisorCard` 的 `navKlineData` 引用缺失等），**本 T4 四个文件零 type error**。
 
 ---
 
