@@ -113,6 +113,18 @@
 - **连接测试** — 验证 API Key 有效性
 - **不配置也**不影响核心持仓功能
 
+### 🧠 智能决策建议引擎（算法优化 T1–T5）
+
+决策建议卡（`DecisionAdvisorCard`，位于个股 `/stock/:code` 与基金 `/detail/:id` 详情页）在纯技术面动量融合之上，叠加资金/板块语境与护栏，输出诚实、可解释的动作建议：
+
+- **核心护栏（T1）**：资金流背离 / 板块逆风 / 中期趋势门控三道护栏，下跌市不误触发「买入」；短翻多标注为「反弹（reversion）」而非「趋势确认」，区分反弹与反转语义。
+- **风险画像（T2，只读）**：波动分档（年化波动 / 最大回撤 / ATR%）+ 建议最大单标的仓位 + 止损参考，纯展示、不改动作。
+- **校准卫生（T3）**：买入阈值诚实化（恢复 `score>=70 && bullRatio>=0.6`，不再为回测覆盖放宽）；联接基金（CIS）按 NAV vs ETF 跟踪误差做置信折扣。
+- **AI 解释层（T4，需配置 AI）**：`aiAdvisor` 运行时把引擎结构化输出 + 市场快照解释为「人话研判」（`adjudicateDecision`），并对 K 线形态做可读解读（`explainPattern`）；未配置 AI 时 UI 引导去设置页。
+- **AI 调参反馈环（T5，需配置 AI）**：决策权重/阈值外置为 `decisionParams`（默认逐字节等价）；AI 仅产出白名单内结构化参数 diff，经**人审「采纳」**才写入并即时生效。回测页「AI 调参」面板（`/backtest`）展示当前参数、待审提案对比、采纳历史与一键回滚；满足条件（新增 ≥20 已结算样本或 ≥7 天）自动生成**待审**提案（绝不自动采纳）。
+
+> 设计详述见 [PLAN-decision-optimization.md](./PLAN-decision-optimization.md)；`verify-decision.mts`（仓库根）用真实引擎在 Node 直跑，做零回归验证。
+
 ### 💾 数据持久化
 
 - **IndexedDB 本地存储**（Dexie.js），清除浏览器数据会丢失
@@ -234,25 +246,33 @@ fund-assistant/
 ├── vite.config.ts
 ├── eslint.config.js
 ├── tsconfig.json
+├── verify-decision.mts   # 真实决策引擎零回归验证（Node 直跑，无需浏览器）
+├── PLAN-decision-optimization.md  # 决策引擎算法优化：设计 + T1–T5 实施记录
 ├── .github/workflows/
 │   ├── deploy.yml        # GitHub Pages 部署（quality → build → deploy）
 │   └── quality.yml       # PR/push 时运行 ESLint + tsc + build
 ├── src/
 │   ├── main.tsx           # 入口
 │   ├── App.tsx            # 根组件（主题切换 + 通知权限 + Error Boundary）
-│   ├── router.tsx         # 路由定义（8 条路由）
+│   ├── router.tsx         # 路由定义（13 条路由）
 │   ├── index.css          # Tailwind + CSS 变量
 │   ├── components/
 │   │   ├── ui/            # 17 个 shadcn/ui 组件
 │   │   ├── layout/        # AppLayout（侧边栏 + 顶部栏 + Outlet）+ InstallPrompt
 │   │   ├── dashboard/     # DashboardPage, CandlestickChart, FundDetailGateway
 │   │   ├── holdings/      # HoldingsPage/Table, Add/Edit/Import/FundDetail/QuickAdjust Dialog
+│   │   │                  #   + DecisionAdvisorCard(决策建议卡) / AiAdvisoryPanel(AI解释) / KlinePatternCard
+│   │   ├── backtest/      # BacktestPage（回测 + AI 分析 + AI 调参反馈面板）
 │   │   ├── plans/         # PlansPage（规则配置 + 提醒面板 + 操作日志）
 │   │   ├── prompts/       # PromptsPage（三种模板生成器）
 │   │   └── settings/      # SettingsPage（7 个 Tab）+ NotificationsPage
 │   ├── stores/            # Zustand stores: holdings, plans, settings + Dexie db
-│   ├── services/          # ai.ts, backup.ts, klineCache.ts, klinePatterns.ts, klineAnalysis.ts
-│   │                      # technicalIndicators.ts, signalEngine.ts, notification.ts, prompt.ts
+│   ├── services/          # ai.ts, aiAdvisor.ts(AI解释层), backup.ts, klineCache.ts
+│   │                      # klinePatterns.ts, klineAnalysis.ts, technicalIndicators.ts
+│   │                      # signalEngine.ts, notification.ts, prompt.ts
+│   │   ├── decision/      # decisionEngine(决策真相源) + decisionParams(可配置权重/阈值)
+│   │   │                  #   + riskProfile(风险画像) + trackingError(联接基金折扣)
+│   │   └── backtest/      # decisionSnapshot(决策→实际结果账本) + tuningProposal(AI调参反馈环)
 │   ├── adapters/datasource/ # base.ts（接口）+ stockSdkAdapter.ts（统一适配器：stock-api 股票域 + stock-sdk 基金域）
 │   │                        # + crossLibFallback.ts（极薄跨库兜底）+ stock-api.ts / eastmoney.ts / jsonp-utils.ts（东财 fundgz/pingzhongdata 兜底）+ service.ts
 │   ├── lib/               # classification.ts, utils.ts
@@ -337,4 +357,6 @@ MIT
 
 ## 开发路线
 
-参见 [PENDING_PLAN.md](./PENDING_PLAN.md)
+- [PENDING_PLAN.md](./PENDING_PLAN.md) — 总体待办与阶段规划
+- [PLAN-decision-optimization.md](./PLAN-decision-optimization.md) — 决策引擎算法优化（T1–T5）设计 + 实施记录
+- `archive/` — 已落地 / 过期文档归档目录（含历史 `.planning/` 工作目录），清理时归档而非删除
