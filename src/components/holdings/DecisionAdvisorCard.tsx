@@ -20,6 +20,7 @@ import {
   Layers,
   Scale,
   ShieldAlert,
+  Gauge,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { KLineData } from "@/types";
@@ -29,7 +30,12 @@ import { computeStockSdkIndicators } from "@/services/stockSdkIndicators";
 import { evaluateStrategies } from "@/services/strategyLayer";
 import { buildDecision, ACTION_META } from "@/services/decision/decisionEngine";
 import { computeNavFactors } from "@/services/decision/navFactors";
-import type { SignalCategory, EmFactors, MarketRegime } from "@/services/decision/types";
+import type {
+  SignalCategory,
+  EmFactors,
+  MarketRegime,
+  RiskProfile,
+} from "@/services/decision/types";
 import DataAsOf from "@/components/ui/DataAsOf";
 
 interface Props {
@@ -267,6 +273,9 @@ export function DecisionAdvisorCard({
           )}
         </div>
 
+        {/* 波动 / 仓位（只读参考）：纯量化参考，不改变评级 / 动作 */}
+        {decision.riskProfile && <RiskProfilePanel risk={decision.riskProfile} />}
+
         {/* 人话总结 */}
         <p className="text-[11px] text-foreground/80 leading-relaxed bg-muted/15 rounded px-2 py-1.5">
           {decision.summary}
@@ -388,6 +397,47 @@ function EnhancementStrip({ em }: { em: EmFactors }) {
           东财未接入 / 不可用：评分纯本地计算，结论不受影响（叠加层增量恒为 0）。
         </p>
       )}
+    </div>
+  );
+}
+
+/** 波动 / 仓位风险画像（只读参考面板）：量化波动水平，给出仓位 / 止损参考，不改变任何决策 */
+function RiskProfilePanel({ risk }: { risk: RiskProfile }) {
+  const tierMeta = {
+    low: { label: "低波动", cls: "text-emerald-600 bg-emerald-500/10 border-emerald-500/30" },
+    medium: { label: "中波动", cls: "text-amber-600 bg-amber-500/10 border-amber-500/30" },
+    high: { label: "高波动", cls: "text-red-600 bg-red-500/10 border-red-500/30" },
+  }[risk.volTier];
+  return (
+    <div className="rounded-md border border-dashed border-border/60 p-2 space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          <Gauge className="h-3 w-3" />
+          波动 / 仓位（只读参考）
+        </div>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${tierMeta.cls}`}>
+          {tierMeta.label}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5 text-center">
+        <Stat label="年化波动" value={`${risk.annualizedVol}%`} />
+        <Stat label="最大回撤" value={`${risk.maxDrawdown}%`} />
+        <Stat label="ATR%" value={risk.atrPct > 0 ? `${risk.atrPct}%` : "—"} />
+      </div>
+      <p className="text-[10px] text-muted-foreground/80 leading-snug">
+        建议最大单标的仓位{" "}
+        <span className="font-medium text-foreground/90">{risk.suggestedMaxPosition}%</span>
+        {" · "}止损参考 <span className="font-medium text-foreground/90">{risk.stopLossPct}%</span>
+      </p>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded bg-muted/20 py-1">
+      <div className="text-[9px] text-muted-foreground">{label}</div>
+      <div className="text-[11px] font-semibold text-foreground/90 tabular-nums">{value}</div>
     </div>
   );
 }

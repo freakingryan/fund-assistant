@@ -1,6 +1,7 @@
 # PLAN — 智能决策引擎算法优化
 
-> 状态：**T1 已落地（2026-07-29）**；T2 / T3 待启动
+> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；T3 / T4 / T5 待启动
+> （T4 / T5 = **AI 接入与持续调参**，详见 §11；可行性已确认，地基直接复用 `ai.ts` + `decisionSnapshot` 账本 + `aiAnalysis`）
 > 关联：`PENDING_PLAN.md` §一 新增条目「决策引擎算法优化」
 > 验证脚本：仓库根 `verify-decision.mts`（Node 直跑真实引擎，无需浏览器）
 >
@@ -64,13 +65,26 @@
 
 ### T2 — 语境与一致性
 
-- **T2.1** 波动 / 仓位建议：新增 `computeHistoricalVol(klines)` → 输出「建议仓位 / 止损参考」只读字段（即便不改动作也实用）。
-- **T2.2** 去重：若 capital/sector 已作为硬门控参与，移除现有 `em` 的 ±12 重复软叠加，避免双重计数。
+- **T2.1** 波动 / 仓位建议：新增 `computeRiskProfile(klines, ind)`（原命名 `computeHistoricalVol`）→ 输出 `RiskProfile`（年化波动 / 最大回撤 / ATR% / 波动分档 / 建议最大仓位 / 止损参考）只读字段，挂在 `Decision.riskProfile`，**绝不改动作 / 评分 / 评级**；卡片以只读面板呈现。
+- **T2.2** 去重评估（**结论：保留，不移除**）：经代码追踪，`em` 软叠加（±12，影响展示评分/评级幅度）与 T1 硬护栏（capital_divergence / sector_headwind，影响八态动作天花板）虽同源复用 em capital/sector 分，但**输出维度正交、非有害双重计数**——同向时一致强化（正确），em 偏多时仅软叠加轻微确认（预期行为）。故保留两者；在 `decisionEngine.ts` 软叠加块加注释说明分离关注点，防误删。详见 §10 T2 记录。
 
 ### T3 — 校准卫生
 
 - **T3.1** 诚实化买入阈值：恢复 `score>=70 && bullRatio>=0.6` 给「趋势买入」；另设 `reversion` 路径阈值（如 `score>=75 && 中期下行`）并强制免责声明，不再为回测覆盖而放宽。
 - **T3.2** 联接基金跟踪误差折扣：用 NAV 序列 vs ETF 收益算 `trackingError`，对置信度打折（需额外取 NAV 序列，`isRealKline` 时已有）。
+
+### T4 — AI 解释 / 增强层（运行时接口，不改动算法）
+
+- **T4.1** `aiAdvisor.adjudicateDecision(decision, marketSnapshot)`：决策卡片新增「AI 综合研判」面板，调 `callAI` 把引擎结构化输出 + 实时市场快照解释为「人话 + 跨维度综合」（资金/板块/宏观语境）。温度低、强约束「只基于给定数据、不编造」。
+- **T4.2** `aiAdvisor.explainPattern(klines, patterns)`：K 线形态分析页新增「AI 形态解读」，把检测到的形态 + 量价上下文喂 LLM 做可读解释（如「这个底背离为何在当前中期下行中更可能是反弹而非反转」）。
+- **T4.3** 复用现有 `ai.ts` 的 `getDefaultAI()/callAI()`，沿用设置页已配置 provider/apiKey（浏览器直连，零后端）；未配置时 UI 引导去设置页（参照 `NoAIConfiguredError`）。
+
+### T5 — AI 调参反馈环（优化接口，持续改算法）
+
+- **T5.1（前置）参数外置**：把 `decisionEngine.ts` 内联的权重（`TOTAL_WEIGHT` 及各维权重 `trend30/deviation20/momentum15/volume15/macd10/pattern10` +nav）与阈值（买入 `score>=70 && bullRatio>=0.6`、reversion 路径等）抽成 `decisionParams` 配置（默认常量 + 用户可覆盖，存 `db` 或 `settings.decisionParams`），引擎运行时读取。**外置后行为须与硬编码时逐字节一致**（verify-decision.mts 复跑零回归）。
+- **T5.2 调参反馈环**：扩展 `aiAnalysis.ts` 的 Prompt，要求 LLM **输出结构化参数 diff（JSON：改哪些权重/阈值 + 理由 + 预期影响）** 而非空泛建议；新增 `applyTuningProposal()` 把 diff 写入 `decisionParams`。提供人审 UI（复用 `AiAnalysisPanel` 加「采纳建议」），AI 不直接改算法。
+- **T5.3 自动触发**：当 `scoreSnapshots` 新增 ≥ N 条已结算样本（或每自然周）时，自动跑一次 `analyzeBacktestWithAI` 并生成「待审参数提案」，形成持续闭环。已有 `captureDailySnapshots` + `reconcileSnapshots` 在打开应用时运行，数据底座现成。
+- **T5.4 反馈可视化**：回测/设置页展示「当前参数 vs AI 建议参数」对比、采纳历史、采纳后准确率变化，使优化可观测、可回滚。
 
 ## 6. 接口接线细节
 
@@ -88,7 +102,7 @@
 ## 8. 已知缺口与风险
 
 - **ETF 估值护栏缺失**：一致性预期 PE 对 ETF 不可得（`getConsensusEps` 个股级），本期不做估值护栏；卡片须明确标注「无估值输入」。
-- **双重计数风险**：T2.2 处理 `em` 与硬门控的重叠。
+- **双重计数风险**：T2.2 已评估（`em` 软叠加 vs T1 硬护栏）→ 判定为**正交、非有害双重计数**，保留两者并加注释说明；不再作为待处理风险。
 - **资金流为 T 日快照**：对「背离」判定够用，但非实时；北向/资金流仅东财增强开启时可用。
 
 ## 9. 推荐落地顺序（MVP）
@@ -113,3 +127,101 @@
 **门禁**：`tsc --noEmit` 0 error；`eslint` 0 error；`vite build` success。
 
 **未破坏既有**：无 em 传入时（东财关闭 / 净值模式）护栏自动跳过，`midTermDown` 仅在真实 K 线且区间收益<0 时触发；组合风险 / 分红等既有逻辑不受影响。
+
+## 10. T2 实施记录（2026-07-27）
+
+**T2.1 波动 / 仓位风险画像（只读字段）**
+
+- `src/services/decision/riskProfile.ts`（新增）：纯函数 `computeRiskProfile(klines, ind): RiskProfile | null`。
+  - 年化波动率 = 日收益率样本标准差 × √252；最大回撤 = 收盘价峰谷最大跌幅（正向幅度）；ATR% = `ind.latest.atr.atr / 末价`（无真实 OHLC 时为 0）。
+  - 波动分档：年化波动 <25% → low、<40% → medium、≥40% → high。
+  - 建议最大单标的仓位：low 70% / medium 50% / high 30%；止损参考：优先 2×ATR%，回退分档默认，clamp 到分档区间 [floor,cap]（low 5–10 / medium 8–15 / high 12–20）。
+  - **零网络、零副作用、纯只读**；样本不足（有效收盘价 <20 根）返回 null。
+- `src/services/decision/types.ts`：`RiskProfile` / `VolTier` 经 `./riskProfile` 重导出；`Decision` 新增 `riskProfile?: RiskProfile | null`。
+- `src/services/decision/decisionEngine.ts`：`buildDecision` 返回对象新增 `riskProfile: computeRiskProfile(klines, ind)`（**未改任何评分 / 评级 / 动作逻辑**）。
+- `src/components/holdings/DecisionAdvisorCard.tsx`：增强因子区后新增「波动 / 仓位（只读参考）」虚线面板（Gauge 图标 + 波动分档徽章 + 年化波动/最大回撤/ATR% 三宫格 + 建议仓位/止损参考文案），`riskProfile` 为 null 时不渲染。
+
+**T2.2 去重评估（em 软叠加 vs T1 硬护栏）**
+
+- 评估结论：**保留 `em` ±12 软叠加，不移除**。理由：
+  1. 二者同源复用 em `capitalFlow.combinedScore` / `sector.combinedScore`，但输出强制在不同维度——软叠加只微调「展示评分 + 评级幅度」（有界 ±12，且经诚实对齐 `rating = minRating(rating, ACTION_MAX_RATING[finalAction])` 被 finalAction 封顶）；硬护栏改的是「八态动作天花板」（buy→watch/hold）。
+  2. 同向时两者一致强化（em 偏空 → 既压低展示分又封顶动作，正确）；em 偏多时仅软叠加轻微确认（预期行为）。非有害双重计数。
+- 在 `decisionEngine.ts` 软叠加块加注释说明「分离关注点，勿以去重为由误删」。
+
+**验收（verify-decision.mts 复跑真实引擎，预期零回归）**：见 §10 末尾 T2 验证。行为不变——`finalAction`/`score`/`rating` 与 T1 完全一致；新增 `riskProfile` 仅追加只读信息。
+
+**门禁**：`tsc --noEmit` 0 error；`eslint` 0 error；`vite build` success（husky 预提交门禁）。
+
+---
+
+## 11. AI 接入与持续调参（T4 / T5）— 2026-07-29 新增
+
+> 用户提问：能否让 AI 结合真实实时数据，提供一个接口「不断优化我们的分析以及算法」（覆盖 K 线形态分析、决策建议及所有涉及算法）？
+> 结论：**可行，且地基已具备**。本规划把「AI 优化」拆成两层接口——运行时解释层（T4）与参数调优反馈环（T5）。
+
+### 11.1 可行性结论（先回答）
+
+项目已有三块可直接复用的基础设施，**不是从零开始**：
+
+| 地基                  | 位置                                        | 作用                                                                                                                                                                                                        | 对本规划的支撑                                                |
+| --------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| **AI 调用抽象**       | `src/services/ai.ts`                        | `callAI()` 统一封装 deepseek/openai/groq/openrouter/agnes/google/custom；API Key 来自设置页 `aiConfigs`（用户自填、存 IndexedDB）；浏览器直连（CORS 友好端点）                                              | 实时 per-query AI 直接复用；零后端，与「纯前端 SPA」哲学一致  |
+| **决策—结果反馈账本** | `src/services/backtest/decisionSnapshot.ts` | `captureSnapshotForFund` 每日收盘写 `scoreSnapshots`（含 `score/rating/recommendation/资本/板块/…`）；`reconcileSnapshots` 拉下一交易日实际涨跌回填 `nextChangePct` 并算 `outcome`（correct/wrong/neutral） | 这是「决策 → 真实结果」闭环，是整个调参回路的**数据底座**     |
+| **回测 AI 诊断原型**  | `src/services/backtest/aiAnalysis.ts`       | 把统计/按日准确率/样本打包成 Prompt 调 LLM，输出 `weaknesses`/`suggestions`/`summary` 落库 `aiAnalyses`，含 `NoAIConfiguredError`                                                                           | 「AI 指出算法薄弱环节 + 调参建议」的原型已存在，T5 直接扩展它 |
+
+**关键约束（必须满足，否则不应接入）：**
+
+1. **引擎是唯一的真相源**：硬护栏、评分、动作不被 AI 替换；AI 仅做「解释 + 建议」，**绝不伪造 / 臆造金融数据**（与用户铁律一致）。LLM 只消费引擎已算出的真实结构化输出与真实市场快照。
+2. **当前权重 / 阈值写死在 `decisionEngine.ts` 内联常量** —— AI 的调参建议**无法被自动应用**，必须先外置为可配置参数（T5.1 前置）。这是 T5 真正的工程前置，不是调算法本身。
+3. **实时数据无新增 CORS**：引擎已取真实 K 线 / 行情，AI 只是消费这份已取数据；LLM 调用沿用现有 `callAI` 浏览器直连（与现有图片 OCR、ETF 映射、回测诊断同一机制）。
+4. **「持续」≠「自动改算法」**：建议**人审闭环**——AI 出参数 diff → 用户在 UI 审核确认 → 写入 `decisionParams` → 引擎读取。避免黑箱自动调参带来的不可解释 / 回撤风险。
+
+### 11.2 架构（两层接口）
+
+```
+                        ┌──────────────────────────────────────────┐
+                        │       fund-assistant（纯前端 SPA）          │
+                        │                                            │
+   真实 K线/行情/资金/板块  │  ┌──────────── 决策引擎（真相源）─────────┐ │
+   (已有 dataSourceService) → │ buildDecision + T1护栏 + 评分/动作/理由  │ │
+                        │  └───────────────────┬──────────────────┘ │
+                        │                      │ 结构化 Decision + marketSnapshot
+                        │          ┌───────────┴────────────┐        │
+                        │          │  T4 aiAdvisor（运行时）  │        │  per-query 实时增强
+                        │          │  解释/综合研判/形态解读   │        │  （不改算法）
+                        │          └───────────┬────────────┘        │
+                        │                      │ callAI()（复用 ai.ts）
+                        │          ┌───────────┴────────────┐        │
+                        │          │  已配 LLM（设置页 apiKey）│        │
+                        │          └────────────────────────┘        │
+                        │                                            │
+                        │  scoreSnapshots（决策→实际涨跌→outcome 账本）│  ← T5 数据底座
+                        │      ↑ capture/reconcile（打开应用时跑）     │
+                        │          │                                  │
+                        │  ┌───────┴─────────── T5 aiTuning ───────┐ │
+                        │  │ 周期/手动触发 → 回测统计 → LLM 诊断      │ │  持续优化算法
+                        │  │ → 结构化参数 diff → 人审 → decisionParams│ │
+                        │  └────────────────────────────────────────┘ │
+                        └──────────────────────────────────────────┘
+```
+
+- **T4 AI 解释 / 增强层（运行时接口 `aiAdvisor`）**：对任意算法（K 线形态 / 决策 / 组合风险 …）的结构化输出 + 实时市场快照，调 LLM 产出「人话解释 + 跨维度综合」。per-query 实时增强，**不改动算法**。
+- **T5 AI 调参反馈环（优化接口 `aiTuning`）**：周期 / 手动触发，喂入 `scoreSnapshots`（已带 `outcome`）回测统计 → LLM 诊断 → 产出「参数变更建议 diff」→ 人审 → 落 `decisionParams` → 引擎读取。即「持续优化算法」。
+
+### 11.3 分期（详见 §5 的 T4 / T5 条目）
+
+- **T4.1 / T4.2 / T4.3**：运行时解释层（决策卡片 AI 研判、K 线形态 AI 解读、复用 `ai.ts`）。
+- **T5.1（前置）参数外置**：权重 / 阈值从内联常量抽成 `decisionParams` 配置，引擎运行时读取；外置后行为须零回归。
+- **T5.2 / T5.3 / T5.4**：调参反馈环（结构化 diff 输出、人审采纳、自动触发、反馈可视化）。
+
+### 11.4 验收
+
+- **T4**：T1 已落地的 reversion 卡片能展示 AI 解释；解释文本不出现引擎未提供的捏造数据（校验 raw 输入与输出一致性）；未配置 AI 时 UI 引导去设置页。
+- **T5**：外置参数后引擎行为与硬编码时完全一致（`verify-decision.mts` 复跑零回归）；人审采纳一处参数 diff 后，下次评分读取新值且 husky 门禁（tsc/eslint/vite build）通过；采纳后可观测准确率变化、可回滚。
+
+### 11.5 风险与边界
+
+- **幻觉风险**：LLM 可能编造「看起来合理但无数据支撑」的叙述。缓解：T4 Prompt 强制「仅基于给定结构化字段」+ 前端校验输出可溯源到输入；T5 只接受结构化参数 diff，不接受自由文本改写算法。
+- **过拟合风险**：自动调参若只看近期样本会过拟合当下行情。缓解：T5.3 设最小样本阈值 + 采纳前展示「建议依据的样本区间 / 胜率变化」；重大变更需人审。
+- **成本 / 隐私**：每次调用消耗用户自己的 API 额度；持仓 / 决策数据仅用户本地 + 其自选 LLM，不经第三方服务端（符合零后端）。T4 per-query 调用需设防抖 / 手动触发，避免打开即狂刷。
+- **不与 T3 冲突**：T3 是「人工诚实化阈值」（恢复 70/0.6），T5 是把阈值外置后可被 AI 建议调整——两者顺序：先 T3 把阈值恢复到诚实基线，再 T5 外置让人 / AI 在诚实基线上演进。

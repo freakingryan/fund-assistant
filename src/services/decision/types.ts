@@ -15,6 +15,7 @@ import type { StrategyHit } from "../strategyLayer";
 export type { NavFactors } from "./navFactors";
 export type { MarketRegime } from "./regimeFactor";
 export type { EmFactors } from "./eastmoneyFactors";
+export type { RiskProfile, VolTier } from "./riskProfile";
 
 /** 信号类别（同时作为评分维度，权重见 decisionEngine.ts） */
 export type SignalCategory =
@@ -149,6 +150,8 @@ export interface Decision {
   regimeAdjusted: boolean;
   /** NAV 原生因子是否生效（仅净值模式且样本充足时 available） */
   navAvailable: boolean;
+  /** 波动 / 仓位风险画像（只读参考，绝不影响评分 / 评级 / 动作）；样本不足时为 null */
+  riskProfile?: RiskProfile | null;
 }
 
 /** 融合引擎输入 */

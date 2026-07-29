@@ -94,6 +94,16 @@ async function run() {
     }
     console.log(`  人话总结: ${d.summary}`);
 
+    // 波动 / 仓位风险画像（T2.1 只读字段）
+    if (d.riskProfile) {
+      const r = d.riskProfile;
+      console.log(
+        `  波动/仓位(只读): 年化波动=${r.annualizedVol}% 最大回撤=${r.maxDrawdown}% ATR%=${r.atrPct}% 分档=${r.volTier} 建议仓位≤${r.suggestedMaxPosition}% 止损参考=${r.stopLossPct}%`,
+      );
+    } else {
+      console.log(`  波动/仓位(只读): 样本不足，未计算`);
+    }
+
     // 近期技术事件（金叉/死叉/SAR 等）抽样
     console.log(`\n  近期技术指标事件 (倒序前10):`);
     ind.signals
@@ -160,6 +170,12 @@ async function verifySyntheticGuardrails() {
   console.log(
     `  基线(无em): 动作=${base.actionLabel}(${base.finalAction}) 评级=${base.ratingLabel} midTermDown=${base.midTermDown} signalType=${base.signalType}`,
   );
+  if (base.riskProfile) {
+    const r = base.riskProfile;
+    console.log(
+      `  波动/仓位(只读): 年化波动=${r.annualizedVol}% 最大回撤=${r.maxDrawdown}% ATR%=${r.atrPct}% 分档=${r.volTier} 建议仓位≤${r.suggestedMaxPosition}% 止损参考=${r.stopLossPct}%`,
+    );
+  }
 
   const synthEm = (capital: number | null, sector: number | null): EmFactors => ({
     capitalFlow: { available: capital != null, combinedScore: capital },

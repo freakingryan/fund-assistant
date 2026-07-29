@@ -34,6 +34,7 @@ import type {
   MarketRegime,
   SignalType,
 } from "./types";
+import { computeRiskProfile } from "./riskProfile";
 
 // ─── 类别权重（基础维度；navmom 仅净值模式动态加入；overlay 类不计入基础权重） ───────────
 const BASE_WEIGHT: Partial<Record<SignalCategory, number>> = {
@@ -605,7 +606,13 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   const compFactor = isLowConf ? (nav?.available ? 0.9 : 0.7) : 1;
   if (isLowConf) score = Math.round(50 + (score - 50) * compFactor);
 
-  // 东财叠加层（overlay）：仅 available 因子产生有界增量；不可用时增量恒为 0，不影响评分
+  // 东财叠加层（overlay）：仅 available 因子产生有界增量；不可用时增量恒为 0，不影响评分。
+  // ⚠️ 与 T1 硬护栏（capital_divergence / sector_headwind）的「去重」说明（PLAN §5 T2.2 评估结论）：
+  //   - 二者**同源**复用 em 的 capitalFlow / sector 同一份分，但输出维度正交、非有害双重计数：
+  //       · 本软叠加只微调「展示评分 + 评级幅度」（有界 ±12），且经 L763 诚实对齐后被 finalAction 封顶；
+  //       · T1 硬护栏改的是「八态动作天花板」（buy→watch/hold），强制在不同维度生效。
+  //   - 同向时两者一致强化（em 偏空 → 既压低展示分又封顶动作，正确）；em 偏多时仅本叠加轻微确认（预期行为）。
+  //   - 因此**保留两者**，勿以「避免双重计数」为由删除本块——删除会丢失展示分的渐进调节能力。
   let emDelta = 0;
   if (em?.capitalFlow.available && em.capitalFlow.combinedScore != null) {
     emDelta += clamp(
@@ -803,6 +810,8 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     emDelta: Number(emDelta.toFixed(1)),
     regimeAdjusted,
     navAvailable: nav?.available ?? false,
+    // 波动 / 仓位风险画像（只读参考）：纯计算，不改变任何动作 / 评分 / 评级。
+    riskProfile: computeRiskProfile(klines, ind),
   };
 }
 
