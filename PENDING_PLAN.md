@@ -10,14 +10,9 @@
 
 ## 一、来自 PLAN.md（原完整技术方案，Phase 1–16.6 已全部实现）
 
-仅 Phase 17–19 尚未开始（原描述见 git 历史 `PLAN.md` §七）；下方另含后续提出的决策引擎算法优化（详见独立 plan 文档）：
+仅 Phase 18–19 尚未开始（原描述见 git 历史 `PLAN.md` §七）；下方另含后续提出的决策引擎算法优化（详见独立 plan 文档）：
 
-### [ ] Phase 17 — 通知系统增强：Web Push 定时扫描 + 飞书通知
-
-- **背景**：`PLAN.md` §八决策确定「浏览器 Push 首发，飞书预留」。Phase 4 已落地浏览器通知 + 计划扫描引擎（页面打开时扫描）。仍缺两件事：
-  1. **Web Push 定时扫描**：即便页面 / Service Worker 未激活也能按 `schedule` 推送（需 `vite-plugin-pwa` 的 Push API + 后台同步）。
-  2. **飞书通知**：`src/services/notify.ts` 已有 `feishu` 分发骨架，待补 webhook 配置与消息模板（设置页「飞书通知预留」需解锁）。
-- **涉及**：`src/services/notify.ts`、`src/components/settings/SettingsPage.tsx`、PWA manifest / SW 配置。
+> **[已验收] Phase 17 — 通知系统增强**：Web Push 定时扫描（Service Worker + `periodicsync` 后台周期扫描，设置项 `notifications.backgroundScan`）与飞书 Webhook 通知均已实现。详见 `README.md`「Web Push 后台定时扫描」一节。提交：`完成 PENDING_PLAN: Phase 17 Web Push 定时扫描`。
 
 ### [ ] Phase 18 — 存储扩展：Notion 适配器实现
 
@@ -28,13 +23,6 @@
 
 - **背景**：当前 IndexedDB 仅本地，GitHub Gist 仅做备份导出 / 导入（非实时同步）。需真正多设备同步（冲突合并策略、增量同步）。
 - **涉及**：同步引擎 + 设置页「同步」管理。
-
-### [ ] 决策引擎算法优化（资金 / 板块护栏 + 诚实动作）— 详见 [PLAN-decision-optimization.md](./PLAN-decision-optimization.md)
-
-- **背景**：`decisionEngine.ts` 纯技术面动量融合，缺资金 / 板块确认；买入阈值被放宽（`score>=65 && bullRatio>=0.55`，原 70/0.6）；`trendBearish` 门控太弱。下跌市易误触发「买入」——实测 159157（−16.7%）/159147（−22.8%）超卖反弹被判「买入」。
-- **方案**：分层子分（技术 / 资金 / 板块 / 中期趋势）+ 元聚合器护栏。复用 `analyzeFundCapitalFlow` / `analyzeFundSectorStrength`（已含 ETF 映射解析 + 东财门控），新增中期趋势门控与「超卖反弹」语义标注。**取数已就绪，几乎零新增请求代码**。
-- **涉及**：`src/services/decision/decisionEngine.ts`、`src/hooks/useFundDecision.ts`、`src/components/holdings/*/DecisionAdvisorCard.tsx`、验证脚本 `verify-decision.mts`。
-- **分期**：T1 核心护栏（资金背离 / 板块逆风 / 中期趋势 / 反弹标注）→ T2 波动仓位建议 + 去重 → T3 阈值诚实化 + 跟踪误差折扣。
 
 ---
 

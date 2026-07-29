@@ -17,6 +17,8 @@ import {
 import { maybeAutoTune } from "./services/backtest/tuningProposal";
 import { isTradingDay } from "./lib/tradingCalendar";
 import { requestNotificationPermission } from "./services/notification";
+import { registerServiceWorker } from "./services/pwa/registerSW";
+import { ensurePeriodicSync } from "./services/pwa/periodicSync";
 import { notify } from "./services/notify";
 import { isMarketOpen } from "@/services/marketStatus";
 import ToastContainer from "./components/ui/toast";
@@ -148,6 +150,13 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       await loadSettings();
+      // 注册自定义 Service Worker（production 构建），提供 PWA 离线外壳；
+      // 是否真正周期后台扫描由设置项 backgroundScan 在 SW 内决定。
+      registerServiceWorker();
+      // 若用户已开启后台定时扫描，确保周期同步任务已注册。
+      if (useSettingsStore.getState().settings.notifications.backgroundScan) {
+        ensurePeriodicSync().catch((e) => console.warn("[App] 周期后台同步注册失败", e));
+      }
       await loadHoldings();
       await loadPlan();
       await useNotificationsStore.getState().loadNotifications();

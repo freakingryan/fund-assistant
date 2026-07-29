@@ -44,6 +44,8 @@ const defaultSettings: UserSettings = {
       maxPerMinute: 20,
       marketStatusGuard: true,
     },
+    backgroundScan: false,
+    pushProxyUrl: "",
   },
   etfMappings: [],
   sync: {

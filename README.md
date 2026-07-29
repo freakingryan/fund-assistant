@@ -39,7 +39,8 @@
 - **手动扫描** — 点击"检查"遍历所有持仓，匹配规则生成提醒
 - **提醒面板** — 待处理提醒列表，支持「快速调仓」「已执行」「已读」
 - **操作日志** — 历史提醒记录
-- **浏览器通知** — 扫描触发时推送
+- **浏览器通知** — 扫描触发时推送（应用打开时）
+- **Web Push 后台定时扫描** — 设置页「后台定时扫描」开启后，即便页面/标签关闭，Service Worker 仍会周期（Chromium 约 12h+）扫描投资计划并弹出系统通知。详见下方「Web Push 后台定时扫描」一节。
 
 ### 🎯 Prompt 生成器
 
@@ -143,7 +144,42 @@
 - **触屏优化** — K 线图完全触屏支持（Tap 选中/高亮/关闭），底部信息栏零遮挡
 - **快捷主题切换** — 顶部栏主题切换按钮（浅色/深色/跟随系统）
 - **全局搜索** — 顶部栏搜索框，输入关键词快速搜索基金/ETF，直达持仓管理
-- **通知** — 浏览器推送通知（Service Worker）
+- **通知** — 浏览器推送通知（Service Worker）；Web Push 后台定时扫描（见下）
+
+### 🛰️ Web Push 后台定时扫描（Phase 17）
+
+让投资计划提醒**脱离「页面必须打开」的限制**：开启后，即便标签关闭，Service Worker 也会在后台周期扫描持仓并弹出系统通知。
+
+**工作原理**
+
+- 扫描核心抽离为纯函数 `evaluatePlanRules`（`src/services/plans/scanCore.ts`），前台 `plans.ts` 与后台 `sw.ts` 共用同一套规则语义，确保前后台判定一致。
+- 后台（SW）不依赖 DOM：行情取自 IndexedDB `quoteCache` 表（由前台每次扫描写入的最新快照）；可选填入「行情代理地址」（Cloudflare Worker 反代）以在页面关闭时拉取最新行情。
+- 经 `vite-plugin-pwa` 的 `injectManifest` 注入自定义 SW（`src/pwa/sw.ts`）：监听 `periodicsync` 事件驱动 `runBackgroundScan()`，噪声控制与「仅交易时段 / 免打扰」等闸门在后台完整复刻。
+- 启用 `trend` 趋势规则需行情代理（SW 内无 DOM 无法跑 ETF K 线计算），未配置时代码优雅跳过该规则。
+
+**启用步骤**
+
+1. `npm run build && npm run preview`（或部署到 HTTPS 静态托管，SW 仅在 production 构建生效）。
+2. 设置页「通知 → 后台定时扫描」打开开关，授权浏览器通知。
+3. 可选：填入 Cloudflare Worker 反代地址（获取最新行情 / 启用趋势规则）。
+
+**验证**
+
+- Chromium 内核浏览器（Chrome / Edge），打开 DevTools → Application → Service Workers，确认 `sw.js` 已注册且状态 `activated`。
+- `chrome://serviceworker-internals` 确认 `periodicsync` 已注册（`tag: plan-background-scan`，最小间隔约 12h）。
+- 关闭标签页，等待后台触发（Chromium 实际间隔由浏览器策略控制，可能长于 12h；可用 DevTools 的「Periodic Sync」调试按钮强制触发）。
+- 触发后即便页面未打开，也会弹出系统通知；点击通知跳转到对应基金提醒页。
+
+**限制**
+
+- **仅 Chromium 内核支持** Periodic Background Sync（Firefox / Safari 不支持；Safari 仅支持 Push API 但无周期同步）。不支持的浏览器开关会提示并优雅降级。
+- 浏览器对后台扫描频率有最终控制权，不保证精确周期。
+
+**vite-plugin-pwa 配置注意（injectManifest 坑）**
+
+- `injectManifest` 策略下，workbox-build 只读取 VitePWA 配置的 `injectManifest` 键；放在 `workbox` 键里的选项（如 `maximumFileSizeToCacheInBytes`）**不会生效**，会导致默认 2 MiB 预缓存上限报错。
+- 本仓库主 bundle 含 react-markdown 等，体积 >2MiB，必须在 `injectManifest` 键下显式设 `maximumFileSizeToCacheInBytes`（已设为 6MiB）。`globPatterns` 同样放在 `injectManifest` 键。
+- 本版本 workbox-build 的 `InjectManifest` schema 仅接受有限选项：`cleanupOutdatedCaches` / `navigateFallback` / `runtimeCaching` 均属 generateSW-only，放在 `injectManifest` 键下会被 `WorkboxConfigError` 拒绝。
 
 ## 技术栈
 

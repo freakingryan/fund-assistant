@@ -26,22 +26,25 @@ export default defineConfig(({ command }) => ({
     react(),
     tailwindcss(),
     VitePWA({
+      // 自定义 SW：注入 manifest 清单，但 SW 逻辑由我们自己的 src/pwa/sw.ts 提供，
+      // 以便挂载 periodicsync / push / notificationclick，实现页面关闭后仍能提醒。
+      strategies: "injectManifest",
+      srcDir: "src/pwa",
+      filename: "sw.ts",
+      injectRegister: false,
       registerType: "autoUpdate",
-      workbox: {
-        // 主 bundle 引入 react-markdown 等后超过默认 2MiB 预缓存上限，调高以保证 PWA 离线可用
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      // injectManifest 策略下，workbox-build 只读取本 injectManifest 键（workbox 键仅用于 generateSW）。
+      // 主 bundle 引入 react-markdown 等后超过默认 2MiB 预缓存上限，调高 maximumFileSizeToCacheInBytes 保证 PWA 离线可用。
+      injectManifest: {
+        // 本版本 workbox-build 的 InjectManifest schema 仅支持有限选项：
+        // 实测 maximumFileSizeToCacheInBytes / globPatterns 有效；
+        // cleanupOutdatedCaches / navigateFallback / runtimeCaching 均被拒（属 generateSW-only）。
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/.*\/api\/.*/i,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "api-cache",
-              expiration: { maxEntries: 100, maxAgeSeconds: 3600 },
-            },
-          },
-        ],
       },
+      // 开发态禁用自定义 SW，避免干扰 HMR 与 JSONP 取数联调；
+      // 仅在生产构建（vite build + vite preview 或静态托管）下生效。
+      devOptions: { enabled: false },
       manifest: {
         name: "基金投资助手",
         short_name: "基投助手",

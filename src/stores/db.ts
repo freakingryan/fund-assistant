@@ -3,6 +3,7 @@ import type {
   AppNotification,
   DailyReport,
   FundHolding,
+  FundQuote,
   InvestmentPlan,
   PlanAlert,
   UserSettings,
@@ -14,6 +15,19 @@ import type {
   AiBacktestAnalysis,
   TuningProposal,
 } from "@/services/backtest/types";
+
+/** quoteCache 行：最近一次前台扫描得到的某基金最新净值快照 */
+export interface QuoteCacheRow {
+  code: string;
+  quote: FundQuote;
+  updatedAt: string;
+}
+
+/** swMeta 通用键值行：用于存储 SW 运行态（如噪声闸门状态） */
+export interface SwMetaRow {
+  id: string;
+  value: unknown;
+}
 
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, "id">;
@@ -31,6 +45,10 @@ export class FundAssistantDB extends Dexie {
   aiAnalyses!: EntityTable<AiBacktestAnalysis, "id">;
   decisionLogs!: EntityTable<DecisionLog, "id">;
   tuningProposals!: EntityTable<TuningProposal, "id">;
+  /** 最新净值快照缓存：供 Service Worker 后台扫描在页面关闭后使用（脱离 JSONP 依赖） */
+  quoteCache!: EntityTable<QuoteCacheRow, "code">;
+  /** Service Worker 运行态（噪声闸门去重/频率状态等），跨 SW 唤醒保持 */
+  swMeta!: EntityTable<SwMetaRow, "id">;
 
   constructor() {
     super("FundAssistantDB");
@@ -86,6 +104,16 @@ export class FundAssistantDB extends Dexie {
     // v10: tuningProposals — AI 调参提案（T5.2；状态流转即采纳历史）
     this.version(10).stores({
       tuningProposals: "id, status, createdAt",
+    });
+
+    // v11: quoteCache — 最新净值快照缓存（Service Worker 后台扫描在页面关闭后读取）
+    this.version(11).stores({
+      quoteCache: "code, updatedAt",
+    });
+
+    // v12: swMeta — Service Worker 运行态持久化（噪声闸门跨唤醒保持）
+    this.version(12).stores({
+      swMeta: "id",
     });
   }
 }

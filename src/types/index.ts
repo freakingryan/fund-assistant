@@ -304,6 +304,19 @@ export interface UserSettings {
     schedule: string; // cron expression
     /** 噪声控制 */
     noise: NotificationNoiseConfig;
+    /**
+     * Web Push 后台定时扫描开关（Phase 17）：开启后，即使页面/标签页关闭，
+     * Service Worker 也会按浏览器周期（Chromium Periodic Background Sync，通常 ≥12h）
+     * 在后台评估投资计划规则并弹出浏览器通知。依赖 Notification 授权。
+     */
+    backgroundScan: boolean;
+    /**
+     * 可选：Cloudflare Worker 等 CORS 安全代理地址，用于后台扫描时拉取「最新」净值
+     * （而非仅用上次前台扫描写入 quoteCache 的快照）。留空则后台扫描使用 quoteCache 快照，
+     * 行为降级但不影响核心能力（页面关闭后仍可提醒，只是净值可能稍旧）。
+     * 代理期望返回 FundQuote[]（与 dataSourceService.fetchQuotes 同构）。
+     */
+    pushProxyUrl: string;
   };
   etfMappings: EtfMapping[];
   sync: SyncConfig;

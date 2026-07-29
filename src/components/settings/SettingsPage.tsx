@@ -58,6 +58,9 @@ import {
 import EtfMappingManager from "@/components/settings/EtfMappingManager";
 import { toast } from "@/components/ui/toast";
 import type { AIProvider } from "@/types";
+import { requestNotificationPermission } from "@/services/notification";
+import { registerServiceWorker } from "@/services/pwa/registerSW";
+import { ensurePeriodicSync, unregisterPeriodicSync } from "@/services/pwa/periodicSync";
 
 export default function SettingsPage() {
   const settings = useSettingsStore((s) => s.settings);
@@ -68,6 +71,7 @@ export default function SettingsPage() {
 
   const [syncing, setSyncing] = useState(false);
   const [importResult, setImportResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [bgScanBusy, setBgScanBusy] = useState(false);
   // F13: 备份导入前先确认（避免静默覆盖），成功后 SPA 状态刷新替代整页 reload
   const [pendingRestore, setPendingRestore] = useState<{
     holdings: number;
@@ -950,6 +954,72 @@ export default function SettingsPage() {
                     })}
                   </div>
                 </div>
+              </div>
+
+              {/* 后台定时扫描（Web Push 周期同步，Chromium only） */}
+              <div className="space-y-3 border-t border-border/40 pt-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm">后台定时扫描</Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      关闭页面后，由 Service Worker 周期（约 12h+）扫描投资计划并弹出系统通知
+                    </p>
+                  </div>
+                  <Switch
+                    checked={settings.notifications.backgroundScan}
+                    disabled={bgScanBusy}
+                    onCheckedChange={async (v) => {
+                      setBgScanBusy(true);
+                      try {
+                        if (v) {
+                          const ok = await requestNotificationPermission();
+                          if (!ok) {
+                            toast({
+                              type: "error",
+                              message: "需要通知权限才能启用后台扫描",
+                            });
+                            return;
+                          }
+                          registerServiceWorker();
+                          const ensured = await ensurePeriodicSync();
+                          if (!ensured) {
+                            toast({
+                              type: "error",
+                              message: "当前浏览器不支持周期后台同步（仅 Chromium 内核支持）",
+                            });
+                            return;
+                          }
+                          updateNotifications({ backgroundScan: true });
+                          toast({ type: "success", message: "后台定时扫描已启用" });
+                        } else {
+                          await unregisterPeriodicSync();
+                          updateNotifications({ backgroundScan: false });
+                          toast({ type: "success", message: "后台定时扫描已关闭" });
+                        }
+                      } catch (e) {
+                        console.warn("[settings] 后台扫描切换失败", e);
+                        toast({ type: "error", message: "操作失败，请重试" });
+                      } finally {
+                        setBgScanBusy(false);
+                      }
+                    }}
+                  />
+                </div>
+                {settings.notifications.backgroundScan && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">行情代理地址（可选）</Label>
+                    <Input
+                      placeholder="https://your-worker.workers.dev/fetchQuotes"
+                      value={settings.notifications.pushProxyUrl}
+                      onChange={(e) => updateNotifications({ pushProxyUrl: e.target.value })}
+                      className="h-8 text-xs font-mono"
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      留空则后台扫描复用前台最近一次行情快照（IndexedDB）。填入 Cloudflare Worker
+                      反代地址可在页面关闭时拉取最新行情（趋势规则需此能力）。
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
