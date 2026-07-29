@@ -1,8 +1,15 @@
 # PLAN — 智能决策引擎算法优化
 
-> 状态：Proposed（2026-07-29）
+> 状态：**T1 已落地（2026-07-29）**；T2 / T3 待启动
 > 关联：`PENDING_PLAN.md` §一 新增条目「决策引擎算法优化」
 > 验证脚本：仓库根 `verify-decision.mts`（Node 直跑真实引擎，无需浏览器）
+>
+> **实施备注（T1 关键偏差）**：原 T1.1 计划「扩展 `DecisionInputs` 新增 `capital`/`sector` 字段」。
+> 实现时改为**复用现有 `em` 叠加层已携带的 `capitalFlow.combinedScore` / `sector.combinedScore`**
+> 作为护栏数据源，**不新增 `DecisionInputs` 字段、不新增取数代码**。理由：
+> (1) `useFundDecision` 已构建并透传 `em`，数据早已可取；(2) 规避 §8 提到的 T2.2 双重计数风险
+> （若另设硬门控源，会与该 `em` 软叠加重复计数）。护栏改用「复用 em 分」后，T2.2 的移除重复叠加议题
+> 可重新评估（当前保留 ±12 软叠加作为轻微确认，与硬护栏不冲突）。
 
 ## 1. 背景与问题
 
@@ -87,3 +94,22 @@
 ## 9. 推荐落地顺序（MVP）
 
 先做 **T1（T1.1–T1.5）**，用 `verify-decision.mts` 验证 159157/159147 由「买入」转为「反弹 / 观察」，再视效果推进 T2 / T3。
+
+## 10. T1 实施记录（2026-07-29）
+
+**改动文件**
+
+- `src/services/decision/types.ts`：新增 `SignalType`（`trend`/`reversion`）；`GuardrailReason.kind` 扩展 `mid_term_down` / `capital_divergence` / `sector_headwind` / `reversion_label`；`Decision` 新增 `signalType` / `midTermDown` / `midTermReturnPct`。
+- `src/services/decision/decisionEngine.ts`：新增纯函数 `computeMediumTermTrend(klines)`（3 月收益符号 + 中期均线排列）、`hasOversoldSignal(ind, midTermDown)`（超卖金叉反弹判定）、`minRating` / `ACTION_MAX_RATING`（诚实对齐评级）；在 `buildDecision` 的 `applyGuardrails` 之后施加 T1 四道护栏（中期门控 / 资金背离 / 板块逆风 / 反弹语义标注），并把 `rating` 对齐到 `finalAction`。
+- `src/components/holdings/DecisionAdvisorCard.tsx`：reversion 时展示「超卖反弹·非趋势」琥珀徽章；警示块扩展 `midTermDown`（含近三月收益）。
+- `verify-decision.mts`：打印 `signalType` / `midTermDown`；新增合成护栏隔离验证（确定性上行 K 线 + 合成 em）覆盖资金背离 / 板块逆风。
+
+**验收结果（verify-decision.mts 复跑真实引擎）**
+
+- 159157（017193）：区间 −12.2%，原会判「买入」→ 现 `signalType=reversion`、动作=持有、评级=持有，护栏 `reversion_label`。
+- 159147（018927）：区间 −21.5%，原会判「买入」→ 现 `signalType=reversion`、动作=持有、评级=持有，护栏 `mid_term_down` + `reversion_label`。
+- 合成上行 K 线（midTermDown=false）：capital=35 → `capital_divergence` 降级持有；sector=35 → `sector_headwind` 降级持有；capital=60/sector=55 → 无护栏，保持买入侧。
+
+**门禁**：`tsc --noEmit` 0 error；`eslint` 0 error；`vite build` success。
+
+**未破坏既有**：无 em 传入时（东财关闭 / 净值模式）护栏自动跳过，`midTermDown` 仅在真实 K 线且区间收益<0 时触发；组合风险 / 分红等既有逻辑不受影响。

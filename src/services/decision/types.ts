@@ -60,6 +60,13 @@ export interface ReasonItem {
 export type Rating = "strong_buy" | "buy" | "hold" | "reduce" | "strong_sell";
 
 /**
+ * 信号语义类别：
+ * - trend：趋势行情（中期上行 + 顺势动量），可给趋势买入；
+ * - reversion：短期超卖反弹（非趋势确认），评级上限持有，不作趋势买入信号。
+ */
+export type SignalType = "trend" | "reversion";
+
+/**
  * 决策动作（8 态，移植自 DSA DecisionSignal）——
  * 相比 5 态 `Rating` 更细粒度，并引入 watch/avoid/alert 等护栏/特殊态。
  * `buy/add/hold/reduce/sell` 由评分校准得到；`watch/avoid/alert` 由护栏或数据缺失态产生。
@@ -82,7 +89,11 @@ export interface GuardrailReason {
     | "trend_bearish"
     | "regime"
     | "data_missing"
-    | "neutral_mandated";
+    | "neutral_mandated"
+    | "mid_term_down"
+    | "capital_divergence"
+    | "sector_headwind"
+    | "reversion_label";
   /** 中文解释（直接面向用户/模型） */
   description: string;
 }
@@ -124,6 +135,12 @@ export interface Decision {
   strategies: StrategyHit[];
   /** 当前是否为空头排列趋势背景 */
   trendBearish: boolean;
+  /** 信号语义类别：trend=趋势行情 / reversion=短期超卖反弹（非趋势确认） */
+  signalType: SignalType;
+  /** 中期（近三月）趋势是否仍处下行（收益<0 且无中期均线金叉） */
+  midTermDown: boolean;
+  /** 中期区间收益率（%）；midTermDown 判定依据 */
+  midTermReturnPct: number;
   /** 人话总结（含冲突说明、理由串联） */
   summary: string;
   /** 东财叠加层对综合评分的调整量（有界 ±12；所有因子不可用时恒为 0） */

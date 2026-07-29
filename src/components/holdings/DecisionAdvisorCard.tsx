@@ -133,6 +133,11 @@ export function DecisionAdvisorCard({
           <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/40 border border-border/40">
             评级 {decision.ratingLabel}
           </span>
+          {decision.signalType === "reversion" && (
+            <span className="text-[10px] text-amber-600 dark:text-amber-400 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+              超卖反弹·非趋势
+            </span>
+          )}
           <div className="flex flex-col">
             <span className="text-[10px] text-muted-foreground">综合评分 (0-100)</span>
             <span className={`text-lg font-bold leading-none ${style.text}`}>
@@ -234,14 +239,17 @@ export function DecisionAdvisorCard({
           </div>
         </div>
 
-        {/* 冲突 / 趋势警示 */}
-        {(decision.conflict || decision.trendBearish) && (
+        {/* 冲突 / 趋势 / 中期下行 警示 */}
+        {(decision.conflict || decision.trendBearish || decision.midTermDown) && (
           <div className="flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1.5">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
             <span>
               {decision.conflict && "多空信号分歧较大，结论可靠性下降，建议以观望为主。"}
-              {decision.conflict && decision.trendBearish && " "}
+              {decision.conflict && (decision.trendBearish || decision.midTermDown) && " "}
               {decision.trendBearish && "当前处于空头排列趋势，反弹空间受限，不宜追高。"}
+              {decision.trendBearish && decision.midTermDown && " "}
+              {decision.midTermDown &&
+                `中期趋势仍处下行（近三月 ${decision.midTermReturnPct.toFixed(1)}%），反弹空间取决于资金与板块配合。`}
             </span>
           </div>
         )}

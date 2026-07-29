@@ -32,6 +32,7 @@ import type {
   EmFactors,
   GuardrailReason,
   MarketRegime,
+  SignalType,
 } from "./types";
 
 // ─── 类别权重（基础维度；navmom 仅净值模式动态加入；overlay 类不计入基础权重） ───────────
@@ -448,6 +449,84 @@ export function applyGuardrails(
 }
 
 /**
+ * 中期趋势（近三月）：用区间收益符号 + 中期均线排列判定下行。
+ * 下行 = 区间收益 < 0 且 未出现中期多头排列（MA20 ≥ MA60）。
+ * 纯计算、零网络，无需新接口。
+ */
+function computeMediumTermTrend(klines: KLineData[]): { down: boolean; returnPct: number } {
+  if (klines.length < 2) return { down: false, returnPct: 0 };
+  const first = klines[0].close;
+  const last = klines[klines.length - 1].close;
+  const returnPct = ((last - first) / first) * 100;
+  const closes = klines.map((k) => k.close);
+  const ma = (n: number) => {
+    if (closes.length < n) return null;
+    let s = 0;
+    for (let i = closes.length - n; i < closes.length; i++) s += closes[i];
+    return s / n;
+  };
+  const ma20 = ma(Math.min(20, closes.length));
+  const ma60 = ma(Math.min(60, closes.length));
+  // 中期多头排列（MA20 ≥ MA60）视为上行结构；否则若收益为负则判定下行
+  const bullAlign = ma20 != null && ma60 != null && ma20 >= ma60;
+  return { down: returnPct < 0 && !bullAlign, returnPct };
+}
+
+/**
+ * 超卖反弹判定：仅在中期下行背景下成立。
+ * 反弹 = 历史超卖（KDJ/RSI 超卖事件）后出现金叉（KDJ/MACD 金叉 / SAR 反转上 / 布林上破），
+ * 或 当前仍处超卖（KDJ.K<25）且有近期金叉。用于把「接飞刀」标注为 reversion 而非趋势买入。
+ * `ind.signals` 已按日期倒序（最新在前）。
+ */
+function hasOversoldSignal(ind: StockSdkIndicatorsResult, midTermDown: boolean): boolean {
+  if (!midTermDown) return false;
+  const sigs = ind.signals;
+  const isOversold = (t: string) => t === "kdj_oversold" || t === "rsi_oversold";
+  const isBullCross = (t: string) =>
+    t === "kdj_golden_cross" ||
+    t === "macd_golden_cross" ||
+    t === "sar_reversal_up" ||
+    t === "boll_break_upper";
+  const recent = sigs.slice(0, 15);
+  let oversoldIdx = -1;
+  let bullCrossIdx = -1;
+  for (let i = 0; i < recent.length; i++) {
+    if (oversoldIdx < 0 && isOversold(recent[i].type)) oversoldIdx = i;
+    if (bullCrossIdx < 0 && isBullCross(recent[i].type)) bullCrossIdx = i;
+  }
+  // 反弹：先超卖、后金叉（金叉在倒序数组中更靠前 / 更近期）
+  const rebound = oversoldIdx >= 0 && bullCrossIdx >= 0 && bullCrossIdx < oversoldIdx;
+  // 当前仍超卖且近期有金叉 → 反弹修复背景
+  const currentOversold = ind.latest.kdj?.k != null && ind.latest.kdj.k < 25;
+  const recentBullCross = bullCrossIdx >= 0 && bullCrossIdx <= 6;
+  return rebound || (currentOversold && recentBullCross);
+}
+
+/** 评级多空序；用于「诚实对齐」——取两者中较保守者，避免动作与评级矛盾 */
+const RATING_ORDER: Record<Rating, number> = {
+  strong_buy: 5,
+  buy: 4,
+  hold: 3,
+  reduce: 2,
+  sell: 1,
+  strong_sell: 0,
+};
+/** 各动作允许的最高评级（避免动作被低估后又被评级「虚高」） */
+const ACTION_MAX_RATING: Record<DecisionAction, Rating> = {
+  buy: "strong_buy",
+  add: "buy",
+  hold: "hold",
+  watch: "hold",
+  reduce: "reduce",
+  sell: "sell",
+  avoid: "hold",
+  alert: "hold",
+};
+function minRating(a: Rating, b: Rating): Rating {
+  return RATING_ORDER[a] <= RATING_ORDER[b] ? a : b;
+}
+
+/**
  * 融合四套分析为单一决策建议。
  */
 export function buildDecision(inputs: DecisionInputs): Decision {
@@ -606,9 +685,9 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   const bullReasons = bulls.map(toReason);
   const bearReasons = bears.map(toReason);
 
-  // 八态 action 校准 + 护栏（数据降级 → 决策降级 + 显式原因）
+  // 八态 action 校准 + 基础护栏（数据降级 → 决策降级 + 显式原因）
   const rawAction = scoreToRawAction(rawScore);
-  const { action: finalAction, reasons: guardrails } = applyGuardrails(rawAction, {
+  const { action: rawFinal, reasons: guardrails } = applyGuardrails(rawAction, {
     lowConfidence: isLowConf,
     conflict,
     trendBearish,
@@ -616,8 +695,84 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     regimeAdjusted,
     hasKline: klines.length > 0,
   });
+  let finalAction = rawFinal;
 
-  const summary = buildSummary(rating, conflict, trendBearish, bullReasons, bearReasons, isLowConf);
+  // ─── T1 上下文护栏（核心护栏 + 反弹语义标注）───
+  // 中期趋势门控（纯计算，3 月收益符号 + 中期均线金叉）
+  const { down: midTermDown, returnPct: midTermReturnPct } = computeMediumTermTrend(klines);
+
+  // 1. 中期趋势门控：下行则动作上限封顶 add（即便短期动量翻多，也不给买入）
+  if (midTermDown && (finalAction === "buy" || finalAction === "add")) {
+    if (finalAction === "buy") {
+      finalAction = "add";
+      guardrails.push({
+        kind: "mid_term_down",
+        description: `中期趋势仍处下行（近三月区间收益 ${midTermReturnPct.toFixed(1)}%），动作上限封顶为加仓，不宜追高`,
+      });
+    }
+  }
+
+  // 2. 资金背离护栏：复用 em 叠加层已取的资金面分（避免重复取数）。技术偏多 + 资金分<50 → 降级观察/持有
+  if (
+    em?.capitalFlow.available &&
+    em.capitalFlow.combinedScore != null &&
+    em.capitalFlow.combinedScore < 50
+  ) {
+    const techBull =
+      finalAction === "buy" || finalAction === "add" || rating === "buy" || rating === "strong_buy";
+    if (techBull) {
+      const before = finalAction;
+      finalAction = finalAction === "buy" ? "watch" : "hold";
+      if (finalAction !== before) {
+        guardrails.push({
+          kind: "capital_divergence",
+          description: `技术面偏多但资金面分仅 ${em.capitalFlow.combinedScore!.toFixed(0)}（< 50），存在「价弹钱不跟」背离，降级为观察/持有`,
+        });
+      }
+    }
+  }
+
+  // 3. 板块逆风护栏：复用 em 板块分。技术偏多 + 板块分<40（逆板块孤涨）→ 降级观察/持有
+  if (em?.sector.available && em.sector.combinedScore != null && em.sector.combinedScore < 40) {
+    const techBull =
+      finalAction === "buy" || finalAction === "add" || rating === "buy" || rating === "strong_buy";
+    if (techBull) {
+      const before = finalAction;
+      finalAction = finalAction === "buy" ? "watch" : "hold";
+      if (finalAction !== before) {
+        guardrails.push({
+          kind: "sector_headwind",
+          description: `技术面偏多但板块强度分仅 ${em.sector.combinedScore!.toFixed(0)}（< 40），逆板块孤涨，降级为观察/持有`,
+        });
+      }
+    }
+  }
+
+  // 4. 反弹语义标注：短翻多（超卖修复 + 金叉）+ 中期下行 → reversion，评级上限持有
+  const reversion = hasOversoldSignal(ind, midTermDown);
+  const signalType: SignalType = reversion ? "reversion" : "trend";
+  if (reversion && (finalAction === "buy" || finalAction === "add")) {
+    finalAction = "hold";
+    guardrails.push({
+      kind: "reversion_label",
+      description: "短期超卖反弹（非趋势确认），评级上限持有，不宜作为趋势买入信号",
+    });
+  }
+
+  // 诚实对齐：rating 跟随 finalAction，避免「动作=观察 但 评级=买入」的表里不一
+  rating = minRating(rating, ACTION_MAX_RATING[finalAction]);
+
+  const summary = buildSummary(
+    rating,
+    conflict,
+    trendBearish,
+    bullReasons,
+    bearReasons,
+    isLowConf,
+    signalType,
+    midTermDown,
+    midTermReturnPct,
+  );
 
   return {
     rating,
@@ -641,6 +796,9 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     bearReasons,
     strategies,
     trendBearish,
+    signalType,
+    midTermDown,
+    midTermReturnPct,
     summary,
     emDelta: Number(emDelta.toFixed(1)),
     regimeAdjusted,
@@ -655,6 +813,9 @@ function buildSummary(
   bulls: ReasonItem[],
   bears: ReasonItem[],
   lowConf: boolean,
+  signalType?: SignalType,
+  midTermDown?: boolean,
+  midTermReturnPct?: number,
 ): string {
   const parts: string[] = [];
   if (conflict) {
@@ -664,6 +825,16 @@ function buildSummary(
   }
   if (trendBearish && (rating === "hold" || rating === "reduce")) {
     parts.push("当前处于空头排列趋势背景下，反弹力度受限");
+  }
+  if (midTermDown) {
+    parts.push(
+      `中期趋势仍处下行（近三月区间收益 ${
+        midTermReturnPct != null ? midTermReturnPct.toFixed(1) : ""
+      }%），反弹空间取决于资金与板块配合`,
+    );
+  }
+  if (signalType === "reversion") {
+    parts.push("当前为短期超卖反弹而非趋势确认，不宜作为趋势买入信号，建议以观察 / 轻仓为主");
   }
   if (rating === "strong_buy" || rating === "buy") {
     parts.push(
