@@ -93,6 +93,10 @@ async function run() {
       d.guardrails.forEach((g) => console.log(`    ! ${g.kind}: ${g.description}`));
     }
     console.log(`  人话总结: ${d.summary}`);
+    // T3.2 跟踪误差：主流程不含 navKlines（真实 NAV 需东财/腾讯，本脚本不引入），应恒为 null（折扣不触发）
+    console.log(
+      `  跟踪误差 trackingErrorPct=${d.trackingErrorPct == null ? "null(无NAV序列, 不触发折扣)" : d.trackingErrorPct + "%"}`,
+    );
 
     // 波动 / 仓位风险画像（T2.1 只读字段）
     if (d.riskProfile) {
@@ -133,6 +137,9 @@ async function run() {
   // ─── 合成护栏隔离验证（资金背离 / 板块逆风）───
   // 用一段确定性上行 K 线（中期不下行、无 reversion），隔离验证 em 两大护栏是否生效。
   await verifySyntheticGuardrails();
+
+  // ─── 合成跟踪误差隔离验证（T3.2）───
+  await verifySyntheticTrackingError();
 }
 
 /** 构造 80 根确定性上行 K 线（MA20>MA60，区间收益>0 → 不触发中期下行/reversion） */
@@ -217,6 +224,49 @@ async function verifySyntheticGuardrails() {
     em: synthEm(60, 55),
   });
   console.log(`\n  [中性确认] capital=60/sector=55 → 动作=${dOk.actionLabel}(${dOk.finalAction}) 评级=${dOk.ratingLabel} 护栏数=${dOk.guardrails.length}`);
+}
+
+/** 合成跟踪误差隔离验证（T3.2）：以确定性上行 K 线作 ETF 基准，构造贴合 / 高偏离两份 NAV，验证折扣与护栏 */
+async function verifySyntheticTrackingError() {
+  console.log(`\n████ 合成跟踪误差隔离验证（联接基金 NAV vs ETF 基准） ████`);
+  const baseKlines = synthUptrendKlines(); // 作 ETF 基准
+  const patterns = detectPatterns(baseKlines);
+  const signalResult = evaluateSignal(baseKlines, patterns);
+  const ind = computeStockSdkIndicators(baseKlines);
+  const strategies = evaluateStrategies(baseKlines, ind);
+
+  // 低跟踪误差：NAV 几乎贴合 ETF（±0.1% 噪声）→ 不触发折扣
+  const lowNav = baseKlines.map((k, i) => ({
+    ...k,
+    close: Number((k.close * (1 + (Math.sin(i) - Math.cos(i)) * 0.0005)).toFixed(3)),
+  }));
+  const dLow = buildDecision({
+    klines: baseKlines,
+    patterns,
+    signalResult,
+    ind,
+    strategies,
+    navKlines: lowNav,
+  });
+  console.log(`  [低TE] trackingErrorPct=${dLow.trackingErrorPct}% → 动作=${dLow.finalAction} 评级=${dLow.ratingLabel} 护栏数=${dLow.guardrails.length}`);
+
+  // 高跟踪误差：NAV 与 ETF 日收益系统偏离（±2%）→ 触发折扣 + tracking_error 护栏
+  const highNav = baseKlines.map((k, i) => ({
+    ...k,
+    close: Number((k.close * (1 + Math.sin(i) * 0.02)).toFixed(3)),
+  }));
+  const dHigh = buildDecision({
+    klines: baseKlines,
+    patterns,
+    signalResult,
+    ind,
+    strategies,
+    navKlines: highNav,
+  });
+  console.log(`  [高TE] trackingErrorPct=${dHigh.trackingErrorPct}% → 原始分=${dHigh.rawScore} 折扣后评分=${dHigh.score} 动作=${dHigh.finalAction} 评级=${dHigh.ratingLabel}`);
+  dHigh.guardrails
+    .filter((g) => g.kind === "tracking_error")
+    .forEach((g) => console.log(`    ! ${g.kind}: ${g.description}`));
 }
 
 run().catch((e) => {

@@ -94,7 +94,8 @@ export interface GuardrailReason {
     | "mid_term_down"
     | "capital_divergence"
     | "sector_headwind"
-    | "reversion_label";
+    | "reversion_label"
+    | "tracking_error";
   /** 中文解释（直接面向用户/模型） */
   description: string;
 }
@@ -150,6 +151,8 @@ export interface Decision {
   regimeAdjusted: boolean;
   /** NAV 原生因子是否生效（仅净值模式且样本充足时 available） */
   navAvailable: boolean;
+  /** 联接基金相对 ETF 基准的年化跟踪误差(%)；非联接基金 / 样本不足为 null */
+  trackingErrorPct?: number | null;
   /** 波动 / 仓位风险画像（只读参考，绝不影响评分 / 评级 / 动作）；样本不足时为 null */
   riskProfile?: RiskProfile | null;
 }
@@ -169,4 +172,6 @@ export interface DecisionInputs {
   regime?: MarketRegime;
   /** 东财交叉截面因子（overlay 叠加层；不可用时 available:false → 增量 0，不影响评分） */
   em?: EmFactors;
+  /** 联接基金自身 NAV 序列（仅 isRealKline / 联接基金场景传入，用于算跟踪误差）；纯 NAV 基金不传 */
+  navKlines?: import("@/types").KLineData[];
 }

@@ -1,6 +1,6 @@
 # PLAN — 智能决策引擎算法优化
 
-> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；T3 / T4 / T5 待启动
+> 状态：**T1 已落地（2026-07-29）**；**T2 已落地（2026-07-27）**；**T3 已落地（2026-07-27）**；T4 / T5 待启动
 > （T4 / T5 = **AI 接入与持续调参**，详见 §11；可行性已确认，地基直接复用 `ai.ts` + `decisionSnapshot` 账本 + `aiAnalysis`）
 > 关联：`PENDING_PLAN.md` §一 新增条目「决策引擎算法优化」
 > 验证脚本：仓库根 `verify-decision.mts`（Node 直跑真实引擎，无需浏览器）
@@ -151,6 +151,38 @@
 **验收（verify-decision.mts 复跑真实引擎，预期零回归）**：见 §10 末尾 T2 验证。行为不变——`finalAction`/`score`/`rating` 与 T1 完全一致；新增 `riskProfile` 仅追加只读信息。
 
 **门禁**：`tsc --noEmit` 0 error；`eslint` 0 error；`vite build` success（husky 预提交门禁）。
+
+---
+
+## 10. T3 实施记录（2026-07-27）
+
+**T3.1 诚实化买入阈值（撤销「为回测覆盖而放宽」的反模式）**
+
+- `src/services/decision/decisionEngine.ts` 评级块（`buildDecision` 内）：
+  - 风险上下文分支（偏空/震荡/多空冲突）`if (score >= 65 && bullRatio >= 0.55) → buy` **恢复**为 `if (score >= 70 && bullRatio >= 0.6) → buy`，并改写注释说明「不再为回测覆盖度放宽，买入信号必须高胜率共振」。
+  - 正常上下文分支（原 `score >= 60 → buy`）**恢复**为 `if (score >= 70 && bullRatio >= 0.6) → buy`；`strong_buy` 维持 `score >= 75 && bullRatio >= 0.6`。
+  - `reversion` 免责声明已由 `buildSummary`（`signalType === "reversion"` 时强制「短期超卖反弹而非趋势确认」文案）覆盖，T3.1 确认保留、不重复。
+- 验收：`verify-decision.mts` 合成上行 K 线基线（确定性上行、midTermDown=false）原在 60/0.55 放宽规则下可得 `buy/add` 评级，现正确收敛为 `hold`（评分 60–69 区间不再误判买入）；真实两只联接基金（159157/159147）仍 `reversion/hold`，零回归。
+
+**T3.2 联接基金跟踪误差折扣（诚实化「名实偏离」）**
+
+- 新增 `src/services/decision/trackingError.ts`（纯函数、零网络）：
+  - `computeTrackingError(navKlines, benchKlines)`：按日期对齐 基金NAV 与 ETF基准 收盘价，算日收益差序列，年化标准差即跟踪误差(%)；对齐样本 <21 返回 null。
+  - 导出常量 `TRACKING_ERROR_HIGH = 5`（%）、`TRACKING_ERROR_DISCOUNT = 0.96`、`TRACKING_ERROR_MIN_SAMPLES = 20`。
+- `src/services/decision/types.ts`：
+  - `DecisionInputs` 新增可选 `navKlines?: KLineData[]`（仅 `isRealKline` 联接基金场景传入，基准即引擎 `klines`）。
+  - `Decision` 新增 `trackingErrorPct?: number | null`。
+  - `GuardrailReason.kind` 新增 `"tracking_error"`。
+- `src/services/decision/decisionEngine.ts`：在「净值模式压缩」之后、东财叠加之前，若 `navKlines` 存在则算 `trackingErrorPct`；**>5%** 时对评分做温和折扣 `score = Math.round(50 + (score-50)*0.96)`（向 50 收敛，与低置信压缩同量级、正交），并在护栏数组追加 `tracking_error` 说明（诚实对齐之后）。
+- **接线（无需新取数）**：
+  - `src/services/backtest/decisionSnapshot.ts`：`captureSnapshotForFund` 在 `etfCode` 存在时 memo 化 `fetchKLine(fund.code)` 作为 `navKlines` 传入（与 `klines` 同步按 `targetDate` 截断，避免前视偏差）。
+  - `src/hooks/useFundDecision.ts`：新增 `navKlines?` 输入并透传 `buildDecision`。
+  - `src/hooks/useFundDetailController.tsx`：详情页早已并行 `Promise.all([fetchEtfKLine, fetchKLine])` 取过基金自身 NAV（`navData`）——新增 `navKlineData` state 持有并暴露；切换基金时按当前基金刷新（空则清空，防跨基金残留）。
+  - `src/components/holdings/DecisionAdvisorCard.tsx` + `src/components/holdings/fundDetail/FundDecisionAdvisorCard.tsx` + `src/components/holdings/guide/DecisionGuide.tsx` 三处调用点透传 `navKlines`（仅 `isRealKline` 时）。纯 NAV 基金不传 `navKlines`（无基准可比，折扣不触发）。
+- `verify-decision.mts`：主流程打印 `trackingErrorPct`（无 NAV 序列恒为 null）；新增 `verifySyntheticTrackingError()` 隔离验证——低 TE(0.77%) 不触发折扣、高 TE(21.75%) 触发折扣 + `tracking_error` 护栏。
+- **设计注记**：×0.96 折扣对中等分数（近 50）经四舍五入后可见变化极小（如 62→62）；T3.2 的诚实化主要载体是**护栏说明 + 暴露的 `trackingErrorPct` 字段**，折扣为次级置信弱化。若期望对高分买入信号产生可见压制，可下调 `TRACKING_ERROR_DISCOUNT`（如 0.90，与低置信可用 NAV 同量级）。
+
+**门禁**：`eslint` 0 error（仅 `useFundDetailController.tsx` 既有 `any`/hooks 警告，非本次引入）；`vite build` success（husky 预提交门禁）。
 
 ---
 

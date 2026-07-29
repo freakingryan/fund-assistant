@@ -35,6 +35,11 @@ import type {
   SignalType,
 } from "./types";
 import { computeRiskProfile } from "./riskProfile";
+import {
+  computeTrackingError,
+  TRACKING_ERROR_HIGH,
+  TRACKING_ERROR_DISCOUNT,
+} from "./trackingError";
 
 // ─── 类别权重（基础维度；navmom 仅净值模式动态加入；overlay 类不计入基础权重） ───────────
 const BASE_WEIGHT: Partial<Record<SignalCategory, number>> = {
@@ -531,8 +536,18 @@ function minRating(a: Rating, b: Rating): Rating {
  * 融合四套分析为单一决策建议。
  */
 export function buildDecision(inputs: DecisionInputs): Decision {
-  const { klines, patterns, signalResult, ind, strategies, lowConfidence, nav, regime, em } =
-    inputs;
+  const {
+    klines,
+    patterns,
+    signalResult,
+    ind,
+    strategies,
+    lowConfidence,
+    nav,
+    regime,
+    em,
+    navKlines,
+  } = inputs;
 
   const signals: AnalysisSignal[] = [
     ...collectPatternSignals(patterns, klines),
@@ -606,6 +621,18 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   const compFactor = isLowConf ? (nav?.available ? 0.9 : 0.7) : 1;
   if (isLowConf) score = Math.round(50 + (score - 50) * compFactor);
 
+  // 联接基金跟踪误差折扣（T3.2）：klines 是基准 ETF，navKlines 是基金自身 NAV。
+  // 若 NAV 相对 ETF 年化跟踪误差过高，说明「名实不符」，对评分做温和折扣（×0.96 向 50，与低置信压缩同量级、正交）。
+  let trackingErrorPct: number | null = null;
+  let teHigh = false;
+  if (navKlines && navKlines.length > 0) {
+    trackingErrorPct = computeTrackingError(navKlines, klines);
+    if (trackingErrorPct != null && trackingErrorPct > TRACKING_ERROR_HIGH) {
+      score = Math.round(50 + (score - 50) * TRACKING_ERROR_DISCOUNT);
+      teHigh = true;
+    }
+  }
+
   // 东财叠加层（overlay）：仅 available 因子产生有界增量；不可用时增量恒为 0，不影响评分。
   // ⚠️ 与 T1 硬护栏（capital_divergence / sector_headwind）的「去重」说明（PLAN §5 T2.2 评估结论）：
   //   - 二者**同源**复用 em 的 capitalFlow / sector 同一份分，但输出维度正交、非有害双重计数：
@@ -651,17 +678,19 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   // 评级：先按分数，再叠加「趋势背景 / 多空冲突」上下文修正
   let rating: Rating;
   if (trendBearish || conflict) {
-    // 风险上下文：不追高、偏防守；但强多头共振（高分且多方主导）仍给出买入信号，避免引擎永不买入。
-    // 阈值较原 score>=70 && bullRatio>=0.6 适度放宽（-> score>=65 && bullRatio>=0.55），
-    // 否则偏空/震荡市中引擎几乎永不买入，回测买入侧覆盖度为 0，无法验证买入逻辑。
-    if (score >= 65 && bullRatio >= 0.55) rating = "buy";
+    // 风险上下文（偏空 / 震荡 / 多空冲突）：不追高、偏防守。
+    // 诚实化（T3.1）：恢复趋势买入门槛 score>=70 && bullRatio>=0.6，
+    // 不再为「回测覆盖度」放宽到 65/0.55——买入信号必须高胜率共振，宁可少买、不可降格。
+    if (score >= 70 && bullRatio >= 0.6) rating = "buy";
     else if (score >= 60) rating = "hold";
     else if (score >= 45) rating = "reduce";
     else if (score >= 30) rating = "sell";
     else rating = "strong_sell";
   } else {
+    // 正常上下文：趋势买入同样诚实门槛 score>=70 && bullRatio>=0.6；
+    // strong_buy 维持更高共振门槛 score>=75 && bullRatio>=0.6。
     if (score >= 75 && bullRatio >= 0.6) rating = "strong_buy";
-    else if (score >= 60) rating = "buy";
+    else if (score >= 70 && bullRatio >= 0.6) rating = "buy";
     else if (score >= 45) rating = "hold";
     else if (score >= 30) rating = "reduce";
     else rating = "sell";
@@ -769,6 +798,14 @@ export function buildDecision(inputs: DecisionInputs): Decision {
   // 诚实对齐：rating 跟随 finalAction，避免「动作=观察 但 评级=买入」的表里不一
   rating = minRating(rating, ACTION_MAX_RATING[finalAction]);
 
+  // T3.2 跟踪误差护栏说明：高跟踪误差已在评分侧温和折扣，此处仅显式标注原因
+  if (teHigh) {
+    guardrails.push({
+      kind: "tracking_error",
+      description: `联接基金相对 ETF 基准年化跟踪误差高达 ${trackingErrorPct!.toFixed(1)}%（> ${TRACKING_ERROR_HIGH}%），名实偏离，评分已下调`,
+    });
+  }
+
   const summary = buildSummary(
     rating,
     conflict,
@@ -810,6 +847,7 @@ export function buildDecision(inputs: DecisionInputs): Decision {
     emDelta: Number(emDelta.toFixed(1)),
     regimeAdjusted,
     navAvailable: nav?.available ?? false,
+    trackingErrorPct,
     // 波动 / 仓位风险画像（只读参考）：纯计算，不改变任何动作 / 评分 / 评级。
     riskProfile: computeRiskProfile(klines, ind),
   };

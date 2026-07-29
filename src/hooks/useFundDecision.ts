@@ -31,6 +31,8 @@ export interface UseFundDecisionInput {
   em?: EmFactors;
   /** 市场 regime（剥离 beta 伪信号）；缺省表示未计算 */
   regime?: MarketRegime;
+  /** 联接基金自身 NAV 序列（仅 isRealKline 场景传入，用于算跟踪误差折扣） */
+  navKlines?: KLineData[];
 }
 
 export interface UseFundDecisionResult {
@@ -41,7 +43,7 @@ export interface UseFundDecisionResult {
 }
 
 export function useFundDecision(input: UseFundDecisionInput): UseFundDecisionResult {
-  const { klines, patterns, signalResult, isRealKline = true, em, regime } = input;
+  const { klines, patterns, signalResult, isRealKline = true, em, regime, navKlines } = input;
 
   // 净值基金：用 NAV 收盘价序列算原生因子（纯本地），给自身方向性依据
   const nav = useMemo(
@@ -63,8 +65,9 @@ export function useFundDecision(input: UseFundDecisionInput): UseFundDecisionRes
       nav,
       em,
       regime,
+      navKlines,
     });
-  }, [klines, patterns, signalResult, isRealKline, nav, em, regime]);
+  }, [klines, patterns, signalResult, isRealKline, nav, em, regime, navKlines]);
 
   return { decision, nav };
 }

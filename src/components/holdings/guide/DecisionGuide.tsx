@@ -41,6 +41,8 @@ export default function DecisionGuide({ open, onClose }: Props) {
     isRealKline: ctrl.isRealKline,
     em: ctrl.emFactors,
     regime: ctrl.regime,
+    // T3.2：仅联接基金（真实 K 线）场景传入自身 NAV 序列算跟踪误差折扣
+    navKlines: ctrl.isRealKline ? ctrl.navKlineData : undefined,
   });
 
   const [step, setStep] = useState(0);

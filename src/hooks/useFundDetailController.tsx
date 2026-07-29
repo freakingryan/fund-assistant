@@ -214,6 +214,8 @@ function useFundDetailController(fundId: string): FundDetailController {
   // ─── 状态 ─────────────────────────────────────
   const [period, setPeriod] = useState("3m");
   const [klineData, setKlineData] = useState<any[]>([]);
+  /** 基金自身 NAV 序列（T3.2 跟踪误差用）：与 etfData 并行 fetch，仅 isRealKline 时透传给决策引擎 */
+  const [navKlineData, setNavKlineData] = useState<any[]>([]);
   const [klineLoading, setKlineLoading] = useState(false);
   /** K 线数据对应的时间（末根 date，接口返回优先） */
   const [klineAsOf, setKlineAsOf] = useState<number | null>(null);
@@ -536,6 +538,8 @@ function useFundDetailController(fundId: string): FundDetailController {
       if (!cancelled) {
         if (etfData.length > 0) setKlineCache(etfCacheKey, period, etfData);
         if (navData.length > 0) setKlineCache(navCacheKey, period, navData);
+        // T3.2：始终按当前基金刷新 NAV 序列（空则清空，避免跨基金残留）
+        setNavKlineData(navData.length > 0 ? navData : []);
         clearTimeout(timer);
         setKlineLoading(false);
         // 最终展示的 K 线（与下方 setKlineData 保持一致）：用于派生数据时间
@@ -803,6 +807,7 @@ function useFundDetailController(fundId: string): FundDetailController {
     setShowBollinger,
     handleRefreshKline,
     isRealKline,
+    navKlineData,
     etfKlineError,
     setEtfKlineError,
     klineDetectedPatterns,

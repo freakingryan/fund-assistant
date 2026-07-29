@@ -48,6 +48,8 @@ interface Props {
   em?: EmFactors;
   /** 市场 regime（剥离 beta 伪信号）；缺省表示未计算 */
   regime?: MarketRegime;
+  /** 联接基金自身 NAV 序列（仅 isRealKline 场景传入，用于算跟踪误差折扣） */
+  navKlines?: KLineData[];
   /** 该评分所基于的数据时点（K 线末根日期），用于展示「综合评分截至 …」 */
   asOf?: number | null;
   /** K 线数据的调用 / 缓存写入时间（回退获取时间） */
@@ -83,6 +85,7 @@ export function DecisionAdvisorCard({
   isRealKline = true,
   em,
   regime,
+  navKlines,
   asOf,
   fetchedAt,
 }: Props) {
@@ -106,8 +109,9 @@ export function DecisionAdvisorCard({
       nav,
       em,
       regime,
+      navKlines,
     });
-  }, [klines, patterns, signalResult, isRealKline, nav, em, regime]);
+  }, [klines, patterns, signalResult, isRealKline, nav, em, regime, navKlines]);
 
   if (!decision) return null;
 

@@ -13,6 +13,7 @@ export default function FundDecisionAdvisorCard() {
       isRealKline={ctrl.isRealKline}
       em={ctrl.emFactors}
       regime={ctrl.regime}
+      navKlines={ctrl.isRealKline ? ctrl.navKlineData : undefined}
       asOf={ctrl.klineAsOf}
       fetchedAt={ctrl.klineFetchedAt}
     />

@@ -164,6 +164,21 @@ export async function captureSnapshotForFund(
   // 净值基金：用 NAV 收盘价序列算原生因子（纯本地），给自身方向性依据
   const nav = !isRealKline ? computeNavFactors(klines) : undefined;
 
+  // T3.2 联接基金跟踪误差：基准=ETF klines，需额外取基金自身 NAV 序列算 TE 折扣。
+  // 仅 isRealKline（联接基金）场景取；纯 NAV 基金无基准可比，不取。
+  let navKlines: KLineData[] | undefined;
+  if (isRealKline) {
+    const navMemoKey = `navkline:${fund.code}`;
+    if (!klineMemo?.has(navMemoKey)) {
+      const fetched = await dataSourceService.fetchKLine(fund.code, SNAPSHOT_PERIOD);
+      klineMemo?.set(navMemoKey, fetched ?? []);
+    }
+    let navFetched = klineMemo?.get(navMemoKey) ?? [];
+    // 回溯补齐：与 klines 同步截断到目标交易日，保证对齐日期一致、无前视偏差
+    if (targetDate) navFetched = navFetched.filter((k) => k.date <= targetDate);
+    if (navFetched.length > 0) navKlines = navFetched;
+  }
+
   // 东财交叉截面因子（门控；enabled=false / 取数失败 → null，不影响评分）。先取，供 buildDecision overlay 使用
   const capital = await analyzeFundCapitalFlow(fund, etfMappings, eastmoneyConfig).catch(
     () => null,
@@ -187,6 +202,7 @@ export async function captureSnapshotForFund(
     nav,
     em,
     regime,
+    navKlines,
   });
 
   const last = klines[klines.length - 1];
