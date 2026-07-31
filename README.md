@@ -48,6 +48,15 @@
 - 支持诊断/调仓/K 线增强三种专业模板
 - 与投资计划联动（调仓模板自动包含触发规则信息）
 
+### 🧠 观点回测（Insights Backtest）
+
+- **录入观点** — 粘贴博主投资观点（公众号/小红书链接经 ima 知识库同步，或纯文本/URL 直接粘贴）；AI 结合当日市场动向抽取结构化投资方向并给建议
+- **双输入形态** — ima 返回若是「已结合市场+观点的分析结论」只做轻量方向抽取（`ima-analyzed`，不重跑 AI）；原始文本才跑完整 `callAI` 分析（`raw-text`）；两者都经主题映射落到可回测 ETF/指数
+- **ima 知识库同步（BYOK）** — 用户在 ima 侧把对话「保存到知识库」后，本功能用自带 key 从知识库拉取投资观点，仅取数、不做生成式分析、不碰笔记；密钥存本地 IndexedDB，CORS 受限时可选 Cloudflare Worker 仅转发不持密钥
+- **按日时间线 / 回看** — 月历高亮有观点的日期，列表按「日期 + 投资方向卡片（买/卖/持）」呈现，点击查看完整分析全文 + 当日市场快照
+- **T+5 回测命中率** — 对每条买卖信号取映射标的 T~T+5 日 K 算区间收益，买中涨/卖中跌即命中；统计命中率、平均收益、累计收益曲线（Recharts）、按主题命中率与逐条明细，并标记取数缺口
+- **主题映射可编辑** — 9 类常见主题（半导体/新能源/医药/消费/军工/券商/红利/创业板/沪深300）预置代表 ETF/指数，首启入库，可在设置或后续 UI 维护
+
 ### 🔌 数据源架构（双第三方库结合，零自管取数逻辑）
 
 数据获取已迁移到两个第三方库，**移除了项目自维护的 fetch / JSONP / 重试 / 限流 / 熔断代码**——重试、限流、超时、多源兜底全部交给两库各自的内部治理：
@@ -180,6 +189,31 @@
 - `injectManifest` 策略下，workbox-build 只读取 VitePWA 配置的 `injectManifest` 键；放在 `workbox` 键里的选项（如 `maximumFileSizeToCacheInBytes`）**不会生效**，会导致默认 2 MiB 预缓存上限报错。
 - 本仓库主 bundle 含 react-markdown 等，体积 >2MiB，必须在 `injectManifest` 键下显式设 `maximumFileSizeToCacheInBytes`（已设为 6MiB）。`globPatterns` 同样放在 `injectManifest` 键。
 - 本版本 workbox-build 的 `InjectManifest` schema 仅接受有限选项：`cleanupOutdatedCaches` / `navigateFallback` / `runtimeCaching` 均属 generateSW-only，放在 `injectManifest` 键下会被 `WorkboxConfigError` 拒绝。
+
+## 观点回测（Insights Backtest）
+
+> 把「博主投资观点」结构化、按日回看，并对历史观点做 **T+5 回测命中率** 分析。入口：侧边栏「观点回测」→ `/insights`（录入）/ `/insights/timeline`（时间线）/ `/insights/backtest`（命中率面板）。
+
+**三视图数据流**
+
+1. **录入（`InsightInputView`）** — 三种来源：
+   - ima 知识库同步（BYOK）：`syncFromImaKb` 用 `get_knowledge_list` 列举 + `get_media_info` 取正文，逐条轻量抽取（`extractDirections`，`mode="ima-analyzed"`，不重跑 AI）。
+   - 链接抓取：填 URL + 开「抓取」开关 → `import_urls` 入知识库再取正文（`raw-text`）。
+   - 纯文本粘贴：`raw-text`，用 `callAI` 完整抽取（`analyzeInsight`）。
+   - 录入时自动抓「当日宽基 + 主题映射 ETF 快照」（`buildMarketSnapshot`）作 AI 上下文并持久化。
+2. **时间线（`InsightTimelineView`）** — 月历高亮有观点的日期，列表按「日期 + 投资方向卡片（买=红/卖=绿/持=灰）」呈现；点击看完整分析全文 + 当日市场快照 + 各方向映射标的。
+3. **回测面板（`InsightBacktestView`）** — 选日期范围 / 主题，跑 `runBacktest`：对每条买/卖信号取映射标的 T~T+5 日 K（`fetchTencentKline`），算区间收益；**买中涨 / 卖中跌 = 命中**，持有与取数缺口不计入命中率。展示命中率、平均收益、累计收益曲线（Recharts 按日等权复利）、按主题命中率与逐条明细。
+
+**关键设计**
+
+- **双形态收敛**：ima 已分析结论走轻量抽取，原始文本走完整 `callAI`；两者都经 `themeMappings`（`src/stores/db.ts` v14，首启预置 9 类主题）回填 `mappedCodes` 作为回测落点。
+- **回测按需计算、不写回**：每次回测实时抓取聚合，不改原记录（避免重复覆盖 / 陈旧）。`InvestmentDirection.hit/returnPct` 字段预留但暂不持久化。
+- **数据缺口**：标的无 T / T+5 数据（或 T+5 尚未发生）标记为 gap，排除出统计并在明细表标黄告警。
+- **ima = 纯取数源（BYOK）**：密钥仅浏览器持有，存本地 IndexedDB，与现有 AI key 同待遇；CORS 受限时可选 Cloudflare Worker 仅转发补 CORS、不持密钥。ima 仅做「知识库」路径（用户确认投资意见存知识库，非笔记）。
+
+**相关文件**
+
+`types/index.ts`（`Insight`/`InvestmentDirection`/`MarketSnapshot`/`ThemeMapping`/`ImaConfig`）、`stores/db.ts`（v13 insights / v14 themeMappings）、`stores/settings.ts`（ima 配置）、`services/ima.ts`、`services/insightMarket.ts`、`services/insightAnalysis.ts`、`services/insightBacktest.ts`、`components/insights/*`、`plans/insights-backtest/`（设计文档）。
 
 ## 技术栈
 

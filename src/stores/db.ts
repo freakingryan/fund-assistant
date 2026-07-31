@@ -8,6 +8,8 @@ import type {
   PlanAlert,
   UserSettings,
   DecisionLog,
+  Insight,
+  ThemeMapping,
 } from "@/types";
 import type {
   CaptureReport,
@@ -29,6 +31,19 @@ export interface SwMetaRow {
   value: unknown;
 }
 
+/** 观点回测：首启预置的常见主题 → 代表 ETF/指数代码（回测落点）。可在设置/UI 编辑。 */
+export const DEFAULT_THEME_MAPPINGS: ThemeMapping[] = [
+  { id: "半导体", label: "半导体", codes: ["512480", "159995"] },
+  { id: "新能源", label: "新能源", codes: ["515030", "516160"] },
+  { id: "医药", label: "医药", codes: ["512010", "159992"] },
+  { id: "消费", label: "消费", codes: ["159928", "512690"] },
+  { id: "军工", label: "军工", codes: ["512660"] },
+  { id: "券商", label: "券商", codes: ["512000"] },
+  { id: "红利", label: "红利", codes: ["510880"] },
+  { id: "创业板", label: "创业板", codes: ["159915"] },
+  { id: "沪深300", label: "沪深300", codes: ["510300"] },
+];
+
 export class FundAssistantDB extends Dexie {
   holdings!: EntityTable<FundHolding, "id">;
   plans!: EntityTable<InvestmentPlan, "id">;
@@ -49,6 +64,10 @@ export class FundAssistantDB extends Dexie {
   quoteCache!: EntityTable<QuoteCacheRow, "code">;
   /** Service Worker 运行态（噪声闸门去重/频率状态等），跨 SW 唤醒保持 */
   swMeta!: EntityTable<SwMetaRow, "id">;
+  /** 观点回测：投资观点记录（按日期组织，可回看 + 回测） */
+  insights!: EntityTable<Insight, "id">;
+  /** 观点回测：主题 → 代表标的映射（回测落点），可编辑，首启预置常见主题 */
+  themeMappings!: EntityTable<ThemeMapping, "id">;
 
   constructor() {
     super("FundAssistantDB");
@@ -115,6 +134,24 @@ export class FundAssistantDB extends Dexie {
     this.version(12).stores({
       swMeta: "id",
     });
+
+    // v13: insights — 观点回测的投资观点记录（按日期组织，可回看 + 回测）
+    this.version(13).stores({
+      insights: "id, date, createdAt, sourceType",
+    });
+
+    // v14: themeMappings — 主题 → 代表标的映射（首启预置常见主题）
+    this.version(14)
+      .stores({
+        themeMappings: "id",
+      })
+      .upgrade(async (tx) => {
+        const table = tx.table<ThemeMapping, string>("themeMappings");
+        const existing = await table.count();
+        if (existing === 0) {
+          await table.bulkAdd(DEFAULT_THEME_MAPPINGS);
+        }
+      });
   }
 }
 

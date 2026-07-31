@@ -38,4 +38,10 @@ export const ROUTES = {
   settings: "/settings",
   /** 市场情绪（打板 / 龙虎榜 / 北向） */
   market: "/market",
+  /** 观点回测 · 录入 */
+  insights: "/insights",
+  /** 观点回测 · 时间线 / 回看 */
+  insightsTimeline: "/insights/timeline",
+  /** 观点回测 · 命中率面板 */
+  insightsBacktest: "/insights/backtest",
 } as const;

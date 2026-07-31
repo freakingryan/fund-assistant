@@ -323,6 +323,11 @@ export interface UserSettings {
 
   /** 数据源增强配置（门控型能力，默认关闭） */
   dataSource: DataSourceSettings;
+  /**
+   * ima OpenAPI (BYOK) 配置：仅作「取数源」（知识库），不做生成式分析、不碰笔记。
+   * 用户自带 key（与现有 AI key 同待遇，存本地 IndexedDB），密钥仅浏览器持有。
+   */
+  ima: ImaConfig;
   /** 评分回测模块元数据（自动采集守卫等） */
   backtest?: {
     /** 上次自动采集的日期 YYYY-MM-DD，用于「每日首次」守卫避免重复尝试 */
@@ -489,4 +494,84 @@ export interface DecisionLog {
   bullRatio: number;
   /** 当时是否低置信（净值模式） */
   lowConfidence: boolean;
+}
+
+// ============= 观点回测（Insights Backtest）=============
+
+/** 列表卡片单元：一条投资方向（ima 已分析 或 AI 抽取 都收敛到这里） */
+export interface InvestmentDirection {
+  id: string;
+  /** 主题关键词，如 "半导体材料设备" / "MLCC" / "双创50指数" */
+  theme: string;
+  direction: "buy" | "sell" | "hold";
+  /** 一句话操作建议，如 "底部横盘磨底，性价比突出，可逢低布局" */
+  brief: string;
+  /** 可选：结构级别，如 "60分钟上涨结构" / "周线上涨趋势" */
+  level?: string;
+  /** themeMappings 落到的 ETF/指数代码（回测用） */
+  mappedCodes: string[];
+  /** 回测后填充：T+5 期末是否命中（买中涨 / 卖中跌） */
+  hit?: boolean;
+  /** 回测后填充：T+5 区间收益% */
+  returnPct?: number;
+}
+
+/** 录入时的市场快照（相关 ETF + 大盘），随记录持久化，回看可复现 */
+export interface MarketSnapshot {
+  date: string;
+  /** 沪深300 / 中证全指 等宽基当日涨跌 */
+  indexes: { code: string; name: string; pct: number }[];
+  /** 当日相关 ETF 涨跌 */
+  relatedEtfs: { code: string; name: string; pct: number }[];
+}
+
+/** 一条完整的投资观点记录（按日期组织，可回看 + 回测） */
+export interface Insight {
+  id: string;
+  /** 观点所属交易日 YYYY-MM-DD */
+  date: string;
+  createdAt: number;
+  /** ima 已出分析结论 vs 原始观点待分析 */
+  mode: "ima-analyzed" | "raw-text";
+  sourceType: "text" | "url" | "ima";
+  url?: string;
+  blogger?: string;
+  /** ima 分析全文 或 原始粘贴（详情页 markdown 渲染展示） */
+  fullText: string;
+  /** 列表卡片数据（核心展示单元） */
+  directions: InvestmentDirection[];
+  /** 录入时抓的相关 ETF + 大盘快照 */
+  marketSnapshot: MarketSnapshot;
+  /** 仅 raw-text 模式由 callAI 产出；ima-analyzed 留空（fullText 即结论） */
+  aiAdvice?: string;
+}
+
+/**
+ * 主题 → 代表标的映射（回测落点）。
+ * id=主题关键词，codes=代表 ETF/指数代码[]；UI 可编辑，预置常见主题。
+ */
+export interface ThemeMapping {
+  id: string; // 主题关键词，如 "半导体" / "新能源"
+  label?: string; // 展示名（可选，缺省用 id）
+  codes: string[]; // 代表 ETF / 指数代码（回测落地）
+}
+
+/** ima OpenAPI (BYOK) 配置：仅取数源（知识库），不做生成式分析、不碰笔记 */
+export interface ImaConfig {
+  /** 是否启用 ima 取数（BYOK） */
+  enabled: boolean;
+  /** OpenAPI clientId（`ima.qq.com/agent-interface` 生成，约 1 月有效） */
+  clientId: string;
+  /** OpenAPI apiKey */
+  apiKey: string;
+  /** 知识库 ID（投资观点专用 KB；用户须在 ima 侧将对话"保存到知识库"） */
+  kbId: string;
+  /** 可选：知识库内文件夹 ID，用于缩小同步范围 */
+  kbFolderId: string;
+  /**
+   * 可选：CORS 安全代理地址（Cloudflare Worker 等）。
+   * 仅转发 + 补 CORS 回包，不持密钥；key 始终从浏览器发出。
+   * ima 不允许浏览器 CORS 时填写，否则留空优先直连。
+   */
+  proxyUrl: string;
 }

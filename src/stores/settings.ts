@@ -65,6 +65,14 @@ const defaultSettings: UserSettings = {
       enabled: false,
     },
   },
+  ima: {
+    enabled: false,
+    clientId: "",
+    apiKey: "",
+    kbId: "",
+    kbFolderId: "",
+    proxyUrl: "",
+  },
   backtest: {
     lastAutoCaptureDate: null,
   },

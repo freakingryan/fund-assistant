@@ -13,6 +13,9 @@ import DailyReportPage from "@/components/daily/DailyReportPage";
 import BacktestPage from "@/components/backtest/BacktestPage";
 import RankingPage from "@/components/ranking/RankingPage";
 import MarketPage from "@/components/market/MarketPage";
+import InsightInputView from "@/components/insights/InsightInputView";
+import InsightTimelineView from "@/components/insights/InsightTimelineView";
+import InsightBacktestView from "@/components/insights/InsightBacktestView";
 
 export const router = createBrowserRouter(
   [
@@ -32,6 +35,9 @@ export const router = createBrowserRouter(
         { path: "ranking", element: <RankingPage /> },
         { path: "market", element: <MarketPage /> },
         { path: "daily", element: <DailyReportPage /> },
+        { path: "insights", element: <InsightInputView /> },
+        { path: "insights/timeline", element: <InsightTimelineView /> },
+        { path: "insights/backtest", element: <InsightBacktestView /> },
         { path: "settings", element: <SettingsPage /> },
       ],
     },
