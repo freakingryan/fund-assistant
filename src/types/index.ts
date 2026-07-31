@@ -554,6 +554,12 @@ export interface ThemeMapping {
   id: string; // 主题关键词，如 "半导体" / "新能源"
   label?: string; // 展示名（可选，缺省用 id）
   codes: string[]; // 代表 ETF / 指数代码（回测落地）
+  /**
+   * 可选：同义词 / 别名（如 "半导体" 的别名 "芯片"、"集成电路"）。
+   * 观点文本命中任一别名即回填本条 codes——博主用词与主题名常不一致，
+   * 没有别名会导致 mappedCodes 为空、该方向无法回测。
+   */
+  aliases?: string[];
 }
 
 /** ima OpenAPI (BYOK) 配置：仅取数源（知识库），不做生成式分析、不碰笔记 */

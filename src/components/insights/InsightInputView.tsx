@@ -37,6 +37,7 @@ import { syncFromImaKb, fetchArticle, ImaError } from "@/services/ima";
 import { buildMarketSnapshot } from "@/services/insightMarket";
 import { extractDirections, analyzeInsight } from "@/services/insightAnalysis";
 import { formatDateOnly } from "@/lib/dataTime";
+import { ROUTES } from "@/constants/routes";
 import type { Insight, InvestmentDirection, MarketSnapshot, ThemeMapping } from "@/types";
 
 function todayStr(): string {
@@ -237,7 +238,15 @@ export default function InsightInputView() {
           </Button>
           {!ima.enabled && (
             <p className="mt-2 text-xs text-muted-foreground">
-              未启用 ima：请到「设置 → 数据源增强 / ima」填写 clientId / apiKey / kbId 并启用。
+              未启用 ima：请到
+              <Button
+                variant="link"
+                className="h-auto p-0 mx-1 text-xs align-baseline"
+                onClick={() => navigate(ROUTES.settings)}
+              >
+                设置 → 数据源
+              </Button>
+              的「ima 知识库」卡片填写 clientId / apiKey / kbId 并启用。
             </p>
           )}
         </CardContent>

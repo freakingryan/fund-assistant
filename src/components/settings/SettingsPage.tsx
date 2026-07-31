@@ -56,6 +56,8 @@ import {
   verifyGistToken,
 } from "@/services/backup";
 import EtfMappingManager from "@/components/settings/EtfMappingManager";
+import ThemeMappingManager from "@/components/settings/ThemeMappingManager";
+import ImaConfigCard from "@/components/settings/ImaConfigCard";
 import { toast } from "@/components/ui/toast";
 import type { AIProvider } from "@/types";
 import { requestNotificationPermission } from "@/services/notification";
@@ -266,7 +268,7 @@ export default function SettingsPage() {
         </TabsList>
 
         {/* 数据源 */}
-        <TabsContent value="datasource">
+        <TabsContent value="datasource" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">数据源</CardTitle>
@@ -443,6 +445,9 @@ export default function SettingsPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* ima 知识库（观点回测取数源） */}
+          <ImaConfigCard />
         </TabsContent>
 
         {/* AI 平台 */}
@@ -1225,8 +1230,9 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* 映射管理 */}
-        <TabsContent value="mappings">
+        <TabsContent value="mappings" className="space-y-4">
           <EtfMappingManager />
+          <ThemeMappingManager />
         </TabsContent>
       </Tabs>
 

@@ -105,12 +105,13 @@ async function imaRequest<T>(cfg: ImaConfig, path: string, body: unknown): Promi
 
 /** 取知识库内媒体正文（notes 直接附 note_content；网页类需二次抓取 url_info.url） */
 async function getMediaText(cfg: ImaConfig, mediaId: string): Promise<string> {
-  const data = await imaRequest<{ data?: { note_content?: string; url_info?: { url?: string } } }>(
-    cfg,
-    "/openapi/wiki/v1/get_media_info",
-    { media_id: mediaId },
-  );
-  const inner = data?.data ?? {};
+  const data = await imaRequest<{
+    data?: { note_content?: string; url_info?: { url?: string } };
+    note_content?: string;
+    url_info?: { url?: string };
+  }>(cfg, "/openapi/wiki/v1/get_media_info", { media_id: mediaId });
+  // 上游有时把业务字段直接挂在根上（未真机核实），两处都兜一下
+  const inner = data?.data ?? data ?? {};
   if (inner.note_content && String(inner.note_content).trim()) return String(inner.note_content);
   if (inner.url_info?.url) {
     const t = await fetchUrlText(cfg, inner.url_info.url);
@@ -133,17 +134,26 @@ async function listKbMedia(
     if (cursor) body.cursor = cursor;
     const data = await imaRequest<{
       data?: {
-        list?: Array<{ media_id: string; title?: string; create_time?: number }>;
+        list?: Array<Record<string, unknown>>;
+        knowledge_list?: Array<Record<string, unknown>>;
+        media_list?: Array<Record<string, unknown>>;
         cursor?: string;
         has_more?: boolean;
       };
     }>(cfg, "/openapi/wiki/v1/get_knowledge_list", body);
     const inner = data?.data ?? {};
-    for (const it of inner.list ?? []) {
+    // 列表字段名未真机核实，按 list / knowledge_list / media_list 依次兜底
+    const rows = inner.list ?? inner.knowledge_list ?? inner.media_list ?? [];
+    for (const it of rows) {
+      const mediaId = String(it.media_id ?? it.mediaId ?? it.id ?? "").trim();
+      if (!mediaId) continue;
+      // create_time 可能是秒或毫秒时间戳，按量级归一到毫秒
+      const rawTs = Number(it.create_time ?? it.createTime ?? 0);
+      const createdAt = rawTs > 0 ? (rawTs < 1e12 ? rawTs * 1000 : rawTs) : undefined;
       out.push({
-        mediaId: it.media_id,
-        title: it.title ?? "",
-        createdAt: it.create_time ? it.create_time * 1000 : undefined,
+        mediaId,
+        title: String(it.title ?? it.name ?? ""),
+        createdAt,
       });
     }
     cursor = inner.cursor ?? "";
@@ -187,6 +197,52 @@ export async function probeConnection(cfg: ImaConfig): Promise<{ ok: boolean; me
   } catch (e) {
     return { ok: false, message: e instanceof ImaError ? e.message : String(e) };
   }
+}
+
+/** 一个可选知识库（供设置页下拉选择，免去手抄 ID） */
+export interface ImaKnowledgeBase {
+  id: string;
+  name: string;
+}
+
+/**
+ * 列举当前密钥可访问的知识库，供设置页下拉选择 kbId。
+ *
+ * 复用 `get_addable_knowledge_base_list`（与连通性探测同一端点）。
+ * 上游字段名尚未在真机核实过，故对 `knowledge_base_id|id`、`name|title` 做兼容取值；
+ * 若解析不到条目返回空数组，UI 会退化为手工填写 ID（不阻断）。
+ */
+export async function listKnowledgeBases(cfg: ImaConfig): Promise<ImaKnowledgeBase[]> {
+  const out: ImaKnowledgeBase[] = [];
+  let cursor = "";
+  let hasMore = true;
+  let pages = 0;
+  while (hasMore && pages < 10) {
+    const body: Record<string, unknown> = { limit: 50 };
+    if (cursor) body.cursor = cursor;
+    const data = await imaRequest<{
+      data?: {
+        list?: Array<Record<string, unknown>>;
+        knowledge_base_list?: Array<Record<string, unknown>>;
+        cursor?: string;
+        has_more?: boolean;
+      };
+    }>(cfg, "/openapi/wiki/v1/get_addable_knowledge_base_list", body);
+    const inner = data?.data ?? {};
+    const rows = inner.list ?? inner.knowledge_base_list ?? [];
+    for (const r of rows) {
+      const id = String(r.knowledge_base_id ?? r.id ?? "").trim();
+      if (!id) continue;
+      out.push({
+        id,
+        name: String(r.name ?? r.knowledge_base_name ?? r.title ?? id),
+      });
+    }
+    cursor = inner.cursor ?? "";
+    hasMore = Boolean(inner.has_more) && Boolean(cursor);
+    pages++;
+  }
+  return out;
 }
 
 /**

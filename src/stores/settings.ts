@@ -99,6 +99,7 @@ interface SettingsState {
   ) => Promise<void>;
   removeEtfMapping: (index: number) => Promise<void>;
   updateDataSource: (dataSource: Partial<UserSettings["dataSource"]>) => Promise<void>;
+  updateIma: (ima: Partial<UserSettings["ima"]>) => Promise<void>;
   updateBacktestMeta: (backtest: Partial<NonNullable<UserSettings["backtest"]>>) => Promise<void>;
 }
 
@@ -199,6 +200,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateDataSource: async (dataSource) => {
     const current = get().settings;
     const updated = { ...current, dataSource: { ...current.dataSource, ...dataSource } };
+    await db.settings.put({ ...updated, id: "user-settings" });
+    set({ settings: updated });
+  },
+
+  // 观点回测 · ima BYOK 配置（密钥仅存本地 IndexedDB，与 AI key 同待遇）
+  updateIma: async (ima) => {
+    const current = get().settings;
+    const updated = { ...current, ima: { ...current.ima, ...ima } };
     await db.settings.put({ ...updated, id: "user-settings" });
     set({ settings: updated });
   },
