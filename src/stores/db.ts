@@ -152,6 +152,14 @@ export class FundAssistantDB extends Dexie {
           await table.bulkAdd(DEFAULT_THEME_MAPPINGS);
         }
       });
+
+    // ⚠️ Dexie 的 upgrade() 回调只在「从更低版本升级」时触发。
+    // 全新库（新浏览器/清空存储）会直接按最新版本建表并跳过所有 upgrade，
+    // 因此必须额外用 populate 事件为新用户预置主题映射，
+    // 否则 mappedCodes 恒为空 → 回测链路整体空转。
+    this.on("populate", async (tx) => {
+      await tx.table<ThemeMapping, string>("themeMappings").bulkAdd(DEFAULT_THEME_MAPPINGS);
+    });
   }
 }
 
