@@ -121,7 +121,7 @@ interface Insight {
 - **知识库 `/openapi/wiki/v1/`**：
   - `import_urls` — **服务端自动抓取公众号/网页正文并入库**，批量 1–10 个 URL，自动识别类型；返回 `results`: URL→{ret_code, media_id}。**（我们功能的核心取数入口）**
   - `search_knowledge` — 知识库内语义搜索，返回 `info_list`：`title` / `highlight_content`（高亮片段）/ `media_id` / `parent_folder_id`。**返回"命中文档+片段"，非生成式答案**。
-  - `get_media_info` — 按 `media_id` 取访问信息：网页/文章类返回 `url_info.url`（**签名短链，需再 fetch 一次才拿到正文**）；笔记类（media_type 11）自动附 `note_content` 正文。
+  - `get_media_info` — 按 `media_id` 取访问信息：**本身不返回正文**。URL/网页/文件类返回 `url_info.url`（+可选 `headers`，需再 fetch 一次才拿到正文）；**笔记类（media_type 11）只返回 `notebook_ext_info.notebook_id`，必须再调笔记 `get_doc_content` 取纯文本（两步）**。
   - `get_knowledge_list` / `get_knowledge_base` / `search_knowledge_base` / `get_addable_knowledge_base_list` — 浏览/详情/列表检索。
 - **笔记 `/openapi/note/v1/`**：`import_doc`（建笔记）/ `get_doc_content`（读正文）/ `append_doc`（追加）/ `list_note_by_folder_id` / `search_note_book`。
 
@@ -150,7 +150,7 @@ interface Insight {
 
 - 投资意见若只在会话历史，fund-assistant **取不到**；必须先落到**知识库**，OpenAPI 才能读。
 - 故用户工作流的步骤 4（保存到知识库）应**常规化**，并建议存进一个专用「投资观点」KB/文件夹，便于 fund-assistant 按范围同步。
-- **【用户确认 · 2026-07-31】存储目标明确为「知识库」（非笔记）**：`syncFromImaKb` 仅实现知识库路径（`search_knowledge` + `get_media_info`），**不做笔记分支**（`/openapi/note/v1/` 系列不纳入）。设置项只需 `kbId`（知识库 ID）+ 可选 `kbFolderId`（文件夹 ID），无需笔记相关配置。
+- **【用户确认 · 2026-07-31】存储目标明确为「知识库」（非笔记）**：`syncFromImaKb` 以知识库路径为主（`search_knowledge` + `get_media_info`）。⚠️ 2026-08-01 纠正：KB 内**笔记类媒体（media_type 11）**经 `get_media_info` 只回 `notebook_id`，须再调笔记 `get_doc_content` 才能取到正文——故为"读 KB 内笔记"补了这一个 notes **只读**端点（仅 `get_doc_content`，**不引入笔记的写/列/搜**）。设置项仍只需 `kbId` + 可选 `kbFolderId`，无需笔记专属配置。
 
 ### 改造后自动工作流（成立版）
 
@@ -171,9 +171,52 @@ fund-assistant 侧：配置 ima key(BYOK) → 点「从 ima 同步」
 
 逆向 Cookie 调对话历史：① 需登录会话 cookie 非 key，脆弱易失效；② 违背"用户自带 key、零后端"干净架构；③ ima 改版即断。明确放弃，以"存知识库"为同步前提。
 
+## 三（补4）、官方 API 响应契约（2026-08-01 对照 ima-skills-1.1.8 核实）
+
+`src/services/ima.ts` 此前对若干响应字段是**猜测**（未真机验证）。2026-08-01 取得腾讯官方
+`ima-skills-1.1.8` 技能包（含 `knowledge-base/references/api.md` + `notes/references/api.md`），
+现以官方契约为准，已修正三处错误（见当次 commit）。权威结构如下：
+
+### 统一响应包
+
+所有接口返回 `{ code, msg, data }`；`code===0` 成功，从 `data` 取业务字段。
+
+### get_addable_knowledge_base_list（探针 / 列举可添加 KB）
+
+- 请求：`{ cursor: "", limit: 1~50 }`（首次 cursor 传空串）
+- 响应 `data`：`{ addable_knowledge_base_list: [{ id, name }], next_cursor, is_end }`
+- ❗ 旧代码猜的 `list`/`knowledge_base_list`、`knowledge_base_id`/`title` 均错 → 已改为 `addable_knowledge_base_list` + `{id,name}` + `next_cursor`/`is_end` 游标翻页。
+
+### get_knowledge_list（列举 KB 内媒体）
+
+- 请求：`{ knowledge_base_id, limit:1~50, cursor:"", folder_id? }`
+- 响应 `data`：`{ knowledge_list: [{ media_id, title, parent_folder_id }], next_cursor, is_end, current_path }`
+- ❗ `KnowledgeInfo` **无 create_time 字段** → 旧代码对 `create_time` 做秒/毫秒归一纯属臆测，已删除；`ImaMediaItem.createdAt` 因此通常为空，调用方已用当天日期兜底。
+
+### get_media_info（取媒体访问信息，不返正文）
+
+- 请求：`{ media_id }`
+- 响应 `data`：
+  - `media_type`（MediaType 枚举：1=PDF/2=网页/3=Word/.../11=笔记/13=TXT/...）
+  - URL/网页/文件类：`url_info: { url, headers? }`（需再 fetch 一次取正文；文件类为下载链，PDF/Word 需自行解析）
+  - 笔记类(11)：`notebook_ext_info: { notebook_id }`（**非正文**）
+- ❗ 旧代码假设 `get_media_info` 直接附 `note_content` 正文（且笔记是"主路径"）完全错误。修正为：
+  - 笔记(11) → 调 `POST /openapi/note/v1/get_doc_content` `{ note_id: notebook_id, target_content_format: 0 }` → `data.content`（纯文本）
+  - 其它 → fetch `url_info.url`（带 `headers`）
+
+### import_urls（抓 URL 入库，兜底取数）
+
+- 请求：`{ knowledge_base_id, folder_id(必填), urls:[1~10] }`
+- 响应 `data.results`: `map<url, { ret_code, media_id }>` ✅ 与旧代码一致（未错）
+
+### get_doc_content（笔记正文，/openapi/note/v1/）
+
+- 请求：`{ note_id, target_content_format: 0 }`（0=纯文本）
+- 响应 `data.content`: string
+
 ## 四、风险与待验证项
 
-1. **ima 端点/密钥头存在版本差异**（`/openapi/wiki/v1/...` vs `/api/pub/copilot/...`；`ima-openapi-*` vs `X-Client-Id`）。P1 必须含**连通性探测**，并提示用户按其 ima 账号实际字段校正。
+1. ~~ima 端点/密钥头存在版本差异~~（已对照官方 `ima-skills-1.1.8` 契约核实：`/openapi/wiki/v1/` + `/openapi/note/v1/` 双前缀、`ima-openapi-*` 头、字段名均确认，无版本分支歧义）。P1 连通性探测 `probeConnection` 保留作运行时健康校验。
 2. **密钥有效期约 1 个月** → UI 需提示「失效请重新生成」。
 3. **小红书抓取可能失败** → 优雅降级到文本粘贴，并记录 `sourceType`。
 4. **回测数据缺口**：若某 ETF/指数在 T~T+5 无交易（停牌/新上市），需跳过或标记。

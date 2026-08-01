@@ -13,10 +13,12 @@
  *   代理只转发 + 补 CORS 回包，**不持密钥**（key 始终从浏览器发出）。
  *   约定代理契约：POST { url, method, headers, body }，代理据此转发上游并把响应体回传。
  *
- * 路径/坑（已核实）：
- *  - 前缀必须是 `/openapi/wiki/v1/`（旧 `/wiki/v1/`、`/api/v1/` 会 401）。
- *  - `get_media_info` 返回的 `url_info.url` 是签名短链，需再 fetch 一次才拿到正文；
- *    笔记类（media_type 11）则直接附 `note_content` 正文（我们的主路径）。
+ * 路径/坑（已对照官方 api.md 核实）：
+ *  - 知识库前缀 `/openapi/wiki/v1/`、笔记前缀 `/openapi/note/v1/`（旧 `/wiki/v1/`、`/api/v1/` 会 401）。
+ *  - `get_media_info` **不返回正文**：URL/网页/文件类给 `url_info.url`（需再 fetch 一次才拿到正文）；
+ *    笔记类（media_type 11）只给 `notebook_id`，必须再调 notes `get_doc_content` 取纯文本（两步）。
+ *  - `get_knowledge_list` 列表项 `KnowledgeInfo` **无 create_time**；`get_addable_knowledge_base_list`
+ *    字段为 `addable_knowledge_base_list`、条目 `{id,name}`；翻页统一用 `next_cursor`+`is_end`。
  *
  * @module services/ima
  */
@@ -40,9 +42,12 @@ const IMA_BASE = "https://ima.qq.com";
 export interface ImaMediaItem {
   mediaId: string;
   title: string;
-  /** note_content 或 url 抓回的正文；可能为空（如仅索引无正文） */
+  /** url 抓回 / notes get_doc_content 取回的正文；可能为空（如仅索引无正文） */
   text: string;
-  /** 媒体创建时间戳（ms），来自列表项 create_time；用于同步增量与观点日期 */
+  /**
+   * 媒体创建时间戳（ms）。注意：ima `get_knowledge_list` 的 `KnowledgeInfo` **不含 create_time**，
+   * 故此处通常为空；调用方须自行兜底（如用当天日期作为观点日期）。
+   */
   createdAt?: number;
 }
 
@@ -103,68 +108,85 @@ async function imaRequest<T>(cfg: ImaConfig, path: string, body: unknown): Promi
   return data;
 }
 
-/** 取知识库内媒体正文（notes 直接附 note_content；网页类需二次抓取 url_info.url） */
+/** 取媒体正文（按官方契约分两支）：
+ *  - 笔记类 media_type=11：get_media_info 只回 notebook_id → 再调 notes get_doc_content 取纯文本
+ *  - 其它（网页/文件/URL）：get_media_info 回 url_info.url（+可选 headers）→ 再 fetch 一次取正文
+ * 注意：get_media_info 本身**不返回正文**，两段都不命中时返空串（best-effort，不阻断同步）。 */
 async function getMediaText(cfg: ImaConfig, mediaId: string): Promise<string> {
   const data = await imaRequest<{
-    data?: { note_content?: string; url_info?: { url?: string } };
-    note_content?: string;
-    url_info?: { url?: string };
+    data?: {
+      media_type?: number;
+      url_info?: { url?: string; headers?: Record<string, string> };
+      notebook_ext_info?: { notebook_id?: string };
+    };
   }>(cfg, "/openapi/wiki/v1/get_media_info", { media_id: mediaId });
-  // 上游有时把业务字段直接挂在根上（未真机核实），两处都兜一下
-  const inner = data?.data ?? data ?? {};
-  if (inner.note_content && String(inner.note_content).trim()) return String(inner.note_content);
-  if (inner.url_info?.url) {
-    const t = await fetchUrlText(cfg, inner.url_info.url);
+
+  const info = data?.data;
+  if (!info) return "";
+
+  // 笔记：走 notes 独立接口取纯文本
+  if (info.media_type === 11 && info.notebook_ext_info?.notebook_id) {
+    return getNoteContent(cfg, info.notebook_ext_info.notebook_id);
+  }
+
+  // URL / 网页 / 文件：取 url_info.url 后再抓取（headers 原样带上，部分需鉴权）
+  if (info.url_info?.url) {
+    const t = await fetchUrlText(cfg, info.url_info.url, info.url_info.headers);
     if (t) return t;
   }
   return "";
 }
 
-/** 枚举知识库（可选文件夹）下的媒体列表，分页直到取完（上限 20 页防失控） */
+/** 笔记正文：notes.get_doc_content，target_content_format=0 返回纯文本。 */
+async function getNoteContent(cfg: ImaConfig, noteId: string): Promise<string> {
+  const data = await imaRequest<{ data?: { content?: string } }>(
+    cfg,
+    "/openapi/note/v1/get_doc_content",
+    { note_id: noteId, target_content_format: 0 },
+  );
+  return String(data?.data?.content ?? "").trim();
+}
+
+/** 枚举知识库（可选文件夹）下的媒体列表，按官方 `next_cursor`+`is_end` 游标翻页（上限 20 页防失控）。
+ *  列表项 `KnowledgeInfo` 仅含 `media_id`/`title`/`parent_folder_id`，**无 create_time**，故 createdAt 留空。 */
 async function listKbMedia(
   cfg: ImaConfig,
 ): Promise<Array<{ mediaId: string; title: string; createdAt?: number }>> {
   const out: Array<{ mediaId: string; title: string; createdAt?: number }> = [];
   let cursor = "";
-  let hasMore = true;
+  let isEnd = false;
   let pages = 0;
-  while (hasMore && pages < 20) {
+  while (!isEnd && pages < 20) {
     const body: Record<string, unknown> = { knowledge_base_id: cfg.kbId, limit: 50 };
     if (cfg.kbFolderId) body.folder_id = cfg.kbFolderId;
     if (cursor) body.cursor = cursor;
     const data = await imaRequest<{
       data?: {
-        list?: Array<Record<string, unknown>>;
-        knowledge_list?: Array<Record<string, unknown>>;
-        media_list?: Array<Record<string, unknown>>;
-        cursor?: string;
-        has_more?: boolean;
+        knowledge_list?: Array<{ media_id?: string; title?: string }>;
+        next_cursor?: string;
+        is_end?: boolean;
       };
     }>(cfg, "/openapi/wiki/v1/get_knowledge_list", body);
     const inner = data?.data ?? {};
-    // 列表字段名未真机核实，按 list / knowledge_list / media_list 依次兜底
-    const rows = inner.list ?? inner.knowledge_list ?? inner.media_list ?? [];
-    for (const it of rows) {
-      const mediaId = String(it.media_id ?? it.mediaId ?? it.id ?? "").trim();
+    for (const it of inner.knowledge_list ?? []) {
+      const mediaId = String(it.media_id ?? "").trim();
       if (!mediaId) continue;
-      // create_time 可能是秒或毫秒时间戳，按量级归一到毫秒
-      const rawTs = Number(it.create_time ?? it.createTime ?? 0);
-      const createdAt = rawTs > 0 ? (rawTs < 1e12 ? rawTs * 1000 : rawTs) : undefined;
-      out.push({
-        mediaId,
-        title: String(it.title ?? it.name ?? ""),
-        createdAt,
-      });
+      out.push({ mediaId, title: String(it.title ?? "") });
     }
-    cursor = inner.cursor ?? "";
-    hasMore = Boolean(inner.has_more) && Boolean(cursor);
+    cursor = inner.next_cursor ?? "";
+    isEnd = Boolean(inner.is_end);
     pages++;
   }
   return out;
 }
 
-/** 经直连 / proxy 抓取一个 URL 的正文（best-effort，失败返回空串，不阻断同步） */
-async function fetchUrlText(cfg: ImaConfig, url: string): Promise<string> {
+/** 经直连 / proxy 抓取一个 URL 的正文（best-effort，失败返回空串，不阻断同步）。
+ *  proxy 模式按契约 POST { url, method, headers }；直连模式原样带 headers。 */
+async function fetchUrlText(
+  cfg: ImaConfig,
+  url: string,
+  headers?: Record<string, string>,
+): Promise<string> {
   try {
     let res: Response;
     if (cfg.proxyUrl) {
@@ -172,10 +194,10 @@ async function fetchUrlText(cfg: ImaConfig, url: string): Promise<string> {
       res = await fetch(proxyBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, method: "GET" }),
+        body: JSON.stringify({ url, method: "GET", headers: headers ?? {} }),
       });
     } else {
-      res = await fetch(url);
+      res = await fetch(url, headers ? { headers } : undefined);
     }
     if (!res.ok) return "";
     return await res.text();
@@ -208,38 +230,32 @@ export interface ImaKnowledgeBase {
 /**
  * 列举当前密钥可访问的知识库，供设置页下拉选择 kbId。
  *
- * 复用 `get_addable_knowledge_base_list`（与连通性探测同一端点）。
- * 上游字段名尚未在真机核实过，故对 `knowledge_base_id|id`、`name|title` 做兼容取值；
- * 若解析不到条目返回空数组，UI 会退化为手工填写 ID（不阻断）。
+ * 官方端点 `get_addable_knowledge_base_list` 返回字段 `addable_knowledge_base_list`，
+ * 条目结构 `{ id, name }`，翻页 `next_cursor`+`is_end`。
  */
 export async function listKnowledgeBases(cfg: ImaConfig): Promise<ImaKnowledgeBase[]> {
   const out: ImaKnowledgeBase[] = [];
   let cursor = "";
-  let hasMore = true;
+  let isEnd = false;
   let pages = 0;
-  while (hasMore && pages < 10) {
+  while (!isEnd && pages < 10) {
     const body: Record<string, unknown> = { limit: 50 };
     if (cursor) body.cursor = cursor;
     const data = await imaRequest<{
       data?: {
-        list?: Array<Record<string, unknown>>;
-        knowledge_base_list?: Array<Record<string, unknown>>;
-        cursor?: string;
-        has_more?: boolean;
+        addable_knowledge_base_list?: Array<{ id?: string; name?: string }>;
+        next_cursor?: string;
+        is_end?: boolean;
       };
     }>(cfg, "/openapi/wiki/v1/get_addable_knowledge_base_list", body);
     const inner = data?.data ?? {};
-    const rows = inner.list ?? inner.knowledge_base_list ?? [];
-    for (const r of rows) {
-      const id = String(r.knowledge_base_id ?? r.id ?? "").trim();
+    for (const r of inner.addable_knowledge_base_list ?? []) {
+      const id = String(r.id ?? "").trim();
       if (!id) continue;
-      out.push({
-        id,
-        name: String(r.name ?? r.knowledge_base_name ?? r.title ?? id),
-      });
+      out.push({ id, name: String(r.name ?? id) });
     }
-    cursor = inner.cursor ?? "";
-    hasMore = Boolean(inner.has_more) && Boolean(cursor);
+    cursor = inner.next_cursor ?? "";
+    isEnd = Boolean(inner.is_end);
     pages++;
   }
   return out;
