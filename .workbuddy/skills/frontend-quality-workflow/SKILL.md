@@ -105,15 +105,26 @@ skip the cleanup/verification phases.
   commit-time gate. Now every future commit is auto-formatted and type-checked.
 - Run the test/typecheck command yourself to confirm the gate is green before reporting completion.
 
-## Cross-cutting — Handoff (session-end practice, handoff)
+## Cross-cutting — Handoff (PRIMARY context-management mechanism)
 
-- At session end (or when handing off to another agent/session), apply the `handoff` skill
-  (mattpocock/productivity conventions): compact the conversation into a handoff doc, save it to the OS
-  **temp directory** (not the workspace), include a **"suggested skills"** section, and **redact** any
-  secrets (API keys, passwords, PII). Reference existing artifacts (specs, plans, commits, diffs) by path
-  instead of duplicating them.
-- This is a cross-cutting practice, not a numbered phase. (The previous in-repo `HANDOFF-*.md` style is
-  retained for repo-committed handoffs; the skill's temp-dir form is for agent-to-agent continuation.)
+**`handoff` (mattpocock) 是会话上下文管理的首选 / 主机制。** 在会话结束或交给另一 agent / 会话时，
+**优先**调用 `handoff` 技能：把对话压缩成 handoff 文档，存入 **OS 临时目录（非工作区）**，含
+**"suggested skills"** 段，并**脱敏**密钥 / 密码 / PII。它生来是「瘦指针」——**引用** specs / plans /
+commits / diffs 的**路径**，**绝不复制**其内容。
+
+### 三层职责边界（消除命名撞车与内容复述）
+
+1. **`handoff` 技能产出（主，/tmp 易失）** — 立即续接用的轻量快照：本次做了什么（commits）、下一步焦点、
+   该调哪些 skill。**只引用，不复述**。
+2. **`plans/<feature>/`（提交，持久）** — 活跃功能的**唯一真相源**（`task_plan` / `progress` / `findings`），
+   由 planning-with-files 维护。handoff 指向它。
+3. **`PENDING_PLAN.md`（提交，持久）** — 未实现功能 backlog。handoff 指向它。
+
+- 仓库根级的 `HANDOFF-*.md`「全文复述式」交接惯例**已退役**（旧文档归档至 `archive/handoff/`，不删除）；
+  不再新写总结式交接文档，避免与 `plans/` 重复。
+- **持久性说明**：`handoff` 写在 /tmp，可能随系统清理丢失；因此 `plans/` + `PENDING_PLAN.md` + git log
+  是持久底稿。若 /tmp 快照不在，从这三处重建上下文即可。
+- 这是跨阶段实践，不是编号阶段。
 
 ## Hard rules
 
@@ -128,6 +139,7 @@ skip the cleanup/verification phases.
 
 ## Changelog
 
+- **2026-08-02 v1.2.1** — 确立 **`handoff`（mattpocock）为会话上下文管理的主机制**：Cross-cutting 段改为「PRIMARY context-management mechanism」，明确三层边界（handoff=/tmp 轻量快照主、plans/=活跃真相源、PENDING_PLAN.md=持久 backlog）；退役仓库根 `HANDOFF-*.md`「全文复述式」交接惯例（旧文档归档至 `archive/handoff/`，不删除），消除命名撞车与内容复述。handoff 因 /tmp 易失，持久底稿由 plans/+PENDING_PLAN.md+git log 承担。
 - **2026-08-02 v1.2.0** — 引入 mattpocock/dhruvinrsoni 工程技能优化流水线：新增 **P1.5 Prototype**（动手前用一次性原型验证 UI/逻辑）、**P4.5 Review**（code-review 双轴 diff 评审 vs 规格+标准）；P1 增加可选的 **research** 子步骤（后台 agent 调研外部事实落 findings.md）；P2 融入 **minimal-diff** 执行纪律（scope statement / no-drive-by / commit 拆分 / 可逆性）；Cross-cutting 段补充 **handoff** 的 mattpocock 约定（临时目录 + suggested-skills + 脱敏）。无现有阶段被取代，全部为新增/融入/对齐。
 - **2026-07-31 v1.1.0** — Phase 1 引入 `grill-me` 作为需求打磨步骤（Step 1 需求追问 → Step 2 planning-with-files 落盘），提升 plan 质量；补充 `version` 字段与 Changelog。
 - **1.0.0** — 初始版本：五阶段流水线 grill-me→planning-with-files→task-implement→impeccable→code-simplifier→setup-pre-commit。
