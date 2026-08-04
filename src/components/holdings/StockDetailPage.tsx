@@ -20,6 +20,7 @@ import KlinePatternCard from "@/components/holdings/KlinePatternCard";
 import SignalScoreCard from "@/components/holdings/SignalScoreCard";
 import { TechnicalIndicatorsPanel } from "@/components/holdings/TechnicalIndicatorsPanel";
 import { DecisionAdvisorCard } from "@/components/holdings/DecisionAdvisorCard";
+import { MaJudgmentPanel } from "@/components/holdings/MaJudgmentPanel";
 import { detectPatterns, formatPatternsSummary } from "@/services/klinePatterns";
 import type { DetectedPattern } from "@/services/klinePatterns";
 import { analyzeKline } from "@/services/klineAnalysis";
@@ -338,6 +339,7 @@ export default function StockDetailPage() {
             asOf={klineAsOf}
             fetchedAt={klineFetchedAt}
           />
+          <MaJudgmentPanel code={code} />
           <details className="group rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
             <summary className="cursor-pointer text-xs font-medium text-muted-foreground flex items-center gap-1.5 list-none select-none">
               <span className="inline-block transition-transform group-open:rotate-90">▶</span>
@@ -363,6 +365,10 @@ export default function StockDetailPage() {
             <CardContent className="space-y-2 text-xs text-muted-foreground leading-relaxed">
               <p>• K 线走势与实时行情来自 stock-api（腾讯 / 新浪 / 东方财富自动兜底）。</p>
               <p>• 综合评分由信号引擎基于 MA / MACD / RSI / BOLL / 量能 / K 线形态加权计算。</p>
+              <p>
+                • 「均线研判」基于 20/60/120/250 日线，采用连续 3
+                日确认站稳/跌破，给出加减仓建议（独立拉取近 1 年日线）。
+              </p>
               <p>• 点击 K 线蜡烛或形态记录可高亮联动查看。</p>
               {promptCopied && (
                 <p className="flex items-center gap-1 text-green-500">

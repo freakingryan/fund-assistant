@@ -14,6 +14,7 @@ import FundKlineChartCard from "./FundKlineChartCard";
 import FundKlinePatternCard from "./FundKlinePatternCard";
 import FundSignalScoreCard from "./FundSignalScoreCard";
 import FundDecisionAdvisorCard from "./FundDecisionAdvisorCard";
+import { MaJudgmentPanel } from "@/components/holdings/MaJudgmentPanel";
 import DecisionGuide from "../guide/DecisionGuide";
 import ResearchReportCard from "@/components/holdings/ResearchReportCard";
 import FundHeader from "./FundHeader";
@@ -62,17 +63,15 @@ export default function FundDetailLayout() {
         </Button>
       </div>
 
-      <HoldingInfoCard />
-
       <EditFundDialog fund={fund} open={ctrl.editOpen} onOpenChange={ctrl.setEditOpen} />
       <QuickAdjustDialog fund={fund} open={ctrl.adjustOpen} onOpenChange={ctrl.setAdjustOpen} />
 
-      {/* 智能决策建议：紧随持仓信息，独占整行 */}
-      <FundDecisionAdvisorCard />
-
+      {/* 主网格：左栏（2/3）持仓信息 + 决策建议 + K线等；右栏（1/3）重仓股 / 同类排名 / 均线研判 / 分红 / AI */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-4">
+          <HoldingInfoCard />
+          <FundDecisionAdvisorCard />
           <FundKlineChartCard />
           <FundKlinePatternCard />
           <ResearchReportCard stockCode={ctrl.etfCode} stockName={fund.name} />
@@ -92,6 +91,7 @@ export default function FundDetailLayout() {
         <div className="space-y-4">
           <FundPortfolioCard />
           <FundRankHistoryCard code={fund.code} config={ctrl.eastmoneyConfig} />
+          <MaJudgmentPanel etfCode={ctrl.etfCode ?? undefined} navCode={fund.code} />
           <FundDividendCard code={fund.code} config={ctrl.eastmoneyConfig} />
           <PromptAiCard />
         </div>
